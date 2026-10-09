@@ -1461,7 +1461,7 @@ export default function ReadingPane({ showBack }: ReadingPaneProps) {
                 <span className="font-medium">{t('readingPane.openOriginal')}</span>
               </a>
             )}
-            {aiConfig?.enabled && aiConfig.hasApiKey && (
+            {aiConfig?.enabled && aiConfig.model.trim() && (
               <button
                 onClick={() => { setReadSettingsOpen(false); void handleSummarize(false); }}
                 disabled={aiSummarizing}
