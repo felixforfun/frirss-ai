@@ -2,8 +2,8 @@ import { Router } from 'express';
 import db from '../db.js';
 import { decrypt, encrypt } from '../crypto.js';
 import { requireAuth } from '../middleware/auth.js';
-import { fetchUpstream, proxyRateLimiter } from './proxy.js';
-import { aiConfigHash, aiContentHash, cleanArticleHtml, normalizeAiEndpoint, MAX_ARTICLE_TEXT_CHARS } from '../aiSummaryUtils.js';
+import { BlockedTargetError, UnresolvedTargetError, fetchUpstream, proxyRateLimiter } from './proxy.js';
+import { aiConfigHash, aiContentHash, cleanArticleHtml, normalizeAiEndpoint, aiProviderHeaders, MAX_ARTICLE_TEXT_CHARS } from '../aiSummaryUtils.js';
 
 const router = Router();
 router.use(requireAuth);
@@ -32,7 +32,7 @@ function validString(value: unknown, maxLength: number): value is string {
 function completionUrl(endpoint: string): string {
   return endpoint.endsWith('/chat/completions') ? endpoint : endpoint + '/chat/completions';
 }
-async function providerRequest(endpoint: string, apiKey: string, body: Record<string, unknown>) {
+async function providerRequest(endpoint: string, apiKey: string | null, body: Record<string, unknown>) {
   const url = completionUrl(endpoint);
   // Reuse FriRSS's DNS-resolving SSRF guard and redirect handling. Redirects
   // stay disabled so an upstream cannot receive the bearer token elsewhere.
@@ -40,7 +40,7 @@ async function providerRequest(endpoint: string, apiKey: string, body: Record<st
     method: 'POST',
     followRedirects: false,
     timeoutMs: REQUEST_TIMEOUT_MS,
-    headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json', Accept: 'application/json' },
+    headers: aiProviderHeaders(apiKey),
     body: JSON.stringify(body),
   });
   if (response.status >= 300 && response.status < 400) {
@@ -89,6 +89,8 @@ async function providerRequest(endpoint: string, apiKey: string, body: Record<st
 }
 function providerError(err: unknown): { status: number; message: string } {
   const candidate = err as { status?: number; name?: string; message?: string };
+  if (err instanceof UnresolvedTargetError) return { status: 503, message: 'FriRSS could not resolve the AI endpoint hostname. Check Tailscale DNS and the hostname.' };
+  if (err instanceof BlockedTargetError) return { status: 403, message: 'FriRSS blocked this endpoint under its outbound network policy. Add the exact hostname to PROXY_INTERNAL_HOSTS and recreate the container.' };
   if (candidate?.name === 'TimeoutError' || candidate?.name === 'AbortError') return { status: 504, message: 'AI provider timed out' };
   if (candidate?.status) return { status: candidate.status, message: candidate.message || 'AI provider request failed' };
   return { status: 502, message: 'AI provider is unreachable or the endpoint is blocked' };
@@ -141,7 +143,7 @@ router.post('/test', async (req, res) => {
       if (!validString(body.apiKey, MAX_KEY_CHARS) || !body.apiKey.trim()) return res.status(400).json({ error: 'Invalid API key' });
       key = body.apiKey.trim();
     }
-    if (!key) return res.status(400).json({ error: 'Configure an API key first' });
+    // API keys are optional for local gateways such as Aperture.
     await providerRequest(endpoint, key, { model, messages: [{ role: 'user', content: 'Reply with OK.' }], max_tokens: 2, temperature: 0 });
     res.json({ ok: true });
   } catch (err) { const e = providerError(err); res.status(e.status).json({ error: e.message }); }
@@ -151,7 +153,8 @@ router.post('/summarize', async (req, res) => {
   const config = readConfig(req.user.id);
   if (!config.enabled) return res.status(409).json({ error: 'AI summaries are disabled' });
   const apiKey = config.api_key ? decrypt(config.api_key) : null;
-  if (!apiKey) return res.status(400).json({ error: 'Configure an API key first' });
+  // Keyless OpenAI-compatible gateways are supported; no Authorization header
+  // is sent when api_key is absent.
   if (!config.model.trim()) return res.status(400).json({ error: 'Configure a model first' });
 
   const body = req.body as Record<string, unknown>;
