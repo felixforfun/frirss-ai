@@ -477,15 +477,13 @@
       "readingTitle": "Fonte do título de leitura",
       "readingBody": "Fonte do texto de leitura",
       "reset": "Repor famílias de fontes",
-      "options": {
-        "system": "Predefinição do sistema",
-        "arial": "Arial",
-        "verdana": "Verdana",
-        "trebuchet": "Trebuchet MS",
-        "georgia": "Georgia",
-        "times": "Times New Roman",
-        "monospace": "Monoespaçada"
-      }
+      "system": "Predefinição do sistema",
+      "arial": "Arial",
+      "verdana": "Verdana",
+      "trebuchet": "Trebuchet MS",
+      "georgia": "Georgia",
+      "times": "Times New Roman",
+      "monospace": "Monoespaçada"
     }
   },
   "login": {
