@@ -43,7 +43,10 @@ export default function AiSummariesTab({ active = true }: { active?: boolean }) 
     try {
       await testAiSummaryConnection({ endpoint: config.endpoint, model: config.model, apiKey: apiKey.trim() || undefined });
       setStatus({ text: t('preferences.aiSummaries.testOk') });
-    } catch { setStatus({ text: t('preferences.aiSummaries.testFailed'), error: true }); }
+    } catch (err: unknown) {
+      const message = (err as { response?: { data?: { error?: unknown } } })?.response?.data?.error;
+      setStatus({ text: typeof message === 'string' ? message : t('preferences.aiSummaries.testFailed'), error: true });
+    }
     finally { setTesting(false); }
   }
 
@@ -90,7 +93,7 @@ export default function AiSummariesTab({ active = true }: { active?: boolean }) 
       {status && <p role="status" className="text-xs" style={{ color: status.error ? 'var(--danger)' : 'var(--accent)' }}>{status.text}</p>}
       <div className="flex flex-wrap gap-2">
         <button type="button" onClick={save} disabled={saving} className="px-4 py-2 rounded-lg text-sm font-semibold disabled:opacity-50" style={{ color: '#fff', background: 'var(--accent)' }}>{saving ? t('preferences.aiSummaries.saving') : t('preferences.aiSummaries.save')}</button>
-        <button type="button" onClick={test} disabled={testing || !(config.hasApiKey || apiKey.trim())} className="px-4 py-2 rounded-lg text-sm font-semibold disabled:opacity-50" style={{ color: 'var(--list-title)', border: '1px solid var(--panel-border)' }}>{testing ? t('preferences.aiSummaries.testing') : t('preferences.aiSummaries.test')}</button>
+        <button type="button" onClick={test} disabled={testing || !config.model.trim()} className="px-4 py-2 rounded-lg text-sm font-semibold disabled:opacity-50" style={{ color: 'var(--list-title)', border: '1px solid var(--panel-border)' }}>{testing ? t('preferences.aiSummaries.testing') : t('preferences.aiSummaries.test')}</button>
         {config.hasApiKey && <button type="button" onClick={clearKey} className="px-4 py-2 rounded-lg text-sm" style={{ color: 'var(--danger)', border: '1px solid var(--panel-border)' }}>{t('preferences.aiSummaries.clear')}</button>}
       </div>
     </div>
