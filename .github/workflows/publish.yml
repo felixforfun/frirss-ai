@@ -31,9 +31,15 @@ jobs:
       # Emulation so arm64 (Raspberry Pi) images can be built on the amd64 runner.
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v4
+        with:
+          # Public mirror avoids Docker Hub's unauthenticated pull limit.
+          image: ghcr.io/dockerhub-mirror/tonistiigi__binfmt:latest
 
       - name: Set up Buildx
         uses: docker/setup-buildx-action@v4
+        with:
+          # Pull the BuildKit helper through GHCR instead of Docker Hub.
+          driver-opts: image=ghcr.io/dockerhub-mirror/moby__buildkit:buildx-stable-1
 
       # Compute image tags. Always :sha-xxxxxxx. main → :latest (stable),
       # dev → :dev (testing), git tag vX.Y.Z → :X.Y.Z and :X.Y (releases).
