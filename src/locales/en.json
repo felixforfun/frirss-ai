@@ -477,15 +477,13 @@
       "readingTitle": "Reading title font family",
       "readingBody": "Reading body font family",
       "reset": "Reset font families",
-      "options": {
-        "system": "System default",
-        "arial": "Arial",
-        "verdana": "Verdana",
-        "trebuchet": "Trebuchet MS",
-        "georgia": "Georgia",
-        "times": "Times New Roman",
-        "monospace": "Monospace"
-      }
+      "system": "System default",
+      "arial": "Arial",
+      "verdana": "Verdana",
+      "trebuchet": "Trebuchet MS",
+      "georgia": "Georgia",
+      "times": "Times New Roman",
+      "monospace": "Monospace"
     }
   },
   "login": {
