@@ -164,7 +164,11 @@
     "videoOpen": "Openen op YouTube",
     "videoOffline": "Video offline niet beschikbaar",
     "share": "Delen",
-    "copyLink": "Link kopiëren"
+    "copyLink": "Link kopiëren",
+    "summary": "AI-samenvatting",
+    "summarize": "Samenvatten",
+    "summarizing": "Samenvatten…",
+    "regenerate": "Opnieuw genereren"
   },
   "preferences": {
     "title": "Voorkeuren",
@@ -397,7 +401,8 @@
       "feeds": "Feeds",
       "offline": "Offline",
       "admin": "Beheer",
-      "layout": "Lay-out"
+      "layout": "Lay-out",
+      "aiSummaries": "AI-samenvattingen"
     },
     "appearance": {
       "theme": "Thema",
@@ -444,6 +449,26 @@
       "readLater": "Later lezen",
       "openSource": "Bij de bron openen",
       "markRead": "Markeren als gelezen"
+    },
+    "aiSummaries": {
+      "enable": "AI-samenvattingen inschakelen",
+      "endpoint": "OpenAI-compatibel eindpunt",
+      "model": "Modelnaam",
+      "apiKey": "API-sleutel",
+      "keyPlaceholder": "Plak de API-sleutel (leeg laten om de huidige te behouden)",
+      "prompt": "Prompt voor samenvatting",
+      "save": "Opslaan",
+      "saving": "Opslaan…",
+      "test": "Verbinding testen",
+      "testing": "Verbinding testen…",
+      "clear": "Opgeslagen sleutel wissen",
+      "stored": "Er is een API-sleutel opgeslagen. Deze is versleuteld opgeslagen.",
+      "noKey": "Geen API-sleutel ingesteld.",
+      "saved": "Instellingen opgeslagen.",
+      "testOk": "Verbinding geslaagd.",
+      "testFailed": "Verbindingstest mislukt.",
+      "enabledHint": "De samenvatting verschijnt in de artikelbalk als deze functie is ingeschakeld en ingesteld.",
+      "error": "Samenvatting maken mislukt."
     }
   },
   "login": {

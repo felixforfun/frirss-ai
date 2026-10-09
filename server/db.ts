@@ -151,3 +151,34 @@ export function userCount(): number {
 }
 
 export default db;
+
+
+// ── AI article summaries ────────────────────────────────────────────
+// API keys reuse the application's AES-256-GCM encryption key. Only summaries
+// are cached; article content remains in FriRSS's existing content pipeline.
+db.exec(`
+  CREATE TABLE IF NOT EXISTS ai_summary_configs (
+    user_id INTEGER PRIMARY KEY,
+    enabled INTEGER NOT NULL DEFAULT 0,
+    endpoint TEXT NOT NULL DEFAULT 'https://openrouter.ai/api/v1',
+    model TEXT NOT NULL DEFAULT '',
+    prompt TEXT NOT NULL DEFAULT 'Summarize this article in 3–5 concise bullet points. Focus on facts, important numbers and implications. Do not add information not present in the article.',
+    api_key TEXT,
+    updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+  );
+
+  CREATE TABLE IF NOT EXISTS ai_summary_cache (
+    user_id INTEGER NOT NULL,
+    article_key TEXT NOT NULL,
+    content_hash TEXT NOT NULL,
+    config_hash TEXT NOT NULL,
+    model TEXT NOT NULL,
+    summary TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+    PRIMARY KEY (user_id, article_key, content_hash, config_hash),
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+  );
+  CREATE INDEX IF NOT EXISTS idx_ai_summary_cache_updated ON ai_summary_cache(updated_at);
+`);

@@ -164,7 +164,11 @@
     "videoOpen": "Ouvrir sur YouTube",
     "videoOffline": "Vidéo indisponible hors ligne",
     "share": "Partager",
-    "copyLink": "Copier le lien"
+    "copyLink": "Copier le lien",
+    "summary": "Résumé IA",
+    "summarize": "Résumer",
+    "summarizing": "Résumé en cours…",
+    "regenerate": "Régénérer"
   },
   "preferences": {
     "title": "Préférences",
@@ -397,7 +401,8 @@
       "feeds": "Flux",
       "offline": "Hors-ligne",
       "admin": "Administration",
-      "layout": "Mise en page"
+      "layout": "Mise en page",
+      "aiSummaries": "Résumés IA"
     },
     "appearance": {
       "theme": "Thème",
@@ -444,6 +449,26 @@
       "readLater": "À lire plus tard",
       "openSource": "Ouvrir à la source",
       "markRead": "Marquer comme lu"
+    },
+    "aiSummaries": {
+      "enable": "Activer les résumés IA",
+      "endpoint": "Point de terminaison compatible OpenAI",
+      "model": "Nom du modèle",
+      "apiKey": "Clé API",
+      "keyPlaceholder": "Coller la clé API (laisser vide pour conserver la clé actuelle)",
+      "prompt": "Instruction de résumé",
+      "save": "Enregistrer",
+      "saving": "Enregistrement…",
+      "test": "Tester la connexion",
+      "testing": "Test de connexion…",
+      "clear": "Effacer la clé enregistrée",
+      "stored": "Une clé API est enregistrée et chiffrée au repos.",
+      "noKey": "Aucune clé API configurée.",
+      "saved": "Paramètres enregistrés.",
+      "testOk": "Connexion réussie.",
+      "testFailed": "Échec du test de connexion.",
+      "enabledHint": "Le résumé apparaît dans la barre d'outils lorsque la fonction est activée et configurée.",
+      "error": "Impossible de générer le résumé."
     }
   },
   "login": {

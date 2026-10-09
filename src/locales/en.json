@@ -164,7 +164,11 @@
     "videoOpen": "Open on YouTube",
     "videoOffline": "Video unavailable offline",
     "share": "Share",
-    "copyLink": "Copy link"
+    "copyLink": "Copy link",
+    "summary": "AI Summary",
+    "summarize": "Summarize",
+    "summarizing": "Summarizing…",
+    "regenerate": "Regenerate"
   },
   "preferences": {
     "title": "Preferences",
@@ -397,7 +401,8 @@
       "feeds": "Feeds",
       "offline": "Offline",
       "admin": "Administration",
-      "layout": "Layout"
+      "layout": "Layout",
+      "aiSummaries": "AI Summaries"
     },
     "appearance": {
       "theme": "Theme",
@@ -444,6 +449,26 @@
       "readLater": "Read later",
       "openSource": "Open at source",
       "markRead": "Mark as read"
+    },
+    "aiSummaries": {
+      "enable": "Enable AI summaries",
+      "endpoint": "OpenAI-compatible endpoint",
+      "model": "Model name",
+      "apiKey": "API key",
+      "keyPlaceholder": "Paste API key (leave blank to keep current key)",
+      "prompt": "Summary prompt",
+      "save": "Save",
+      "saving": "Saving…",
+      "test": "Test connection",
+      "testing": "Testing…",
+      "clear": "Clear stored key",
+      "stored": "An API key is stored. It is encrypted at rest.",
+      "noKey": "No API key configured.",
+      "saved": "Settings saved.",
+      "testOk": "Connection successful.",
+      "testFailed": "Connection test failed.",
+      "enabledHint": "Summaries are available in the article toolbar when enabled and configured.",
+      "error": "Could not generate a summary."
     }
   },
   "login": {
