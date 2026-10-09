@@ -43,3 +43,17 @@ export function aiContentHash(input: { title: string; url: string; content: stri
 export function aiConfigHash(input: { model: string; prompt: string; temperature: number }): string {
   return digest(JSON.stringify(input));
 }
+
+
+// Headers for OpenAI-compatible gateways. Some local gateways (including
+// unauthenticated Tailscale-hosted Aperture instances) do not require a key;
+// omit Authorization altogether rather than sending "Bearer " or a placeholder.
+export function aiProviderHeaders(apiKey: string | null | undefined): Record<string, string> {
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    Accept: 'application/json',
+  };
+  const key = apiKey?.trim();
+  if (key) headers.Authorization = `Bearer ${key}`;
+  return headers;
+}
