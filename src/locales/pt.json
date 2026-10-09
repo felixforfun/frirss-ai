@@ -164,7 +164,11 @@
     "videoOpen": "Abrir no YouTube",
     "videoOffline": "Vídeo indisponível offline",
     "share": "Partilhar",
-    "copyLink": "Copiar ligação"
+    "copyLink": "Copiar ligação",
+    "summary": "Resumo de IA",
+    "summarize": "Resumir",
+    "summarizing": "A resumir…",
+    "regenerate": "Gerar novamente"
   },
   "preferences": {
     "title": "Preferências",
@@ -397,7 +401,8 @@
       "feeds": "Fontes",
       "offline": "Offline",
       "admin": "Administração",
-      "layout": "Disposição"
+      "layout": "Disposição",
+      "aiSummaries": "Resumos de IA"
     },
     "appearance": {
       "theme": "Tema",
@@ -444,6 +449,26 @@
       "readLater": "Ler mais tarde",
       "openSource": "Abrir na origem",
       "markRead": "Marcar como lido"
+    },
+    "aiSummaries": {
+      "enable": "Ativar resumos de IA",
+      "endpoint": "Endpoint compatível com OpenAI",
+      "model": "Nome do modelo",
+      "apiKey": "Chave API",
+      "keyPlaceholder": "Cole a chave API (deixe em branco para manter a atual)",
+      "prompt": "Instrução do resumo",
+      "save": "Guardar",
+      "saving": "A guardar…",
+      "test": "Testar ligação",
+      "testing": "A testar ligação…",
+      "clear": "Limpar chave guardada",
+      "stored": "Existe uma chave API guardada, cifrada em repouso.",
+      "noKey": "Nenhuma chave API configurada.",
+      "saved": "Definições guardadas.",
+      "testOk": "Ligação bem-sucedida.",
+      "testFailed": "O teste de ligação falhou.",
+      "enabledHint": "O resumo aparece na barra do artigo quando a funcionalidade está ativa e configurada.",
+      "error": "Não foi possível gerar o resumo."
     }
   },
   "login": {
