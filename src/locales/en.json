@@ -416,7 +416,8 @@
       "previewSource": "Sample feed",
       "previewTitle": "Sample article title",
       "previewSummary": "This summary line shows how size changes affect it.",
-      "previewBody": "Body text follows the reading size slider."
+      "previewBody": "Body text follows the reading size slider.",
+      "font": "Font"
     },
     "nav": {
       "back": "Back"
@@ -469,6 +470,22 @@
       "testFailed": "Connection test failed.",
       "enabledHint": "Summaries are available in the article toolbar when enabled and configured.",
       "error": "Could not generate a summary."
+    },
+    "fontFamilies": {
+      "sidebar": "Sidebar font family",
+      "articleList": "Article list font family",
+      "readingTitle": "Reading title font family",
+      "readingBody": "Reading body font family",
+      "reset": "Reset font families",
+      "options": {
+        "system": "System default",
+        "arial": "Arial",
+        "verdana": "Verdana",
+        "trebuchet": "Trebuchet MS",
+        "georgia": "Georgia",
+        "times": "Times New Roman",
+        "monospace": "Monospace"
+      }
     }
   },
   "login": {
