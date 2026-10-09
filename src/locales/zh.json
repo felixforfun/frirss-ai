@@ -168,7 +168,12 @@
     "summary": "AI 摘要",
     "summarize": "总结",
     "summarizing": "正在生成摘要…",
-    "regenerate": "重新生成"
+    "regenerate": "重新生成",
+    "findInArticle": "在文章中查找",
+    "findPlaceholder": "搜索本文…",
+    "findPrevious": "上一个匹配项",
+    "findNext": "下一个匹配项",
+    "closeFind": "关闭搜索"
   },
   "preferences": {
     "title": "偏好设置",
@@ -483,7 +488,12 @@
       "trebuchet": "Trebuchet MS",
       "georgia": "Georgia",
       "times": "Times New Roman",
-      "monospace": "等宽字体"
+      "monospace": "等宽字体",
+      "literata": "Literata",
+      "lora": "Lora",
+      "roboto": "Roboto",
+      "merriweather": "Merriweather",
+      "helvetica": "Helvetica"
     }
   },
   "login": {
