@@ -364,7 +364,8 @@
       "holdToFile": "Zapisz artykuł w kategorii (Ulubione / Do przeczytania)",
       "customize": "Dostosuj w preferencjach",
       "gestureHelp": "Pokaż to okno",
-      "helpTitle": "Skróty klawiszowe"
+      "helpTitle": "Skróty klawiszowe",
+      "backToList": "Wróć do listy artykułów"
     },
     "offline": {
       "title": "Offline",

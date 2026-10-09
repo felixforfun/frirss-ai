@@ -25,7 +25,6 @@ export default function ShortcutBar() {
   const { t } = useTranslation();
   const shortcuts = useUiStore((s) => s.shortcuts);
   const readingFocus = useUiStore((s) => s.readingFocus);
-  const panelLayout = useUiStore((s) => s.panelLayout);
   const selectedArticle = useFeedStore((s) => s.selectedArticle);
   const breakpoint = useBreakpoint();
 
@@ -35,13 +34,9 @@ export default function ShortcutBar() {
   const context = selectedArticle ? 'reading' : 'list';
   const actions = shortcutGroups[context] || shortcutGroups.list;
 
-  // Escape isn't a configurable shortcut; surface it contextually so users know
-  // it exits Focus mode / returns from an open card to the grid.
-  const escLabel = readingFocus
-    ? t('preferences.shortcuts.escExitFocus')
-    : panelLayout === 'grid' && selectedArticle
-      ? t('preferences.shortcuts.escBackToGrid')
-      : null;
+  // Escape still exits Focus mode; closing the reader itself is now shown
+  // as the configurable "Back to list view" action in the reading shortcut group.
+  const escLabel = readingFocus ? t('preferences.shortcuts.escExitFocus') : null;
 
   // Les deux entrées « toujours là » — la palette et l'aide-mémoire — sont
   // séparées du reste : elles ne sont pas réassignables et ne dépendent pas du

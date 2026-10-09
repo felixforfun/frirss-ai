@@ -17,11 +17,11 @@ beforeEach(() => {
 });
 afterEach(cleanup);
 
-describe('ShortcutBar — Escape hint', () => {
+describe('ShortcutBar — configurable back-to-list shortcut', () => {
   it('is hidden in the plain list view', () => {
     const { queryByText } = render(<ShortcutBar />);
     expect(queryByText('preferences.shortcuts.escExitFocus')).toBeNull();
-    expect(queryByText('preferences.shortcuts.escBackToGrid')).toBeNull();
+    expect(queryByText('preferences.shortcuts.backToList')).toBeNull();
   });
 
   it('offers "exit focus" while Reading Focus is active', () => {
@@ -30,16 +30,16 @@ describe('ShortcutBar — Escape hint', () => {
     expect(getByText('preferences.shortcuts.escExitFocus')).toBeTruthy();
   });
 
-  it('offers "back to grid" with an article open in grid layout', () => {
-    useUiStore.setState({ panelLayout: 'grid' });
+  it('shows the configurable back-to-list action with an article open in any layout', () => {
+    useUiStore.setState({ panelLayout: '3' });
     useFeedStore.setState({ selectedArticle: article });
     const { getByText } = render(<ShortcutBar />);
-    expect(getByText('preferences.shortcuts.escBackToGrid')).toBeTruthy();
+    expect(getByText('preferences.shortcuts.backToList')).toBeTruthy();
   });
 
-  it('stays hidden in grid layout while no article is open', () => {
+  it('hides the back-to-list action while no article is open', () => {
     useUiStore.setState({ panelLayout: 'grid' });
     const { queryByText } = render(<ShortcutBar />);
-    expect(queryByText('preferences.shortcuts.escBackToGrid')).toBeNull();
+    expect(queryByText('preferences.shortcuts.backToList')).toBeNull();
   });
 });
