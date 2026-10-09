@@ -36,7 +36,7 @@ function inline(markdown: string): ReactNode[] {
     } else if (token.startsWith('~~')) {
       node = <del>{inline(token.slice(2, -2))}</del>;
     } else if (token.startsWith('`')) {
-      node = <code className="rounded px-1 py-0.5 text-[0.92em]" style={{ background: 'var(--panel-border)' }}>{token.slice(1, -1)}</code>;
+      node = <code className="rounded px-1 py-0.5 text-[0.92em]" style={{ background: 'var(--panel-border)', fontSize: "0.9em" }}>{token.slice(1, -1)}</code>;
     } else if (token.startsWith('![')) {
       const image = token.match(/^!\[([^\]]*)\]\(([^)]+)\)$/);
       node = image ? image[1] : token;
@@ -148,10 +148,10 @@ function renderBlocks(markdown: string): ReactNode[] {
       const content = inline(block.text);
       const className = 'font-semibold leading-snug mt-4 mb-2 first:mt-0';
       switch (block.level) {
-        case 1: return <h2 key={key} className={`${className} text-lg`}>{content}</h2>;
-        case 2: return <h3 key={key} className={`${className} text-base`}>{content}</h3>;
-        case 3: return <h4 key={key} className={`${className} text-sm`}>{content}</h4>;
-        default: return <h5 key={key} className={`${className} text-sm`}>{content}</h5>;
+        case 1: return <h2 key={key} className={className} style={{ fontSize: "1.3em" }}>{content}</h2>;
+        case 2: return <h3 key={key} className={className} style={{ fontSize: "1.2em" }}>{content}</h3>;
+        case 3: return <h4 key={key} className={className} style={{ fontSize: "1.1em" }}>{content}</h4>;
+        default: return <h5 key={key} className={className} style={{ fontSize: "1.05em" }}>{content}</h5>;
       }
     }
     if (block.type === 'ul' || block.type === 'ol') {
@@ -171,7 +171,7 @@ function renderBlocks(markdown: string): ReactNode[] {
     }
     if (block.type === 'code') {
       return (
-        <pre key={key} className="my-3 overflow-x-auto rounded-lg p-3 text-xs" style={{ background: 'var(--panel-border)' }}>
+        <pre key={key} className="my-3 overflow-x-auto rounded-lg p-3" style={{ background: 'var(--panel-border)' }}>
           <code>{block.text}</code>
         </pre>
       );
@@ -186,5 +186,5 @@ function renderBlocks(markdown: string): ReactNode[] {
  * URL schemes such as javascript: are never made clickable.
  */
 export default function MarkdownSummary({ markdown }: { markdown: string }) {
-  return <div className="text-sm leading-relaxed">{renderBlocks(markdown)}</div>;
+  return <div className="ai-summary-markdown leading-relaxed" style={{ fontSize: "var(--fs-reading-body)" }}>{renderBlocks(markdown)}</div>;
 }

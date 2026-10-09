@@ -42,6 +42,11 @@ describe('MarkdownSummary', () => {
     expect(screen.getByText('safe').tagName).toBe('STRONG');
   });
 
+  it('uses the reading-body CSS size variable so the toolbar size control affects summaries', () => {
+    const { container } = render(<MarkdownSummary markdown="A summary paragraph." />);
+    expect((container.firstElementChild as HTMLElement).style.fontSize).toBe('var(--fs-reading-body)');
+  });
+
   it('renders model-style star bullets with bold labels', () => {
     const { container } = render(<MarkdownSummary markdown={'* **Dispute:** Point one\n* **Impact:** Point two'} />);
     expect(container.querySelectorAll('ul > li')).toHaveLength(2);

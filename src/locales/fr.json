@@ -416,7 +416,8 @@
       "previewSource": "Exemple de flux",
       "previewTitle": "Exemple de titre d'article",
       "previewSummary": "Cette ligne de résumé montre l'effet des changements de taille.",
-      "previewBody": "Le corps du texte suit le curseur de taille de lecture."
+      "previewBody": "Le corps du texte suit le curseur de taille de lecture.",
+      "font": "Police"
     },
     "nav": {
       "back": "Retour"
@@ -469,6 +470,20 @@
       "testFailed": "Échec du test de connexion.",
       "enabledHint": "Le résumé apparaît dans la barre d'outils lorsque la fonction est activée et configurée.",
       "error": "Impossible de générer le résumé."
+    },
+    "fontFamilies": {
+      "sidebar": "Police de la barre latérale",
+      "articleList": "Police de la liste d’articles",
+      "readingTitle": "Police du titre de lecture",
+      "readingBody": "Police du texte de lecture",
+      "reset": "Réinitialiser les polices",
+      "system": "Système",
+      "arial": "Arial",
+      "verdana": "Verdana",
+      "trebuchet": "Trebuchet MS",
+      "georgia": "Georgia",
+      "times": "Times New Roman",
+      "monospace": "Monospace"
     }
   },
   "login": {

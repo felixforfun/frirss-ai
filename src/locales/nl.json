@@ -416,7 +416,8 @@
       "previewSource": "Voorbeeldfeed",
       "previewTitle": "Voorbeeldtitel van artikel",
       "previewSummary": "Deze samenvattingsregel toont het effect van formaatwijzigingen.",
-      "previewBody": "De hoofdtekst volgt de schuifregelaar voor leesgrootte."
+      "previewBody": "De hoofdtekst volgt de schuifregelaar voor leesgrootte.",
+      "font": "Lettertype"
     },
     "nav": {
       "back": "Terug"
@@ -469,6 +470,20 @@
       "testFailed": "Verbindingstest mislukt.",
       "enabledHint": "De samenvatting verschijnt in de artikelbalk als deze functie is ingeschakeld en ingesteld.",
       "error": "Samenvatting maken mislukt."
+    },
+    "fontFamilies": {
+      "sidebar": "Lettertype van zijbalk",
+      "articleList": "Lettertype van artikelenlijst",
+      "readingTitle": "Lettertype van leestitel",
+      "readingBody": "Lettertype van leeste tekst",
+      "reset": "Lettertypen herstellen",
+      "system": "Systeemstandaard",
+      "arial": "Arial",
+      "verdana": "Verdana",
+      "trebuchet": "Trebuchet MS",
+      "georgia": "Georgia",
+      "times": "Times New Roman",
+      "monospace": "Monospace"
     }
   },
   "login": {

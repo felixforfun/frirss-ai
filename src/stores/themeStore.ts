@@ -10,6 +10,33 @@ export const CONTRAST_THEME_NAME = 'FriRSS High Contrast';
 export const DESK_THEME_NAME = 'FriRSS Desk';
 export const RISO_THEME_NAME = 'FriRSS Riso';
 
+export const FONT_FAMILY_OPTIONS = [
+  { value: 'system', labelKey: 'system' },
+  { value: 'arial', labelKey: 'arial' },
+  { value: 'verdana', labelKey: 'verdana' },
+  { value: 'trebuchet', labelKey: 'trebuchet' },
+  { value: 'georgia', labelKey: 'georgia' },
+  { value: 'times', labelKey: 'times' },
+  { value: 'monospace', labelKey: 'monospace' },
+] as const;
+
+const FONT_FAMILY_STACKS: Record<string, string> = {
+  system: 'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif',
+  arial: 'Arial, Helvetica, sans-serif',
+  verdana: 'Verdana, Geneva, sans-serif',
+  trebuchet: '"Trebuchet MS", Helvetica, sans-serif',
+  georgia: 'Georgia, "Times New Roman", serif',
+  times: '"Times New Roman", Times, serif',
+  monospace: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace',
+};
+
+const DEFAULT_FONT_FAMILIES: Record<string, string> = {
+  sidebar: 'system',
+  'article-list': 'system',
+  'reading-title': 'system',
+  'reading-body': 'system',
+};
+
 const defaultTheme: Theme = {
   name: DEFAULT_THEME_NAME,
   colors: {
@@ -59,6 +86,7 @@ const defaultTheme: Theme = {
     'reading-title': '24',
     'reading-body': '14',
   },
+  fontFamilies: { ...DEFAULT_FONT_FAMILIES },
 };
 
 // Colors whose shipped default changed: a value still equal to the old
@@ -114,7 +142,7 @@ function migrateColors(colors: Record<string, string>): Record<string, string> {
  * thème précédent, ce qui donne une interface à moitié sombre.
  */
 function preset(name: string, colors: Record<string, string>): Theme {
-  return { name, colors, fontSizes: { ...defaultTheme.fontSizes } };
+  return { name, colors, fontSizes: { ...defaultTheme.fontSizes }, fontFamilies: { ...DEFAULT_FONT_FAMILIES } };
 }
 
 const nightTheme = preset(NIGHT_THEME_NAME, {
@@ -427,10 +455,10 @@ export function ensureShippedThemes(list: Theme[] | null | undefined): Theme[] {
         // que l'utilisateur a réellement choisie n'est jamais touchée — les
         // migrations ne remplacent qu'un ancien défaut exact.
         .filter((t) => !RETIRED_THEME_NAMES.includes(t.name))
-        .map((t) => ({ ...t, colors: migrateColors(t.colors) }))
+        .map((t) => ({ ...t, colors: migrateColors(t.colors), fontSizes: { ...defaultTheme.fontSizes, ...t.fontSizes }, fontFamilies: { ...DEFAULT_FONT_FAMILIES, ...t.fontFamilies } }))
     : [];
   const shipped = SHIPPED_THEMES.map(
-    (s) => ({ ...s, colors: { ...s.colors }, fontSizes: { ...s.fontSizes } })
+    (s) => ({ ...s, colors: { ...s.colors }, fontSizes: { ...s.fontSizes }, fontFamilies: { ...DEFAULT_FONT_FAMILIES, ...s.fontFamilies } })
   );
   const rest = existing.filter((t) => !SHIPPED_THEMES.some((s) => s.name === t.name));
   return [...shipped, ...rest];
@@ -479,6 +507,7 @@ function loadTheme(): Theme {
         ...parsed,
         colors: migrateColors({ ...defaultTheme.colors, ...parsed.colors }),
         fontSizes: { ...defaultTheme.fontSizes, ...parsed.fontSizes },
+        fontFamilies: { ...DEFAULT_FONT_FAMILIES, ...parsed.fontFamilies },
       };
     }
   } catch { /* ignore */ }
@@ -577,6 +606,11 @@ function applyThemeToDOM(theme: Theme): void {
   // Apply font sizes as CSS custom properties
   Object.entries(theme.fontSizes).forEach(([key, value]) => {
     root.style.setProperty(`--fs-${key}`, `${value}px`);
+  });
+
+  // Persist only preset IDs; use vetted CSS stacks rather than arbitrary CSS.
+  Object.entries({ ...DEFAULT_FONT_FAMILIES, ...(theme.fontFamilies ?? {}) }).forEach(([key, value]) => {
+    root.style.setProperty(`--ff-${key}`, FONT_FAMILY_STACKS[value] ?? FONT_FAMILY_STACKS.system);
   });
 }
 
@@ -718,6 +752,13 @@ function themeToCss(theme: Theme, logo?: string | null): string {
     }
   }
 
+  lines.push('');
+  lines.push(`  /* ── Font families / Familles de polices ─────────────── */`);
+  for (const [key, value] of Object.entries({ ...DEFAULT_FONT_FAMILIES, ...(theme.fontFamilies ?? {}) })) {
+    const stack = FONT_FAMILY_STACKS[value] ?? FONT_FAMILY_STACKS.system;
+    lines.push(`  --ff-${key}: ${stack};`);
+  }
+
   lines.push(`}`);
   lines.push('');
   return lines.join('\n');
@@ -727,6 +768,7 @@ interface ImportedTheme {
   name: string;
   colors: Record<string, string>;
   fontSizes: Record<string, string>;
+  fontFamilies: Record<string, string>;
   logo?: string;
 }
 
@@ -737,7 +779,7 @@ interface ImportedTheme {
 function cssToTheme(cssString: string): ImportedTheme | null {
   if (!cssString || typeof cssString !== 'string') return null;
 
-  const theme: ImportedTheme = { name: 'Imported Theme', colors: {}, fontSizes: {} };
+  const theme: ImportedTheme = { name: 'Imported Theme', colors: {}, fontSizes: {}, fontFamilies: {} };
 
   // Extract theme name: --frirss-theme-name: "My Theme";
   const nameMatch = cssString.match(/--frirss-theme-name:\s*"([^"]+)"/);
@@ -769,6 +811,16 @@ function cssToTheme(cssString: string): ImportedTheme | null {
       continue;
     }
 
+    // Font families are accepted only when they match a supported preset stack.
+    if (key.startsWith('ff-')) {
+      const familyKey = key.slice(3);
+      if (familyKey in DEFAULT_FONT_FAMILIES) {
+        const stack = Object.entries(FONT_FAMILY_STACKS).find(([, cssStack]) => cssStack.toLowerCase() === value.toLowerCase());
+        if (stack) theme.fontFamilies[familyKey] = stack[0];
+      }
+      continue;
+    }
+
     // Colors: only accept keys that exist in defaultTheme.colors
     if (key in defaultTheme.colors) {
       theme.colors[key] = value;
@@ -776,7 +828,7 @@ function cssToTheme(cssString: string): ImportedTheme | null {
   }
 
   // Must have found at least some valid properties (or a logo)
-  if (Object.keys(theme.colors).length === 0 && Object.keys(theme.fontSizes).length === 0 && !theme.logo) {
+  if (Object.keys(theme.colors).length === 0 && Object.keys(theme.fontSizes).length === 0 && Object.keys(theme.fontFamilies).length === 0 && !theme.logo) {
     return null;
   }
 
@@ -801,6 +853,7 @@ export interface ThemeState {
   closePreferences: () => void;
   setColor: (key: string, value: string) => void;
   setFontSize: (key: string, value: string) => void;
+  setFontFamily: (key: string, value: string) => void;
   setThemeName: (name: string) => void;
   saveCurrentTheme: () => void;
   loadSavedTheme: (name: string) => void;
@@ -817,6 +870,7 @@ export interface ThemeState {
   resetColor: (key: string) => void;
   isColorModified: (key: string) => boolean;
   resetFontSizes: () => void;
+  resetFontFamilies: () => void;
   resetLabelColors: () => void;
   applyServerPrefs: (prefs: Record<string, unknown> | null | undefined) => void;
 
@@ -876,6 +930,20 @@ export const useThemeStore = create<ThemeState>()((set, get) => {
         const next: Theme = {
           ...state.theme,
           fontSizes: { ...state.theme.fontSizes, [key]: value },
+        };
+        localStorage.setItem('frirss_theme', JSON.stringify(next));
+        applyThemeToDOM(next);
+        return { theme: next };
+      });
+    },
+
+    setFontFamily: (key, value) => {
+      if (!Object.prototype.hasOwnProperty.call(FONT_FAMILY_STACKS, value)) return;
+      if (!Object.prototype.hasOwnProperty.call(DEFAULT_FONT_FAMILIES, key)) return;
+      set((state) => {
+        const next: Theme = {
+          ...state.theme,
+          fontFamilies: { ...DEFAULT_FONT_FAMILIES, ...(state.theme.fontFamilies ?? {}), [key]: value },
         };
         localStorage.setItem('frirss_theme', JSON.stringify(next));
         applyThemeToDOM(next);
@@ -950,6 +1018,7 @@ export const useThemeStore = create<ThemeState>()((set, get) => {
           ...imported,
           colors: { ...defaultTheme.colors, ...imported.colors },
           fontSizes: { ...defaultTheme.fontSizes, ...imported.fontSizes },
+          fontFamilies: { ...DEFAULT_FONT_FAMILIES, ...imported.fontFamilies },
         };
         // Logo travels with the theme but lives in uiStore — not part of the theme object
         delete merged.logo;
@@ -1090,6 +1159,19 @@ export const useThemeStore = create<ThemeState>()((set, get) => {
       });
     },
 
+    resetFontFamilies: () => {
+      const { baseTheme } = get();
+      set((state) => {
+        const next: Theme = {
+          ...state.theme,
+          fontFamilies: { ...DEFAULT_FONT_FAMILIES, ...(baseTheme.fontFamilies ?? {}) },
+        };
+        localStorage.setItem('frirss_theme', JSON.stringify(next));
+        applyThemeToDOM(next);
+        return { theme: next };
+      });
+    },
+
     // Reset all label colors
     resetLabelColors: () => {
       localStorage.removeItem('frirss_labelColors');
@@ -1121,6 +1203,7 @@ export const useThemeStore = create<ThemeState>()((set, get) => {
         ...target,
         colors: { ...target.colors },
         fontSizes: { ...theme.fontSizes },
+        fontFamilies: { ...DEFAULT_FONT_FAMILIES, ...(theme.fontFamilies ?? {}) },
       };
       localStorage.setItem('frirss_theme', JSON.stringify(next));
       applyThemeToDOM(next);
@@ -1141,6 +1224,7 @@ export const useThemeStore = create<ThemeState>()((set, get) => {
           ...pt,
           colors: migrateColors({ ...defaultTheme.colors, ...pt.colors }),
           fontSizes: { ...defaultTheme.fontSizes, ...pt.fontSizes },
+          fontFamilies: { ...DEFAULT_FONT_FAMILIES, ...pt.fontFamilies },
         };
         localStorage.setItem('frirss_theme', JSON.stringify(merged));
         applyThemeToDOM(merged);
