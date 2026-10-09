@@ -416,7 +416,8 @@
       "previewSource": "Beispiel-Feed",
       "previewTitle": "Beispiel-Artikeltitel",
       "previewSummary": "Diese Zusammenfassungszeile zeigt die Wirkung von Größenänderungen.",
-      "previewBody": "Der Fließtext folgt dem Schieberegler für die Lesegröße."
+      "previewBody": "Der Fließtext folgt dem Schieberegler für die Lesegröße.",
+      "font": "Schrift"
     },
     "nav": {
       "back": "Zurück"
@@ -469,6 +470,22 @@
       "testFailed": "Verbindungstest fehlgeschlagen.",
       "enabledHint": "Bei aktivierter Konfiguration erscheint die Funktion in der Artikelleiste.",
       "error": "Zusammenfassung konnte nicht erstellt werden."
+    },
+    "fontFamilies": {
+      "sidebar": "Schriftart der Seitenleiste",
+      "articleList": "Schriftart der Artikelliste",
+      "readingTitle": "Schriftart des Lesetitels",
+      "readingBody": "Schriftart des Lesetexts",
+      "reset": "Schriftfamilien zurücksetzen",
+      "options": {
+        "system": "Systemstandard",
+        "arial": "Arial",
+        "verdana": "Verdana",
+        "trebuchet": "Trebuchet MS",
+        "georgia": "Georgia",
+        "times": "Times New Roman",
+        "monospace": "Monospace"
+      }
     }
   },
   "login": {
