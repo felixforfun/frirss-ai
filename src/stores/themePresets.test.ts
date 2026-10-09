@@ -38,6 +38,13 @@ describe('shipped themes', () => {
     }
   });
 
+  it('gives every preset every font family target the default defines', () => {
+    const keys = Object.keys(base.fontFamilies ?? {}).sort();
+    for (const theme of SHIPPED_THEMES) {
+      expect(Object.keys(theme.fontFamilies ?? {}).sort(), theme.name).toEqual(keys);
+    }
+  });
+
   it('writes every colour as a hex value or an rgba() one', () => {
     for (const theme of SHIPPED_THEMES) {
       for (const [key, value] of Object.entries(theme.colors)) {
