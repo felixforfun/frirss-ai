@@ -1,7 +1,19 @@
 import { describe, expect, it } from 'vitest';
-import { aiConfigHash, aiContentHash, cleanArticleHtml, normalizeAiEndpoint } from '../aiSummaryUtils.js';
+import { aiConfigHash, aiContentHash, cleanArticleHtml, normalizeAiEndpoint, aiProviderHeaders } from '../aiSummaryUtils.js';
 
 describe('AI summary utilities', () => {
+  it('omits Authorization for keyless local gateways', () => {
+    const headers = aiProviderHeaders(null);
+    expect(headers.Authorization).toBeUndefined();
+    expect(headers['Content-Type']).toBe('application/json');
+    expect(headers.Accept).toBe('application/json');
+  });
+
+  it('sends a bearer token only when a non-empty API key is configured', () => {
+    expect(aiProviderHeaders('secret-token').Authorization).toBe('Bearer secret-token');
+    expect(aiProviderHeaders('   ').Authorization).toBeUndefined();
+  });
+
   it('normalizes a base endpoint and preserves an explicit completions endpoint', () => {
     expect(normalizeAiEndpoint(' https://openrouter.ai/api/v1/ ')).toBe('https://openrouter.ai/api/v1');
     expect(normalizeAiEndpoint('https://example.com/v1/chat/completions')).toBe('https://example.com/v1/chat/completions');
