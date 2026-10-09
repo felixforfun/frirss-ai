@@ -416,7 +416,8 @@
       "previewSource": "Feed di esempio",
       "previewTitle": "Titolo di esempio dell'articolo",
       "previewSummary": "Questa riga di riepilogo mostra l'effetto delle modifiche alle dimensioni.",
-      "previewBody": "Il corpo del testo segue il cursore della dimensione di lettura."
+      "previewBody": "Il corpo del testo segue il cursore della dimensione di lettura.",
+      "font": "Carattere"
     },
     "nav": {
       "back": "Indietro"
@@ -469,6 +470,20 @@
       "testFailed": "Verifica della connessione non riuscita.",
       "enabledHint": "Il riepilogo appare nella barra dell'articolo quando è abilitato e configurato.",
       "error": "Impossibile generare il riepilogo."
+    },
+    "fontFamilies": {
+      "sidebar": "Carattere della barra laterale",
+      "articleList": "Carattere dell’elenco articoli",
+      "readingTitle": "Carattere del titolo di lettura",
+      "readingBody": "Carattere del testo di lettura",
+      "reset": "Ripristina le famiglie di caratteri",
+      "system": "Predefinito di sistema",
+      "arial": "Arial",
+      "verdana": "Verdana",
+      "trebuchet": "Trebuchet MS",
+      "georgia": "Georgia",
+      "times": "Times New Roman",
+      "monospace": "Monospazio"
     }
   },
   "login": {

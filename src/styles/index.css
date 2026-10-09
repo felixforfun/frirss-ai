@@ -24,6 +24,22 @@ body {
   overscroll-behavior: none;
 }
 
+/* User-configurable typefaces, applied from the active theme. */
+.sidebar {
+  font-family: var(--ff-sidebar, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif);
+}
+.article-list {
+  font-family: var(--ff-article-list, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif);
+}
+.reading-pane [data-theme="reading-title"] {
+  font-family: var(--ff-reading-title, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif);
+}
+.reading-pane [data-theme="reading-text"],
+.reading-pane .article-content,
+.reading-pane .ai-summary-markdown {
+  font-family: var(--ff-reading-body, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif);
+}
+
 /* App shell height: dynamic viewport in the browser (so it tracks Safari's
    collapsing toolbar), but plain 100vh when installed as a PWA — in iOS
    standalone, dvh is computed a bit short and leaves a white band at the

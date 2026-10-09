@@ -81,6 +81,8 @@ export interface Theme {
   name: string;
   colors: Record<string, string>;
   fontSizes: Record<string, string>;
+  /** Font family preset IDs for each app area. Optional for older saved themes. */
+  fontFamilies?: Record<string, string>;
 }
 
 /** Couleur d'un label (Préférences > couleurs de labels). */
