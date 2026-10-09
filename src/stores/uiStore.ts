@@ -27,6 +27,7 @@ const defaultShortcuts: Shortcuts = {
   nextArticle: 'ArrowDown',
   prevArticle: 'ArrowUp',
   openArticle: 'ArrowRight',
+  backToList: 'Escape',
   markUnread: 'u',
   toggleStar: 'd',
   markRead: 'r',
@@ -617,7 +618,8 @@ export const useUiStore = create<UiState>()((set, get) => ({
   },
 
   // Keyboard shortcuts (configurable)
-  shortcuts: loadJson('frirss_shortcuts', defaultShortcuts),
+  // Merge defaults so newly added actions are available to existing saved configs.
+  shortcuts: { ...defaultShortcuts, ...loadJson<Shortcuts>('frirss_shortcuts', {}) },
   setShortcut: (action, key) => {
     set((state) => {
       const next = { ...state.shortcuts, [action]: key };
@@ -762,7 +764,7 @@ export const UI_SYNC_KEYS = [
 
 // Keys into preferences.shortcuts.* in the locale files
 export const shortcutActions = [
-  'nextArticle', 'prevArticle', 'openArticle',
+  'nextArticle', 'prevArticle', 'openArticle', 'backToList',
   'markRead', 'markUnread', 'toggleStar',
   'openOriginal', 'toggleSidebar', 'search', 'readLater',
 ];
@@ -770,5 +772,5 @@ export const shortcutActions = [
 // For the shortcut footer — only show contextual shortcuts
 export const shortcutGroups: Record<string, string[]> = {
   list: ['prevArticle', 'nextArticle', 'openArticle', 'markRead', 'markUnread', 'toggleStar', 'readLater', 'search'],
-  reading: ['prevArticle', 'nextArticle', 'markRead', 'markUnread', 'toggleStar', 'readLater', 'openOriginal'],
+  reading: ['prevArticle', 'nextArticle', 'backToList', 'markRead', 'markUnread', 'toggleStar', 'readLater', 'openOriginal'],
 };
