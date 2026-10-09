@@ -18,7 +18,7 @@ describe('AI summary utilities', () => {
   });
 
   it('keeps paragraph boundaries in normalized text', () => {
-    expect(cleanArticleHtml('<p>First paragraph</p><p>Second paragraph</p>')).toBe('First paragraph\nSecond paragraph');
+    expect(cleanArticleHtml('<p>First paragraph</p><p>Second paragraph</p>')).toBe('First paragraph\n\nSecond paragraph');
   });
 
   it('invalidates content if any content sent to the model changes', () => {
