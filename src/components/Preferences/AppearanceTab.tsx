@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, type ChangeEvent } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useThemeStore, SHIPPED_THEMES } from '../../stores/themeStore';
+import { useThemeStore, SHIPPED_THEMES, FONT_FAMILY_OPTIONS } from '../../stores/themeStore';
 import { useUiStore } from '../../stores/uiStore';
 import { useBreakpoint } from '../../hooks/useBreakpoint';
 import { TabResetButton } from './TabResetButton';
@@ -8,14 +8,14 @@ import ThemePreview from './ThemePreview';
 import ToggleSwitch from '../ToggleSwitch';
 import { hasRealHighlight, PREVIEW_ZONES } from './colorHighlight';
 
-type Sub = 'theme' | 'colors' | 'sizes' | 'identity';
+type Sub = 'theme' | 'colors' | 'font' | 'identity';
 
 export default function AppearanceTab({ onHighlight, active = true }: { onHighlight: (key: string | null) => void; active?: boolean }) {
   const { t } = useTranslation();
   // La galerie de thèmes ouvre la section : c'est le geste le plus courant, et
   // le seul qui change tout d'un coup. Les 36 couleurs viennent après.
   const [sub, setSub] = useState<Sub>('theme');
-  const SUBS: Sub[] = ['theme', 'colors', 'sizes', 'identity'];
+  const SUBS: Sub[] = ['theme', 'colors', 'font', 'identity'];
   // Survol (transitoire) et sélection (persistante au clic/tap) — un seul
   // aperçu au sommet des sous-sections Couleurs et Tailles sert les deux.
   const [focusedKey, setFocusedKey] = useState<string | null>(null);
@@ -72,7 +72,7 @@ export default function AppearanceTab({ onHighlight, active = true }: { onHighli
           setPinnedKey={setPinnedKey}
         />
       )}
-      {sub === 'sizes' && <SizesSection />}
+      {sub === 'font' && <FontSection />}
       {sub === 'identity' && <IdentitySection />}
     </div>
   );
@@ -623,12 +623,12 @@ function ColorRow({ label, value, onChange, colorKey, isModified, onReset, onFoc
   );
 }
 
-/* ── Sizes sub-section ───────────────────────────────────────────── */
+/* ── Font sub-section — families and sizes ───────────────────────── */
 
-// Font section definitions — titles and labels resolved via t() at render time
 const FONT_SECTIONS = [
   {
     titleKey: 'sidebar',
+    familyKeys: [{ key: 'sidebar', labelKey: 'sidebar' }],
     keys: [
       { key: 'sidebar-feed', min: 10, max: 16 },
       { key: 'sidebar-category', min: 9, max: 14 },
@@ -636,6 +636,7 @@ const FONT_SECTIONS = [
   },
   {
     titleKey: 'articleList',
+    familyKeys: [{ key: 'article-list', labelKey: 'articleList' }],
     keys: [
       { key: 'list-title', min: 11, max: 18 },
       { key: 'list-summary', min: 10, max: 16 },
@@ -644,6 +645,10 @@ const FONT_SECTIONS = [
   },
   {
     titleKey: 'reading',
+    familyKeys: [
+      { key: 'reading-title', labelKey: 'readingTitle' },
+      { key: 'reading-body', labelKey: 'readingBody' },
+    ],
     keys: [
       { key: 'reading-title', min: 18, max: 36 },
       { key: 'reading-body', min: 12, max: 20 },
@@ -651,36 +656,69 @@ const FONT_SECTIONS = [
   },
 ];
 
-function SizesSection() {
+function FontSection() {
   const { t } = useTranslation();
-  const { theme, setFontSize, resetFontSizes } = useThemeStore();
+  const { theme, setFontSize, resetFontSizes, setFontFamily, resetFontFamilies } = useThemeStore();
 
   return (
     <div className="space-y-5">
       <ThemePreview focusedKey={null} />
       {FONT_SECTIONS.map((section) => (
         <div key={section.titleKey}>
-          <h3
-            className="text-[11px] font-bold uppercase tracking-widest mb-2"
-            style={{ color: 'var(--list-summary)' }}
-          >
+          <h3 className="text-[11px] font-bold uppercase tracking-widest mb-3" style={{ color: 'var(--list-summary)' }}>
             {t(`preferences.fontSections.${section.titleKey}`)}
           </h3>
-          <div className="space-y-2">
-            {section.keys.map(({ key, min, max }) => (
-              <FontRow
+          <div className="space-y-3">
+            {section.familyKeys.map(({ key, labelKey }) => (
+              <FontFamilyRow
                 key={key}
-                label={t(`preferences.fontKeys.${key}`)}
-                value={theme.fontSizes[key]}
-                min={min}
-                max={max}
-                onChange={(v) => setFontSize(key, v)}
+                label={t(`preferences.fontFamilies.${labelKey}`)}
+                value={theme.fontFamilies?.[key] ?? 'system'}
+                onChange={(value) => setFontFamily(key, value)}
               />
             ))}
+            <div className="space-y-2">
+              {section.keys.map(({ key, min, max }) => (
+                <FontRow
+                  key={key}
+                  label={t(`preferences.fontKeys.${key}`)}
+                  value={theme.fontSizes[key]}
+                  min={min}
+                  max={max}
+                  onChange={(value) => setFontSize(key, value)}
+                />
+              ))}
+            </div>
           </div>
         </div>
       ))}
-      <TabResetButton label={t('preferences.fonts.resetFonts')} onReset={resetFontSizes} />
+      <div className="flex flex-wrap gap-2">
+        <TabResetButton label={t('preferences.fonts.resetFonts')} onReset={resetFontSizes} />
+        <TabResetButton label={t('preferences.fontFamilies.reset')} onReset={resetFontFamilies} />
+      </div>
+    </div>
+  );
+}
+
+function FontFamilyRow({ label, value, onChange }: { label: string; value: string; onChange: (value: string) => void }) {
+  const { t } = useTranslation();
+  return (
+    <div className="flex items-center gap-3">
+      <label className="text-xs flex-1 min-w-0" style={{ color: 'var(--reading-text)' }}>
+        {label}
+      </label>
+      <select
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        className="min-w-0 w-40 rounded-lg px-2.5 py-2 text-xs outline-none"
+        style={{ color: 'var(--list-title)', background: 'var(--panel-header-bg)', border: '1px solid var(--panel-border)' }}
+      >
+        {FONT_FAMILY_OPTIONS.map((option) => (
+          <option key={option.value} value={option.value}>
+            {t(`preferences.fontFamilies.options.${option.labelKey}`)}
+          </option>
+        ))}
+      </select>
     </div>
   );
 }
@@ -699,10 +737,7 @@ function FontRow({ label, value, min, max, onChange }: { label: string; value: s
         onChange={(e) => onChange(e.target.value)}
         className="w-24 accent-[var(--accent)]"
       />
-      <span
-        className="text-[11px] font-mono w-8 text-right"
-        style={{ color: 'var(--list-summary)' }}
-      >
+      <span className="text-[11px] font-mono w-8 text-right" style={{ color: 'var(--list-summary)' }}>
         {value}px
       </span>
     </div>
