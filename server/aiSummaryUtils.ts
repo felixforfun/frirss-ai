@@ -52,6 +52,7 @@ export function aiProviderHeaders(apiKey: string | null | undefined): Record<str
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
     Accept: 'application/json',
+    'User-Agent': 'FriRSS',
   };
   const key = apiKey?.trim();
   if (key) headers.Authorization = `Bearer ${key}`;
