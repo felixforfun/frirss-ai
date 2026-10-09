@@ -1,8 +1,10 @@
 import type { ReactNode } from 'react';
 
 type Block =
-  | { type: 'paragraph' | 'heading'; text: string; level?: number }
-  | { type: 'ul' | 'ol'; items: string[] }
+  | { type: 'paragraph'; text: string }
+  | { type: 'heading'; text: string; level: number }
+  | { type: 'ul'; items: string[] }
+  | { type: 'ol'; items: string[] }
   | { type: 'hr' }
   | { type: 'quote'; text: string }
   | { type: 'code'; text: string; language?: string };
