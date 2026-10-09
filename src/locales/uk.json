@@ -172,7 +172,12 @@
     "summary": "AI-зведення",
     "summarize": "Підсумувати",
     "summarizing": "Створення зведення…",
-    "regenerate": "Створити знову"
+    "regenerate": "Створити знову",
+    "findInArticle": "Пошук у статті",
+    "findPlaceholder": "Знайти в цій статті…",
+    "findPrevious": "Попередній збіг",
+    "findNext": "Наступний збіг",
+    "closeFind": "Закрити пошук"
   },
   "preferences": {
     "title": "Налаштування",
@@ -495,7 +500,12 @@
       "trebuchet": "Trebuchet MS",
       "georgia": "Georgia",
       "times": "Times New Roman",
-      "monospace": "Моноширинний"
+      "monospace": "Моноширинний",
+      "literata": "Literata",
+      "lora": "Lora",
+      "roboto": "Roboto",
+      "merriweather": "Merriweather",
+      "helvetica": "Helvetica"
     }
   },
   "login": {

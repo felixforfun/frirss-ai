@@ -266,13 +266,19 @@ export async function clearAiSummaryApiKey(): Promise<AiSummaryConfig> {
 export async function testAiSummaryConnection(config: { endpoint?: string; model?: string; apiKey?: string }): Promise<void> {
   await backend.post('/ai-summary/test', config);
 }
-export async function summarizeArticle(payload: {
+export interface AiSummaryArticlePayload {
   articleKey: string;
   title: string;
   url: string;
   content: string;
-  regenerate?: boolean;
-}): Promise<{ summary: string; cached: boolean }> {
+}
+
+export async function getCachedAiSummary(payload: AiSummaryArticlePayload): Promise<{ summary: string | null; cached: boolean }> {
+  const { data } = await backend.post<{ summary: string | null; cached: boolean }>('/ai-summary/cached', payload);
+  return data;
+}
+
+export async function summarizeArticle(payload: AiSummaryArticlePayload & { regenerate?: boolean }): Promise<{ summary: string; cached: boolean }> {
   const { data } = await backend.post<{ summary: string; cached: boolean }>('/ai-summary/summarize', payload);
   return data;
 }

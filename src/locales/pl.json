@@ -172,7 +172,12 @@
     "summary": "Podsumowanie AI",
     "summarize": "Podsumuj",
     "summarizing": "Podsumowywanie…",
-    "regenerate": "Utwórz ponownie"
+    "regenerate": "Utwórz ponownie",
+    "findInArticle": "Szukaj w artykule",
+    "findPlaceholder": "Szukaj w tym artykule…",
+    "findPrevious": "Poprzednie dopasowanie",
+    "findNext": "Następne dopasowanie",
+    "closeFind": "Zamknij wyszukiwanie"
   },
   "preferences": {
     "title": "Preferencje",
@@ -495,7 +500,12 @@
       "trebuchet": "Trebuchet MS",
       "georgia": "Georgia",
       "times": "Times New Roman",
-      "monospace": "Monospace"
+      "monospace": "Monospace",
+      "literata": "Literata",
+      "lora": "Lora",
+      "roboto": "Roboto",
+      "merriweather": "Merriweather",
+      "helvetica": "Helvetica"
     }
   },
   "login": {

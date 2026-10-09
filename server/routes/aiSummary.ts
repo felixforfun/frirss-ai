@@ -149,6 +149,31 @@ router.post('/test', async (req, res) => {
   } catch (err) { const e = providerError(err); res.status(e.status).json({ error: e.message }); }
 });
 
+// Read-only cache lookup used when reopening an article. It must never call
+// the provider or generate a new summary as a side effect.
+router.post('/cached', (req, res) => {
+  const config = readConfig(req.user.id);
+  if (!config.enabled || !config.model.trim()) return res.json({ summary: null, cached: false });
+
+  const body = req.body as Record<string, unknown>;
+  if (!validString(body.articleKey, 512) || !body.articleKey.trim()
+    || !validString(body.title, 2000) || !validString(body.url, 4096)
+    || !validString(body.content, MAX_ARTICLE_HTML_CHARS) || !body.content.trim()) {
+    return res.status(400).json({ error: 'Invalid or empty article' });
+  }
+
+  const content = cleanArticleHtml(body.content).slice(0, MAX_ARTICLE_TEXT_CHARS);
+  if (!content) return res.json({ summary: null, cached: false });
+
+  const contentHash = aiContentHash({ title: body.title, url: body.url, content });
+  const configHash = aiConfigHash({ model: config.model, prompt: config.prompt, temperature: TEMPERATURE });
+  const cached = db.prepare(
+    'SELECT summary FROM ai_summary_cache WHERE user_id=? AND article_key=? AND content_hash=? AND config_hash=?'
+  ).get(req.user.id, body.articleKey, contentHash, configHash) as { summary: string } | undefined;
+
+  res.json({ summary: cached?.summary ?? null, cached: Boolean(cached) });
+});
+
 router.post('/summarize', async (req, res) => {
   const config = readConfig(req.user.id);
   if (!config.enabled) return res.status(409).json({ error: 'AI summaries are disabled' });

@@ -168,7 +168,12 @@
     "summary": "Riepilogo AI",
     "summarize": "Riassumi",
     "summarizing": "Riepilogo in corso…",
-    "regenerate": "Rigenera"
+    "regenerate": "Rigenera",
+    "findInArticle": "Cerca nell’articolo",
+    "findPlaceholder": "Cerca in questo articolo…",
+    "findPrevious": "Risultato precedente",
+    "findNext": "Risultato successivo",
+    "closeFind": "Chiudi ricerca"
   },
   "preferences": {
     "title": "Preferenze",
@@ -483,7 +488,12 @@
       "trebuchet": "Trebuchet MS",
       "georgia": "Georgia",
       "times": "Times New Roman",
-      "monospace": "Monospazio"
+      "monospace": "Monospazio",
+      "literata": "Literata",
+      "lora": "Lora",
+      "roboto": "Roboto",
+      "merriweather": "Merriweather",
+      "helvetica": "Helvetica"
     }
   },
   "login": {

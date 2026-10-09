@@ -20,11 +20,35 @@ import { planHeroWarm, runHeroWarm } from '../../lib/heroWarm';
 import { rememberImageSize } from '../../lib/imageAspect';
 import { formatArticleDate } from '../../utils/dates';
 import { IMAGE_CACHE_NAME } from '../../lib/storageEstimate';
-import { getAiSummaryConfig, summarizeArticle, type AiSummaryConfig } from '../../api/backend';
+import { getAiSummaryConfig, getCachedAiSummary, summarizeArticle, type AiSummaryConfig } from '../../api/backend';
+import { findTextRanges } from '../../lib/articleFind';
 import MarkdownSummary from './MarkdownSummary';
 import SavedCategoryPicker from '../ArticleList/SavedCategoryPicker';
 import BottomSheet from '../BottomSheet';
 // extractFullContent is loaded on demand (code-split) — see handleExtract.
+
+const ARTICLE_FIND_HIGHLIGHT = 'frirss-article-find';
+const ARTICLE_FIND_ACTIVE_HIGHLIGHT = 'frirss-article-find-active';
+
+type ArticleFindHighlightApi = {
+  CSS?: { highlights?: { set: (name: string, value: unknown) => void; delete: (name: string) => boolean } };
+  Highlight?: new (...ranges: Range[]) => unknown;
+};
+
+function clearArticleFindHighlights(): void {
+  const api = window as unknown as ArticleFindHighlightApi;
+  api.CSS?.highlights?.delete(ARTICLE_FIND_HIGHLIGHT);
+  api.CSS?.highlights?.delete(ARTICLE_FIND_ACTIVE_HIGHLIGHT);
+}
+
+function applyArticleFindHighlights(ranges: Range[], activeIndex: number): void {
+  clearArticleFindHighlights();
+  const api = window as unknown as ArticleFindHighlightApi;
+  if (!api.CSS?.highlights || !api.Highlight || !ranges.length) return;
+  api.CSS.highlights.set(ARTICLE_FIND_HIGHLIGHT, new api.Highlight(...ranges));
+  const active = ranges[activeIndex];
+  if (active) api.CSS.highlights.set(ARTICLE_FIND_ACTIVE_HIGHLIGHT, new api.Highlight(active));
+}
 
 // Body placeholder shown while an auto-extract feed loads the full text.
 // La prop d'injection est un objet de MODULE, pas un littéral dans le JSX :
@@ -152,6 +176,11 @@ export default function ReadingPane({ showBack }: ReadingPaneProps) {
   const [aiSummary, setAiSummary] = useState<{ articleId: string; summary: string; cached: boolean } | null>(null);
   const [aiSummarizing, setAiSummarizing] = useState(false);
   const [aiSummaryError, setAiSummaryError] = useState<string | null>(null);
+  const [articleFindOpen, setArticleFindOpen] = useState(false);
+  const [articleFindQuery, setArticleFindQuery] = useState('');
+  const [articleFindMatches, setArticleFindMatches] = useState<Range[]>([]);
+  const [articleFindIndex, setArticleFindIndex] = useState(0);
+  const articleFindInputRef = useRef<HTMLInputElement>(null);
   const lastExtractedId = useRef<string | null>(null);
 
   // Reading progress
@@ -197,7 +226,111 @@ export default function ReadingPane({ showBack }: ReadingPaneProps) {
     setAiSummary(null);
     setAiSummaryError(null);
     setAiSummarizing(false);
+    setArticleFindOpen(false);
+    setArticleFindQuery('');
+    setArticleFindMatches([]);
+    setArticleFindIndex(0);
+    clearArticleFindHighlights();
   }, [selectedArticle?.id]);
+
+  // Restore an existing summary on article reopen without triggering inference.
+  // A read-only endpoint checks the same content/config hashes as generation;
+  // if the cached full-text version isn't ready yet, this effect reruns when
+  // extracted content becomes available.
+  useEffect(() => {
+    let cancelled = false;
+    const article = selectedArticle;
+    if (!article || !aiConfig?.enabled || !aiConfig.model.trim()) return;
+
+    const content = extractedContent?.content || article.content || article.summary || '';
+    if (!content.trim()) return;
+
+    getCachedAiSummary({
+      articleKey: `${article.sourceId}::${article.id}`,
+      title: article.title || '',
+      url: article.url || '',
+      content,
+    }).then((result) => {
+      if (cancelled || !result.summary) return;
+      if (useFeedStore.getState().selectedArticle?.id === article.id) {
+        setAiSummary({ articleId: article.id, summary: result.summary, cached: true });
+      }
+    }).catch(() => {
+      // A cache lookup is best-effort and must not interrupt article reading.
+    });
+
+    return () => { cancelled = true; };
+  }, [
+    selectedArticle?.id,
+    selectedArticle?.sourceId,
+    selectedArticle?.title,
+    selectedArticle?.url,
+    selectedArticle?.content,
+    selectedArticle?.summary,
+    aiConfig?.enabled,
+    aiConfig?.model,
+    aiConfig?.prompt,
+    extractedContent?.content,
+  ]);
+
+  useEffect(() => {
+    const openFind = () => setArticleFindOpen(true);
+    window.addEventListener('frirss:open-article-search', openFind);
+    return () => window.removeEventListener('frirss:open-article-search', openFind);
+  }, []);
+
+  useEffect(() => {
+    if (articleFindOpen) {
+      articleFindInputRef.current?.focus();
+      articleFindInputRef.current?.select();
+    } else {
+      clearArticleFindHighlights();
+      setArticleFindMatches([]);
+      setArticleFindIndex(0);
+    }
+  }, [articleFindOpen]);
+
+  useEffect(() => {
+    const root = articleRef.current;
+    const query = articleFindQuery.trim();
+    if (!articleFindOpen || !root || !query) {
+      setArticleFindMatches([]);
+      setArticleFindIndex(0);
+      clearArticleFindHighlights();
+      return;
+    }
+
+    const matches = findTextRanges(root, query);
+    setArticleFindMatches(matches);
+    setArticleFindIndex(0);
+    applyArticleFindHighlights(matches, 0);
+    return () => clearArticleFindHighlights();
+  }, [articleFindOpen, articleFindQuery, selectedArticle?.id]);
+
+  useEffect(() => {
+    const range = articleFindMatches[articleFindIndex];
+    const container = scrollContainerRef.current;
+    if (!range || !container) return;
+    applyArticleFindHighlights(articleFindMatches, articleFindIndex);
+    const rangeRect = range.getBoundingClientRect();
+    const containerRect = container.getBoundingClientRect();
+    if (rangeRect.top < containerRect.top + 16 || rangeRect.bottom > containerRect.bottom - 16) {
+      container.scrollTo({
+        top: container.scrollTop + rangeRect.top - containerRect.top - 64,
+        behavior: 'smooth',
+      });
+    }
+  }, [articleFindMatches, articleFindIndex]);
+
+  const closeArticleFind = useCallback(() => {
+    setArticleFindOpen(false);
+    setArticleFindQuery('');
+  }, []);
+
+  const moveArticleFind = useCallback((direction: number) => {
+    if (!articleFindMatches.length) return;
+    setArticleFindIndex((index) => (index + direction + articleFindMatches.length) % articleFindMatches.length);
+  }, [articleFindMatches.length]);
 
   const handleSummarize = useCallback(async (regenerate = false) => {
     if (!selectedArticle || !aiConfig?.enabled || !aiConfig.model.trim() || aiSummarizing) return;
@@ -1132,6 +1265,63 @@ export default function ReadingPane({ showBack }: ReadingPaneProps) {
           />
         )}
       </div>
+      )}
+
+      {articleFindOpen && selectedArticle && (
+        <div
+          className="article-find-bar flex-shrink-0 flex items-center gap-2 px-3 py-2"
+          style={{ background: 'var(--panel-header-bg)', borderBottom: '1px solid var(--panel-border)' }}
+        >
+          <input
+            ref={articleFindInputRef}
+            type="search"
+            value={articleFindQuery}
+            onChange={(event) => setArticleFindQuery(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === 'Escape') {
+                event.preventDefault();
+                event.stopPropagation();
+                closeArticleFind();
+              } else if (event.key === 'Enter') {
+                event.preventDefault();
+                moveArticleFind(event.shiftKey ? -1 : 1);
+              }
+            }}
+            placeholder={t('readingPane.findPlaceholder')}
+            aria-label={t('readingPane.findInArticle')}
+            className="min-w-0 flex-1 rounded-md px-3 py-1.5 text-sm outline-none"
+            style={{ color: 'var(--list-title)', background: 'var(--panel-bg)', border: '1px solid var(--panel-border)' }}
+          />
+          <span className="shrink-0 text-xs tabular-nums" style={{ color: 'var(--list-summary)' }} aria-live="polite">
+            {articleFindQuery.trim() ? `${articleFindMatches.length ? articleFindIndex + 1 : 0} / ${articleFindMatches.length}` : ''}
+          </span>
+          <button
+            type="button"
+            onClick={() => moveArticleFind(-1)}
+            disabled={!articleFindMatches.length}
+            className="toolbar-icon-btn rounded px-1.5 py-1 disabled:opacity-40"
+            style={{ color: 'var(--reading-text)' }}
+            aria-label={t('readingPane.findPrevious')}
+            title={t('readingPane.findPrevious')}
+          >↑</button>
+          <button
+            type="button"
+            onClick={() => moveArticleFind(1)}
+            disabled={!articleFindMatches.length}
+            className="toolbar-icon-btn rounded px-1.5 py-1 disabled:opacity-40"
+            style={{ color: 'var(--reading-text)' }}
+            aria-label={t('readingPane.findNext')}
+            title={t('readingPane.findNext')}
+          >↓</button>
+          <button
+            type="button"
+            onClick={closeArticleFind}
+            className="toolbar-icon-btn rounded px-1.5 py-1"
+            style={{ color: 'var(--reading-text)' }}
+            aria-label={t('readingPane.closeFind')}
+            title={t('readingPane.closeFind')}
+          >×</button>
+        </div>
       )}
 
       {/* Article content wrapper — relative for ghost positioning.
