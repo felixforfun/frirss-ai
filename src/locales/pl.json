@@ -426,7 +426,8 @@
       "previewSource": "Przykładowy kanał",
       "previewTitle": "Przykładowy tytuł artykułu",
       "previewSummary": "Ten wiersz podsumowania pokazuje wpływ zmian rozmiaru.",
-      "previewBody": "Treść tekstu podąża za suwakiem rozmiaru czytania."
+      "previewBody": "Treść tekstu podąża za suwakiem rozmiaru czytania.",
+      "font": "Czcionka"
     },
     "nav": {
       "back": "Wstecz"
@@ -481,6 +482,22 @@
       "testFailed": "Test połączenia nie powiódł się.",
       "enabledHint": "Podsumowanie pojawi się na pasku artykułu po włączeniu i konfiguracji funkcji.",
       "error": "Nie udało się utworzyć podsumowania."
+    },
+    "fontFamilies": {
+      "sidebar": "Czcionka paska bocznego",
+      "articleList": "Czcionka listy artykułów",
+      "readingTitle": "Czcionka tytułu artykułu",
+      "readingBody": "Czcionka treści artykułu",
+      "reset": "Przywróć rodziny czcionek",
+      "options": {
+        "system": "Domyślna systemowa",
+        "arial": "Arial",
+        "verdana": "Verdana",
+        "trebuchet": "Trebuchet MS",
+        "georgia": "Georgia",
+        "times": "Times New Roman",
+        "monospace": "Monospace"
+      }
     }
   },
   "login": {
