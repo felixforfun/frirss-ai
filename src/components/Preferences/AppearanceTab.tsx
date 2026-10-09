@@ -715,7 +715,7 @@ function FontFamilyRow({ label, value, onChange }: { label: string; value: strin
       >
         {FONT_FAMILY_OPTIONS.map((option) => (
           <option key={option.value} value={option.value}>
-            {t(`preferences.fontFamilies.options.${option.labelKey}`)}
+            {t(`preferences.fontFamilies.${option.labelKey}`)}
           </option>
         ))}
       </select>
