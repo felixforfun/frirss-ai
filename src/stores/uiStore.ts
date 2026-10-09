@@ -37,6 +37,17 @@ const defaultShortcuts: Shortcuts = {
   readLater: 'l',
 };
 
+/** Add newly introduced actions to previously saved shortcut configurations. */
+export function mergeShortcutDefaults(saved: unknown): Shortcuts {
+  const input = saved && typeof saved === 'object' && !Array.isArray(saved)
+    ? saved as Record<string, unknown>
+    : {};
+  const valid = Object.fromEntries(
+    Object.entries(input).filter((entry): entry is [string, string] => typeof entry[1] === 'string')
+  );
+  return { ...defaultShortcuts, ...valid };
+}
+
 export interface FeedSetting {
   autoExtract?: boolean;
   /**
@@ -619,7 +630,7 @@ export const useUiStore = create<UiState>()((set, get) => ({
 
   // Keyboard shortcuts (configurable)
   // Merge defaults so newly added actions are available to existing saved configs.
-  shortcuts: { ...defaultShortcuts, ...loadJson<Shortcuts>('frirss_shortcuts', {}) },
+  shortcuts: mergeShortcutDefaults(loadJson<Shortcuts>('frirss_shortcuts', {})),
   setShortcut: (action, key) => {
     set((state) => {
       const next = { ...state.shortcuts, [action]: key };
