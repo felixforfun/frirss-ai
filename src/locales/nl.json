@@ -168,7 +168,12 @@
     "summary": "AI-samenvatting",
     "summarize": "Samenvatten",
     "summarizing": "Samenvatten…",
-    "regenerate": "Opnieuw genereren"
+    "regenerate": "Opnieuw genereren",
+    "findInArticle": "Zoeken in artikel",
+    "findPlaceholder": "Zoek in dit artikel…",
+    "findPrevious": "Vorige overeenkomst",
+    "findNext": "Volgende overeenkomst",
+    "closeFind": "Zoeken sluiten"
   },
   "preferences": {
     "title": "Voorkeuren",
@@ -483,7 +488,12 @@
       "trebuchet": "Trebuchet MS",
       "georgia": "Georgia",
       "times": "Times New Roman",
-      "monospace": "Monospace"
+      "monospace": "Monospace",
+      "literata": "Literata",
+      "lora": "Lora",
+      "roboto": "Roboto",
+      "merriweather": "Merriweather",
+      "helvetica": "Helvetica"
     }
   },
   "login": {
