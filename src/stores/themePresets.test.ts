@@ -2,6 +2,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   SHIPPED_THEMES,
+  FONT_FAMILY_OPTIONS,
   DEFAULT_THEME_NAME,
   NIGHT_THEME_NAME,
   ensureShippedThemes,
@@ -13,6 +14,15 @@ import type { Theme } from '../types';
 const base = SHIPPED_THEMES[0];
 
 describe('shipped themes', () => {
+  it('offers the requested additional font family choices', () => {
+    const values = FONT_FAMILY_OPTIONS.map((option) => option.value);
+    expect(values).toContain('literata');
+    expect(values).toContain('lora');
+    expect(values).toContain('roboto');
+    expect(values).toContain('merriweather');
+    expect(values).toContain('helvetica');
+  });
+
   it('ships the default first, then presets', () => {
     // Pas de compte figé : la galerie est faite pour s'étoffer. Ce qui compte
     // est que le thème par défaut ouvre la liste et que les noms soient uniques.
