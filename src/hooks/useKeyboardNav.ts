@@ -97,9 +97,13 @@ export function useKeyboardNav(): void {
         }
       } else if (key === shortcuts.search) {
         e.preventDefault();
-        // Ask the list to open its search. Focusing the input directly could
-        // never work: it is only rendered once the search is already open.
-        window.dispatchEvent(new CustomEvent('frirss:open-search'));
+        if (store.selectedArticle) {
+          // When reading, search inside the open article rather than the feed list.
+          window.dispatchEvent(new CustomEvent('frirss:open-article-search'));
+        } else {
+          // With no open article, keep the existing feed-wide FriRSS search.
+          window.dispatchEvent(new CustomEvent('frirss:open-search'));
+        }
       }
     }
 

@@ -36,8 +36,19 @@ body {
 }
 .reading-pane [data-theme="reading-text"],
 .reading-pane .article-content,
+.reading-pane .article-content *,
 .reading-pane .ai-summary-markdown {
-  font-family: var(--ff-reading-body, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif);
+  font-family: var(--ff-reading-body, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif) !important;
+}
+
+/* Scoped reader-find highlights; the active hit is visually distinct. */
+::highlight(frirss-article-find) {
+  color: inherit;
+  background-color: rgba(76, 212, 161, 0.42);
+}
+::highlight(frirss-article-find-active) {
+  color: #171714;
+  background-color: #f7c948;
 }
 
 /* App shell height: dynamic viewport in the browser (so it tracks Safari's
