@@ -164,7 +164,11 @@
     "videoOpen": "Auf YouTube öffnen",
     "videoOffline": "Video offline nicht verfügbar",
     "share": "Teilen",
-    "copyLink": "Link kopieren"
+    "copyLink": "Link kopieren",
+    "summary": "KI-Zusammenfassung",
+    "summarize": "Zusammenfassen",
+    "summarizing": "Zusammenfassung wird erstellt…",
+    "regenerate": "Neu generieren"
   },
   "preferences": {
     "title": "Einstellungen",
@@ -397,7 +401,8 @@
       "feeds": "Feeds",
       "offline": "Offline",
       "admin": "Verwaltung",
-      "layout": "Layout"
+      "layout": "Layout",
+      "aiSummaries": "KI-Zusammenfassungen"
     },
     "appearance": {
       "theme": "Design",
@@ -444,6 +449,26 @@
       "readLater": "Später lesen",
       "openSource": "An der Quelle öffnen",
       "markRead": "Als gelesen markieren"
+    },
+    "aiSummaries": {
+      "enable": "KI-Zusammenfassungen aktivieren",
+      "endpoint": "OpenAI-kompatibler Endpunkt",
+      "model": "Modellname",
+      "apiKey": "API-Key",
+      "keyPlaceholder": "API-Key eingeben (leer lassen, um den gespeicherten Key beizubehalten)",
+      "prompt": "Prompt für Zusammenfassung",
+      "save": "Speichern",
+      "saving": "Speichert…",
+      "test": "Verbindung testen",
+      "testing": "Verbindung wird getestet…",
+      "clear": "Gespeicherten Key löschen",
+      "stored": "Ein API-Key ist gespeichert und wird verschlüsselt abgelegt.",
+      "noKey": "Kein API-Key konfiguriert.",
+      "saved": "Einstellungen gespeichert.",
+      "testOk": "Verbindung erfolgreich.",
+      "testFailed": "Verbindungstest fehlgeschlagen.",
+      "enabledHint": "Bei aktivierter Konfiguration erscheint die Funktion in der Artikelleiste.",
+      "error": "Zusammenfassung konnte nicht erstellt werden."
     }
   },
   "login": {
