@@ -20,6 +20,7 @@ import { planHeroWarm, runHeroWarm } from '../../lib/heroWarm';
 import { rememberImageSize } from '../../lib/imageAspect';
 import { formatArticleDate } from '../../utils/dates';
 import { IMAGE_CACHE_NAME } from '../../lib/storageEstimate';
+import { getAiSummaryConfig, summarizeArticle, type AiSummaryConfig } from '../../api/backend';
 import SavedCategoryPicker from '../ArticleList/SavedCategoryPicker';
 import BottomSheet from '../BottomSheet';
 // extractFullContent is loaded on demand (code-split) — see handleExtract.
@@ -146,6 +147,10 @@ export default function ReadingPane({ showBack }: ReadingPaneProps) {
   const [extractedContent, setExtractedContent] = useState<ExtractedContent | null>(null);
   const [extracting, setExtracting] = useState(false);
   const [extractError, setExtractError] = useState<string | null>(null);
+  const [aiConfig, setAiConfig] = useState<AiSummaryConfig | null>(null);
+  const [aiSummary, setAiSummary] = useState<{ articleId: string; summary: string; cached: boolean } | null>(null);
+  const [aiSummarizing, setAiSummarizing] = useState(false);
+  const [aiSummaryError, setAiSummaryError] = useState<string | null>(null);
   const lastExtractedId = useRef<string | null>(null);
 
   // Reading progress
@@ -171,6 +176,51 @@ export default function ReadingPane({ showBack }: ReadingPaneProps) {
     setExtractError(null);
     setExtracting(false);
   }, [selectedArticle?.id]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const refreshConfig = () => {
+      getAiSummaryConfig().then((config) => { if (!cancelled) setAiConfig(config); }).catch(() => {
+        if (!cancelled) setAiConfig(null);
+      });
+    };
+    refreshConfig();
+    window.addEventListener('ai-summary-config-changed', refreshConfig);
+    return () => {
+      cancelled = true;
+      window.removeEventListener('ai-summary-config-changed', refreshConfig);
+    };
+  }, []);
+
+  useEffect(() => {
+    setAiSummary(null);
+    setAiSummaryError(null);
+    setAiSummarizing(false);
+  }, [selectedArticle?.id]);
+
+  const handleSummarize = useCallback(async (regenerate = false) => {
+    if (!selectedArticle || !aiConfig?.enabled || !aiConfig.hasApiKey || !aiConfig.model.trim() || aiSummarizing) return;
+    const article = selectedArticle;
+    setAiSummarizing(true);
+    setAiSummaryError(null);
+    try {
+      const content = extractedContent?.content || article.content || article.summary || '';
+      const result = await summarizeArticle({
+        articleKey: `${article.sourceId}::${article.id}`,
+        title: article.title || '',
+        url: article.url || '',
+        content,
+        regenerate,
+      });
+      if (useFeedStore.getState().selectedArticle?.id === article.id) {
+        setAiSummary({ articleId: article.id, summary: result.summary, cached: result.cached });
+      }
+    } catch {
+      if (useFeedStore.getState().selectedArticle?.id === article.id) setAiSummaryError(t('preferences.aiSummaries.error'));
+    } finally {
+      if (useFeedStore.getState().selectedArticle?.id === article.id) setAiSummarizing(false);
+    }
+  }, [selectedArticle, aiConfig, aiSummarizing, extractedContent?.content, t]);
 
   // Article change — fade animation on tap, no animation on swipe
   const prevArticleIdRef = useRef<string | null>(null);
@@ -1003,6 +1053,20 @@ export default function ReadingPane({ showBack }: ReadingPaneProps) {
           </button>
         )}
 
+        {aiConfig?.enabled && aiConfig.hasApiKey && aiConfig.model.trim() && (
+          <button
+            onClick={() => { void handleSummarize(false); }}
+            disabled={aiSummarizing}
+            className="action-btn flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] font-semibold transition-all duration-200 disabled:opacity-50"
+            style={{ color: 'var(--reading-meta)', border: '1.5px solid transparent' }}
+            title={t('readingPane.summarize')}
+            aria-label={t('readingPane.summarize')}
+          >
+            <span aria-hidden="true">✨</span>
+            <span className="toolbar-label">{aiSummarizing ? t('readingPane.summarizing') : t('readingPane.summarize')}</span>
+          </button>
+        )}
+
         {/* Spacer */}
         <div className="toolbar-spacer flex-1 min-w-0" />
 
@@ -1262,6 +1326,22 @@ export default function ReadingPane({ showBack }: ReadingPaneProps) {
             </div>
           )}
 
+          {aiSummary?.articleId === selectedArticle?.id && (
+            <section className="mb-5 rounded-xl px-4 py-4" aria-label={t('readingPane.summary')}
+              style={{ background: 'var(--panel-header-bg)', border: '1px solid var(--panel-border)', color: 'var(--reading-text)' }}>
+              <div className="flex items-center justify-between gap-3 mb-2">
+                <h3 className="text-sm font-bold">{t('readingPane.summary')}</h3>
+                <button type="button" onClick={() => { void handleSummarize(true); }} disabled={aiSummarizing}
+                  className="text-xs font-semibold disabled:opacity-50" style={{ color: 'var(--accent)' }}>
+                  {t('readingPane.regenerate')}
+                </button>
+              </div>
+              <div className="text-sm whitespace-pre-wrap leading-relaxed">{aiSummary.summary}</div>
+            </section>
+          )}
+          {aiSummarizing && !aiSummary && <p className="mb-4 text-sm" role="status" style={{ color: 'var(--list-summary)' }}>{t('readingPane.summarizing')}</p>}
+          {aiSummaryError && <p className="mb-4 text-xs" role="alert" style={{ color: 'var(--danger)' }}>{aiSummaryError}</p>}
+
           {/* Corps — le contenu disponible tout de suite ; squelette seulement
               s'il n'y a rien à montrer (voir `lib/readingBody.ts`) */}
           {/* Video first for a YouTube-feed article — the video IS the article */}
@@ -1380,6 +1460,17 @@ export default function ReadingPane({ showBack }: ReadingPaneProps) {
                 </svg>
                 <span className="font-medium">{t('readingPane.openOriginal')}</span>
               </a>
+            )}
+            {aiConfig?.enabled && aiConfig.hasApiKey && (
+              <button
+                onClick={() => { setReadSettingsOpen(false); void handleSummarize(false); }}
+                disabled={aiSummarizing}
+                className="sheet-row w-full flex items-center gap-3 px-4 py-3 text-left disabled:opacity-50"
+                style={{ color: 'var(--reading-text)', borderTop: '1px solid var(--panel-border)' }}
+              >
+                <span className="w-5 text-center flex-shrink-0" aria-hidden="true">✨</span>
+                <span className="font-medium">{aiSummarizing ? t('readingPane.summarizing') : t('readingPane.summarize')}</span>
+              </button>
             )}
             {article.url && (
               <button

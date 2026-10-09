@@ -234,3 +234,45 @@ export async function applyRestore(backup: unknown, passphrase: string, setup: b
 }
 
 export default backend;
+
+
+// ── AI article summaries ────────────────────────────────────────────
+export interface AiSummaryConfig {
+  enabled: boolean;
+  endpoint: string;
+  model: string;
+  prompt: string;
+  hasApiKey: boolean;
+}
+export interface AiSummaryConfigInput {
+  enabled: boolean;
+  endpoint: string;
+  model: string;
+  prompt: string;
+  apiKey?: string;
+}
+export async function getAiSummaryConfig(): Promise<AiSummaryConfig> {
+  const { data } = await backend.get<AiSummaryConfig>('/ai-summary/config');
+  return data;
+}
+export async function saveAiSummaryConfig(config: AiSummaryConfigInput): Promise<AiSummaryConfig> {
+  const { data } = await backend.put<AiSummaryConfig>('/ai-summary/config', config);
+  return data;
+}
+export async function clearAiSummaryApiKey(): Promise<AiSummaryConfig> {
+  const { data } = await backend.delete<AiSummaryConfig>('/ai-summary/key');
+  return data;
+}
+export async function testAiSummaryConnection(config: { endpoint?: string; model?: string; apiKey?: string }): Promise<void> {
+  await backend.post('/ai-summary/test', config);
+}
+export async function summarizeArticle(payload: {
+  articleKey: string;
+  title: string;
+  url: string;
+  content: string;
+  regenerate?: boolean;
+}): Promise<{ summary: string; cached: boolean }> {
+  const { data } = await backend.post<{ summary: string; cached: boolean }>('/ai-summary/summarize', payload);
+  return data;
+}

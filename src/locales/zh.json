@@ -164,7 +164,11 @@
     "videoOpen": "在 YouTube 中打开",
     "videoOffline": "离线时视频不可用",
     "share": "分享",
-    "copyLink": "复制链接"
+    "copyLink": "复制链接",
+    "summary": "AI 摘要",
+    "summarize": "总结",
+    "summarizing": "正在生成摘要…",
+    "regenerate": "重新生成"
   },
   "preferences": {
     "title": "偏好设置",
@@ -397,7 +401,8 @@
       "feeds": "订阅源",
       "offline": "离线",
       "admin": "管理",
-      "layout": "操作图标"
+      "layout": "操作图标",
+      "aiSummaries": "AI 摘要"
     },
     "appearance": {
       "theme": "主题",
@@ -444,6 +449,26 @@
       "readLater": "稍后阅读",
       "openSource": "打开原文",
       "markRead": "标为已读"
+    },
+    "aiSummaries": {
+      "enable": "启用 AI 摘要",
+      "endpoint": "兼容 OpenAI 的接口地址",
+      "model": "模型名称",
+      "apiKey": "API 密钥",
+      "keyPlaceholder": "粘贴 API 密钥（留空以保留当前密钥）",
+      "prompt": "摘要提示词",
+      "save": "保存",
+      "saving": "正在保存…",
+      "test": "测试连接",
+      "testing": "正在测试连接…",
+      "clear": "清除已保存的密钥",
+      "stored": "已保存 API 密钥，并已加密存储。",
+      "noKey": "尚未配置 API 密钥。",
+      "saved": "设置已保存。",
+      "testOk": "连接成功。",
+      "testFailed": "连接测试失败。",
+      "enabledHint": "启用并配置后，文章工具栏中会显示摘要操作。",
+      "error": "无法生成摘要。"
     }
   },
   "login": {

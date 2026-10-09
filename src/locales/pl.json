@@ -168,7 +168,11 @@
     "videoOpen": "Otwórz w YouTube",
     "videoOffline": "Wideo niedostępne offline",
     "share": "Udostępnij",
-    "copyLink": "Kopiuj link"
+    "copyLink": "Kopiuj link",
+    "summary": "Podsumowanie AI",
+    "summarize": "Podsumuj",
+    "summarizing": "Podsumowywanie…",
+    "regenerate": "Utwórz ponownie"
   },
   "preferences": {
     "title": "Preferencje",
@@ -407,7 +411,8 @@
       "feeds": "Kanały",
       "offline": "Offline",
       "admin": "Administracja",
-      "layout": "Układ"
+      "layout": "Układ",
+      "aiSummaries": "Podsumowania AI"
     },
     "appearance": {
       "theme": "Motyw",
@@ -456,6 +461,26 @@
       "readLater": "Do przeczytania później",
       "openSource": "Otwórz u źródła",
       "markRead": "Oznacz jako przeczytane"
+    },
+    "aiSummaries": {
+      "enable": "Włącz podsumowania AI",
+      "endpoint": "Punkt końcowy zgodny z OpenAI",
+      "model": "Nazwa modelu",
+      "apiKey": "Klucz API",
+      "keyPlaceholder": "Wklej klucz API (pozostaw puste, aby zachować obecny klucz)",
+      "prompt": "Polecenie podsumowania",
+      "save": "Zapisz",
+      "saving": "Zapisywanie…",
+      "test": "Testuj połączenie",
+      "testing": "Testowanie połączenia…",
+      "clear": "Usuń zapisany klucz",
+      "stored": "Klucz API jest zapisany w postaci zaszyfrowanej.",
+      "noKey": "Nie skonfigurowano klucza API.",
+      "saved": "Ustawienia zapisane.",
+      "testOk": "Połączenie działa.",
+      "testFailed": "Test połączenia nie powiódł się.",
+      "enabledHint": "Podsumowanie pojawi się na pasku artykułu po włączeniu i konfiguracji funkcji.",
+      "error": "Nie udało się utworzyć podsumowania."
     }
   },
   "login": {
