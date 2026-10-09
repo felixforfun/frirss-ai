@@ -168,7 +168,12 @@
     "summary": "KI-Zusammenfassung",
     "summarize": "Zusammenfassen",
     "summarizing": "Zusammenfassung wird erstellt…",
-    "regenerate": "Neu generieren"
+    "regenerate": "Neu generieren",
+    "findInArticle": "Im Artikel suchen",
+    "findPlaceholder": "Diesen Artikel durchsuchen…",
+    "findPrevious": "Vorheriger Treffer",
+    "findNext": "Nächster Treffer",
+    "closeFind": "Suche schließen"
   },
   "preferences": {
     "title": "Einstellungen",
@@ -483,7 +488,12 @@
       "trebuchet": "Trebuchet MS",
       "georgia": "Georgia",
       "times": "Times New Roman",
-      "monospace": "Monospace"
+      "monospace": "Monospace",
+      "literata": "Literata",
+      "lora": "Lora",
+      "roboto": "Roboto",
+      "merriweather": "Merriweather",
+      "helvetica": "Helvetica"
     }
   },
   "login": {
