@@ -21,6 +21,7 @@ import { rememberImageSize } from '../../lib/imageAspect';
 import { formatArticleDate } from '../../utils/dates';
 import { IMAGE_CACHE_NAME } from '../../lib/storageEstimate';
 import { getAiSummaryConfig, summarizeArticle, type AiSummaryConfig } from '../../api/backend';
+import MarkdownSummary from './MarkdownSummary';
 import SavedCategoryPicker from '../ArticleList/SavedCategoryPicker';
 import BottomSheet from '../BottomSheet';
 // extractFullContent is loaded on demand (code-split) — see handleExtract.
@@ -1336,7 +1337,7 @@ export default function ReadingPane({ showBack }: ReadingPaneProps) {
                   {t('readingPane.regenerate')}
                 </button>
               </div>
-              <div className="text-sm whitespace-pre-wrap leading-relaxed">{aiSummary.summary}</div>
+              <MarkdownSummary markdown={aiSummary.summary} />
             </section>
           )}
           {aiSummarizing && !aiSummary && <p className="mb-4 text-sm" role="status" style={{ color: 'var(--list-summary)' }}>{t('readingPane.summarizing')}</p>}
