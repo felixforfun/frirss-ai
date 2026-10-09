@@ -164,7 +164,11 @@
     "videoOpen": "Abrir en YouTube",
     "videoOffline": "Vídeo no disponible sin conexión",
     "share": "Compartir",
-    "copyLink": "Copiar enlace"
+    "copyLink": "Copiar enlace",
+    "summary": "Resumen de IA",
+    "summarize": "Resumir",
+    "summarizing": "Resumiendo…",
+    "regenerate": "Regenerar"
   },
   "preferences": {
     "title": "Preferencias",
@@ -397,7 +401,8 @@
       "feeds": "Fuentes",
       "offline": "Sin conexión",
       "admin": "Administración",
-      "layout": "Diseño"
+      "layout": "Diseño",
+      "aiSummaries": "Resúmenes de IA"
     },
     "appearance": {
       "theme": "Tema",
@@ -444,6 +449,26 @@
       "readLater": "Leer más tarde",
       "openSource": "Abrir en el origen",
       "markRead": "Marcar como leído"
+    },
+    "aiSummaries": {
+      "enable": "Activar resúmenes de IA",
+      "endpoint": "Punto de conexión compatible con OpenAI",
+      "model": "Nombre del modelo",
+      "apiKey": "Clave API",
+      "keyPlaceholder": "Pega la clave API (déjalo vacío para conservar la actual)",
+      "prompt": "Instrucción del resumen",
+      "save": "Guardar",
+      "saving": "Guardando…",
+      "test": "Probar conexión",
+      "testing": "Probando conexión…",
+      "clear": "Borrar clave guardada",
+      "stored": "Hay una clave API guardada. Está cifrada en reposo.",
+      "noKey": "No hay una clave API configurada.",
+      "saved": "Configuración guardada.",
+      "testOk": "Conexión correcta.",
+      "testFailed": "La prueba de conexión ha fallado.",
+      "enabledHint": "El resumen aparece en la barra del artículo cuando está activado y configurado.",
+      "error": "No se pudo generar el resumen."
     }
   },
   "login": {
