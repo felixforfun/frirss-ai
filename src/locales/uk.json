@@ -489,15 +489,13 @@
       "readingTitle": "Шрифт заголовка статті",
       "readingBody": "Шрифт тексту статті",
       "reset": "Скинути сімейства шрифтів",
-      "options": {
-        "system": "Системний за замовчуванням",
-        "arial": "Arial",
-        "verdana": "Verdana",
-        "trebuchet": "Trebuchet MS",
-        "georgia": "Georgia",
-        "times": "Times New Roman",
-        "monospace": "Моноширинний"
-      }
+      "system": "Системний за замовчуванням",
+      "arial": "Arial",
+      "verdana": "Verdana",
+      "trebuchet": "Trebuchet MS",
+      "georgia": "Georgia",
+      "times": "Times New Roman",
+      "monospace": "Моноширинний"
     }
   },
   "login": {
