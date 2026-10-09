@@ -477,15 +477,13 @@
       "readingTitle": "Schriftart des Lesetitels",
       "readingBody": "Schriftart des Lesetexts",
       "reset": "Schriftfamilien zurücksetzen",
-      "options": {
-        "system": "Systemstandard",
-        "arial": "Arial",
-        "verdana": "Verdana",
-        "trebuchet": "Trebuchet MS",
-        "georgia": "Georgia",
-        "times": "Times New Roman",
-        "monospace": "Monospace"
-      }
+      "system": "Systemstandard",
+      "arial": "Arial",
+      "verdana": "Verdana",
+      "trebuchet": "Trebuchet MS",
+      "georgia": "Georgia",
+      "times": "Times New Roman",
+      "monospace": "Monospace"
     }
   },
   "login": {
