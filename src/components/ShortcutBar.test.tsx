@@ -40,6 +40,6 @@ describe('ShortcutBar — configurable back-to-list shortcut', () => {
   it('hides the back-to-list action while no article is open', () => {
     useUiStore.setState({ panelLayout: 'grid' });
     const { queryByText } = render(<ShortcutBar />);
-    expect(queryByText('preferences.shortcuts.escBackToGrid')).toBeNull();
+    expect(queryByText('preferences.shortcuts.backToList')).toBeNull();
   });
 });
