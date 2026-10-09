@@ -17,6 +17,10 @@ describe('AI summary utilities', () => {
       .toBe('Hello world');
   });
 
+  it('keeps paragraph boundaries in normalized text', () => {
+    expect(cleanArticleHtml('<p>First paragraph</p><p>Second paragraph</p>')).toBe('First paragraph\nSecond paragraph');
+  });
+
   it('invalidates content if any content sent to the model changes', () => {
     const initial = aiContentHash({ title: 'A', url: 'https://example.com/a', content: 'Body' });
     expect(aiContentHash({ title: 'B', url: 'https://example.com/a', content: 'Body' })).not.toBe(initial);
