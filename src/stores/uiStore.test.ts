@@ -1,9 +1,20 @@
 // @vitest-environment jsdom
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { useUiStore, UI_SYNC_KEYS } from './uiStore';
+import { useUiStore, UI_SYNC_KEYS, mergeShortcutDefaults } from './uiStore';
 import { isUnreadOnly } from './uiStore';
 
 describe('uiStore', () => {
+  it('defaults the configurable back-to-list action to Escape', () => {
+    expect(mergeShortcutDefaults({}).backToList).toBe('Escape');
+  });
+
+  it('adds new shortcut defaults to older saved configurations without losing custom keys', () => {
+    const migrated = mergeShortcutDefaults({ search: 'g', markRead: 'x' });
+    expect(migrated.backToList).toBe('Escape');
+    expect(migrated.search).toBe('g');
+    expect(migrated.markRead).toBe('x');
+  });
+
   beforeEach(() => localStorage.clear());
 
   // Décision du propriétaire (2026-09-25) : sans réglage explicite, « Tout lu »
