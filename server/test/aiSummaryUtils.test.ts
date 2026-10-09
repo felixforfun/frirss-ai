@@ -2,6 +2,11 @@ import { describe, expect, it } from 'vitest';
 import { aiConfigHash, aiContentHash, cleanArticleHtml, normalizeAiEndpoint, aiProviderHeaders } from '../aiSummaryUtils.js';
 
 describe('AI summary utilities', () => {
+  it('identifies FriRSS to the AI provider', () => {
+    expect(aiProviderHeaders(null)['User-Agent']).toBe('FriRSS');
+    expect(aiProviderHeaders('secret-token')['User-Agent']).toBe('FriRSS');
+  });
+
   it('omits Authorization for keyless local gateways', () => {
     const headers = aiProviderHeaders(null);
     expect(headers.Authorization).toBeUndefined();
