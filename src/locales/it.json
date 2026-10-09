@@ -477,15 +477,13 @@
       "readingTitle": "Carattere del titolo di lettura",
       "readingBody": "Carattere del testo di lettura",
       "reset": "Ripristina le famiglie di caratteri",
-      "options": {
-        "system": "Predefinito di sistema",
-        "arial": "Arial",
-        "verdana": "Verdana",
-        "trebuchet": "Trebuchet MS",
-        "georgia": "Georgia",
-        "times": "Times New Roman",
-        "monospace": "Monospazio"
-      }
+      "system": "Predefinito di sistema",
+      "arial": "Arial",
+      "verdana": "Verdana",
+      "trebuchet": "Trebuchet MS",
+      "georgia": "Georgia",
+      "times": "Times New Roman",
+      "monospace": "Monospazio"
     }
   },
   "login": {
