@@ -283,7 +283,6 @@ export default function GeneralTab() {
           </h3>
           {[
             { keyLabel: formatKey('Escape'), label: t('preferences.shortcuts.escExitFocus') },
-            { keyLabel: formatKey('Escape'), label: t('preferences.shortcuts.escBackToGrid') },
             { keyLabel: t('preferences.shortcuts.keyDoubleClick'), label: t('preferences.shortcuts.doubleClickFocus') },
             { keyLabel: t('preferences.shortcuts.keyHold'), label: t('preferences.shortcuts.holdToFile') },
           ].map(({ keyLabel, label }) => (
