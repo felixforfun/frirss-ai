@@ -89,7 +89,7 @@ struct FriRSSWidgetView: View {
                 Spacer()
             } else {
                 ForEach(Array(entry.articles.prefix(family == .systemSmall ? 2 : family == .systemMedium ? 4 : 7))) { article in
-                    Link(destination: article.articleURL) {
+                    Link(destination: URL(string: "frirss://article?url=\\(article.articleURL.absoluteString.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? article.articleURL.absoluteString)")!) {
                         VStack(alignment: .leading, spacing: 2) {
                             Text(article.title)
                                 .font(.subheadline.weight(.medium))
