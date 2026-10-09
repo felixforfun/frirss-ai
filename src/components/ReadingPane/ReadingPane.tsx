@@ -199,7 +199,7 @@ export default function ReadingPane({ showBack }: ReadingPaneProps) {
   }, [selectedArticle?.id]);
 
   const handleSummarize = useCallback(async (regenerate = false) => {
-    if (!selectedArticle || !aiConfig?.enabled || !aiConfig.hasApiKey || !aiConfig.model.trim() || aiSummarizing) return;
+    if (!selectedArticle || !aiConfig?.enabled || !aiConfig.model.trim() || aiSummarizing) return;
     const article = selectedArticle;
     setAiSummarizing(true);
     setAiSummaryError(null);
@@ -1053,7 +1053,7 @@ export default function ReadingPane({ showBack }: ReadingPaneProps) {
           </button>
         )}
 
-        {aiConfig?.enabled && aiConfig.hasApiKey && aiConfig.model.trim() && (
+        {aiConfig?.enabled && aiConfig.model.trim() && (
           <button
             onClick={() => { void handleSummarize(false); }}
             disabled={aiSummarizing}
