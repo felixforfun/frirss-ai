@@ -1203,6 +1203,7 @@ export const useThemeStore = create<ThemeState>()((set, get) => {
         ...target,
         colors: { ...target.colors },
         fontSizes: { ...theme.fontSizes },
+        fontFamilies: { ...DEFAULT_FONT_FAMILIES, ...(theme.fontFamilies ?? {}) },
       };
       localStorage.setItem('frirss_theme', JSON.stringify(next));
       applyThemeToDOM(next);
