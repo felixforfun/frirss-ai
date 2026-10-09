@@ -477,15 +477,13 @@
       "readingTitle": "Lettertype van leestitel",
       "readingBody": "Lettertype van leeste tekst",
       "reset": "Lettertypen herstellen",
-      "options": {
-        "system": "Systeemstandaard",
-        "arial": "Arial",
-        "verdana": "Verdana",
-        "trebuchet": "Trebuchet MS",
-        "georgia": "Georgia",
-        "times": "Times New Roman",
-        "monospace": "Monospace"
-      }
+      "system": "Systeemstandaard",
+      "arial": "Arial",
+      "verdana": "Verdana",
+      "trebuchet": "Trebuchet MS",
+      "georgia": "Georgia",
+      "times": "Times New Roman",
+      "monospace": "Monospace"
     }
   },
   "login": {
