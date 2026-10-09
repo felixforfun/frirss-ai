@@ -1,7 +1,6 @@
 import { useEffect } from 'react';
 import { useFeedStore } from '../stores/feedStore';
 import { useUiStore } from '../stores/uiStore';
-import { effectiveLayout } from '../lib/effectiveLayout';
 import { openExternal } from '../lib/openExternal';
 
 export function useKeyboardNav(): void {
@@ -32,18 +31,16 @@ export function useKeyboardNav(): void {
         return;
       }
 
-      // In grid layout, Escape closes the reader overlay and returns to the grid.
-      const ui = useUiStore.getState();
-      const layout = effectiveLayout(ui.panelLayout, ui.feedSettings, useFeedStore.getState().selectedFeed?.id);
-      if (e.key === 'Escape'
-          && layout === 'grid'
-          && useFeedStore.getState().selectedArticle) {
+      const key = e.key;
+      const store = useFeedStore.getState();
+
+      // This action defaults to Escape but can be reassigned in Preferences.
+      // It closes the selected article in any layout, restoring the list view.
+      if (key === shortcuts.backToList && store.selectedArticle) {
         e.preventDefault();
-        useFeedStore.getState().selectArticle(null);
+        store.selectArticle(null);
         return;
       }
-
-      const key = e.key;
 
       // Aide-mémoire des raccourcis. Placé avant les raccourcis configurables :
       // `?` n'est pas réassignable, et le laisser en dernier permettrait de le
@@ -53,8 +50,6 @@ export function useKeyboardNav(): void {
         useUiStore.getState().setShortcutHelpOpen(!useUiStore.getState().shortcutHelpOpen);
         return;
       }
-
-      const store = useFeedStore.getState();
 
       if (key === shortcuts.nextArticle) {
         e.preventDefault();
