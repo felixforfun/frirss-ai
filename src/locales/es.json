@@ -416,7 +416,8 @@
       "previewSource": "Feed de ejemplo",
       "previewTitle": "Título de artículo de ejemplo",
       "previewSummary": "Esta línea de resumen muestra el efecto de los cambios de tamaño.",
-      "previewBody": "El cuerpo del texto sigue el control deslizante de tamaño de lectura."
+      "previewBody": "El cuerpo del texto sigue el control deslizante de tamaño de lectura.",
+      "font": "Fuente"
     },
     "nav": {
       "back": "Volver"
@@ -469,6 +470,22 @@
       "testFailed": "La prueba de conexión ha fallado.",
       "enabledHint": "El resumen aparece en la barra del artículo cuando está activado y configurado.",
       "error": "No se pudo generar el resumen."
+    },
+    "fontFamilies": {
+      "sidebar": "Fuente de la barra lateral",
+      "articleList": "Fuente de la lista de artículos",
+      "readingTitle": "Fuente del título de lectura",
+      "readingBody": "Fuente del texto de lectura",
+      "reset": "Restablecer familias tipográficas",
+      "options": {
+        "system": "Predeterminada del sistema",
+        "arial": "Arial",
+        "verdana": "Verdana",
+        "trebuchet": "Trebuchet MS",
+        "georgia": "Georgia",
+        "times": "Times New Roman",
+        "monospace": "Monoespaciada"
+      }
     }
   },
   "login": {
