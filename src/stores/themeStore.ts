@@ -17,6 +17,11 @@ export const FONT_FAMILY_OPTIONS = [
   { value: 'trebuchet', labelKey: 'trebuchet' },
   { value: 'georgia', labelKey: 'georgia' },
   { value: 'times', labelKey: 'times' },
+  { value: 'literata', labelKey: 'literata' },
+  { value: 'lora', labelKey: 'lora' },
+  { value: 'roboto', labelKey: 'roboto' },
+  { value: 'merriweather', labelKey: 'merriweather' },
+  { value: 'helvetica', labelKey: 'helvetica' },
   { value: 'monospace', labelKey: 'monospace' },
 ] as const;
 
@@ -27,6 +32,11 @@ const FONT_FAMILY_STACKS: Record<string, string> = {
   trebuchet: '"Trebuchet MS", Helvetica, sans-serif',
   georgia: 'Georgia, "Times New Roman", serif',
   times: '"Times New Roman", Times, serif',
+  literata: 'Literata, Georgia, serif',
+  lora: 'Lora, Georgia, serif',
+  roboto: 'Roboto, Arial, sans-serif',
+  merriweather: 'Merriweather, Georgia, serif',
+  helvetica: 'Helvetica, "Helvetica Neue", Arial, sans-serif',
   monospace: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace',
 };
 
