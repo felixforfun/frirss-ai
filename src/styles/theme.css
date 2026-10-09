@@ -1,4 +1,9 @@
 :root {
+  --ff-sidebar: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --ff-article-list: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --ff-reading-title: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --ff-reading-body: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+
   /* Sidebar */
   --sidebar-bg: #201f1b;
   --sidebar-header-bg: linear-gradient(135deg, #4cd4a1 0%, #38b888 100%);
