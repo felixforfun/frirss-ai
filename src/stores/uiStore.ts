@@ -35,6 +35,7 @@ const defaultShortcuts: Shortcuts = {
   toggleSidebar: 'b',
   search: 'f',
   readLater: 'l',
+  pullFullArticle: 'w',
 };
 
 /** Add newly introduced actions to previously saved shortcut configurations. */
@@ -777,11 +778,11 @@ export const UI_SYNC_KEYS = [
 export const shortcutActions = [
   'nextArticle', 'prevArticle', 'openArticle', 'backToList',
   'markRead', 'markUnread', 'toggleStar',
-  'openOriginal', 'toggleSidebar', 'search', 'readLater',
+  'openOriginal', 'toggleSidebar', 'search', 'readLater', 'pullFullArticle',
 ];
 
 // For the shortcut footer — only show contextual shortcuts
 export const shortcutGroups: Record<string, string[]> = {
   list: ['prevArticle', 'nextArticle', 'openArticle', 'markRead', 'markUnread', 'toggleStar', 'readLater', 'search'],
-  reading: ['prevArticle', 'nextArticle', 'backToList', 'markRead', 'markUnread', 'toggleStar', 'readLater', 'openOriginal'],
+  reading: ['prevArticle', 'nextArticle', 'backToList', 'markRead', 'markUnread', 'toggleStar', 'readLater', 'openOriginal', 'pullFullArticle'],
 };
