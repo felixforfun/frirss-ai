@@ -142,6 +142,7 @@
   "readingPane": {
     "noArticle": "Wählen Sie einen Artikel zum Lesen aus",
     "back": "Zurück",
+    "backToArticle": "Zurück zum Artikel",
     "markRead": "Gelesen",
     "markUnread": "Ungelesen",
     "star": "Favorit",
