@@ -364,7 +364,8 @@
       "customize": "Personnaliser dans les préférences",
       "gestureHelp": "Afficher cette fenêtre",
       "helpTitle": "Raccourcis clavier",
-      "backToList": "Retour à la liste des articles"
+      "backToList": "Retour à la liste des articles",
+      "pullFullArticle": "Récupérer l’article complet"
     },
     "offline": {
       "title": "Hors-ligne",
