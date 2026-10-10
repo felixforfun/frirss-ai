@@ -17,7 +17,7 @@ const KEY_NAMES: Record<string, string> = {
 };
 
 function formatKey(key: string): string {
-  return KEY_NAMES[key] || key.toUpperCase();
+  return KEY_NAMES[key] || (typeof key === 'string' && key.length > 0 ? key.toUpperCase() : '?');
 }
 
 /**
