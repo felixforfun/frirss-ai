@@ -142,7 +142,6 @@
   "readingPane": {
     "noArticle": "Sélectionnez un article pour le lire",
     "back": "Retour",
-    "backToArticle": "Retour à l’article",
     "markRead": "Lu",
     "markUnread": "Non lu",
     "star": "Favori",
