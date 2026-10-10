@@ -4,12 +4,24 @@ import { useAuthStore } from '../stores/authStore';
 import { dropNonVideoIframes } from '../lib/youtube';
 import { absolutizeUrls } from './absolutizeUrls';
 
+function getPublishedDate(doc: Document): string {
+  const selectors = ['meta[property="article:published_time"]', 'meta[property="og:published_time"]', 'meta[name="pubdate"]', 'meta[name="publishdate"]', 'meta[name="date"]', 'meta[itemprop="datePublished"]', 'time[datetime]'];
+  for (const selector of selectors) {
+    const element = doc.querySelector(selector);
+    const raw = element?.getAttribute('content') || element?.getAttribute('datetime') || '';
+    const timestamp = Date.parse(raw);
+    if (raw && Number.isFinite(timestamp)) return new Date(timestamp).toISOString();
+  }
+  return '';
+}
+
 export interface ExtractedContent {
   title: string;
   content: string;
   excerpt: string;
   byline: string;
   siteName: string;
+  publishedDate: string;
   length: number;
 }
 
@@ -217,6 +229,7 @@ export async function extractFullContent(url: string): Promise<ExtractedContent>
         excerpt: data.excerpt || '',
         byline: data.byline || '',
         siteName: data.siteName || '',
+        publishedDate: data.publishedDate || '',
         length: data.length || 0,
       };
     }
@@ -302,6 +315,7 @@ export async function extractFullContent(url: string): Promise<ExtractedContent>
     excerpt: result.excerpt || '',
     byline: result.byline || '',
     siteName: result.siteName || '',
+    publishedDate: getPublishedDate(doc),
     length: result.length || 0,
   };
 }
