@@ -106,7 +106,12 @@
     "scanStopped": "Przeszukiwanie zatrzymane",
     "scanOffline": "Offline — wyniki wśród dostępnych artykułów",
     "scanNetworkError": "Utracono połączenie podczas przeszukiwania",
-    "scanRateLimited": "Zbyt wiele żądań — spróbuj ponownie za minutę"
+    "scanRateLimited": "Zbyt wiele żądań — spróbuj ponownie za minutę",
+    "settingsFor": "Ustawienia dla",
+    "mobileSettings": "Telefon",
+    "desktopSettings": "Komputer",
+    "twoPanelLayout": "Dwa panele",
+    "threePanelLayout": "Trzy panele"
   },
   "articleRow": {
     "markRead": "Oznacz jako przeczytane",
