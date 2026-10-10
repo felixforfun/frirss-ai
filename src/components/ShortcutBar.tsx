@@ -18,7 +18,7 @@ const keyNames: Record<string, string> = {
 };
 
 function formatKey(key: string): string {
-  return keyNames[key] || key.toUpperCase();
+  return keyNames[key] || (typeof key === 'string' && key.length > 0 ? key.toUpperCase() : '?');
 }
 
 export default function ShortcutBar() {
