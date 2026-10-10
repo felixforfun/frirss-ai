@@ -142,6 +142,7 @@
   "readingPane": {
     "noArticle": "选择一篇文章开始阅读",
     "back": "返回",
+    "backToArticle": "返回文章",
     "markRead": "已读",
     "markUnread": "未读",
     "star": "收藏",
