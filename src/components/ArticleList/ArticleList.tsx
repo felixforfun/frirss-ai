@@ -763,6 +763,19 @@ export default function ArticleList() {
                   </div>
                 </>
               )}
+              <SheetDivider />
+              <div className="px-4 py-3">
+                <div className="text-[15px] font-medium mb-3" style={{ color: 'var(--list-title)' }}>{t('articleList.displayMode')}</div>
+                <div className="flex gap-2">
+                  {(['grid', '2', '3'] as const).map((mode) => (
+                    <button key={mode} onClick={() => setDeviceDisplaySetting(settingsProfile, 'layout', mode)}
+                      className="flex-1 rounded-lg px-3 py-2 text-sm"
+                      style={{ border: '1px solid var(--panel-border)', background: editableDisplaySettings.layout === mode ? 'var(--accent-glow)' : 'transparent', color: editableDisplaySettings.layout === mode ? 'var(--accent)' : 'var(--list-title)' }}>
+                      {t(mode === 'grid' ? 'articleList.gridLayout' : mode === '2' ? 'articleList.twoPanelLayout' : 'articleList.threePanelLayout')}
+                    </button>
+                  ))}
+                </div>
+              </div>
             </BottomSheet>
           </div>
         ) : is2Panel ? (
