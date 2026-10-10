@@ -359,7 +359,8 @@
       "customize": "Customise in preferences",
       "gestureHelp": "Show this window",
       "helpTitle": "Keyboard shortcuts",
-      "backToList": "Back to list view"
+      "backToList": "Back to list view",
+      "pullFullArticle": "Pull full article"
     },
     "offline": {
       "title": "Offline",
