@@ -19,7 +19,7 @@ function normalizeImagePreset(v: unknown): OfflineImagePreset {
 
 export type Shortcuts = Record<string, string>;
 export type DisplaySettingKey = 'feedName' | 'feedIcons' | 'dateSeparators' | 'serverBar' | 'layout';
-export type DeviceDisplaySettings = Record<DisplaySettingKey, boolean | string>;
+export interface DeviceDisplaySettings { feedName: boolean; feedIcons: boolean; dateSeparators: boolean; serverBar: boolean; layout: string; }
 function loadDeviceDisplaySettings(device: 'mobile' | 'desktop'): DeviceDisplaySettings {
   const saved = loadJson<Partial<DeviceDisplaySettings>>(`frirss_display_${device}`, {});
   return {
