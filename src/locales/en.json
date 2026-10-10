@@ -142,7 +142,6 @@
   "readingPane": {
     "noArticle": "Select an article to read",
     "back": "Back",
-    "backToArticle": "Back to article",
     "markRead": "Read",
     "markUnread": "Unread",
     "star": "Favorite",
