@@ -1644,6 +1644,8 @@ export default function ReadingPane({ showBack }: ReadingPaneProps) {
             </button>
           )}
 
+          <LabelMenu article={article} variant="bar" />
+
           <BarBtn active={article.starred} activeColor="var(--star-color)" label={t('readingPane.star')}
             onClick={() => toggleStar(article)}>
             <svg className="w-5 h-5" fill={article.starred ? 'currentColor' : 'none'} viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.6}>
@@ -1673,12 +1675,6 @@ export default function ReadingPane({ showBack }: ReadingPaneProps) {
             </BarBtn>
           )}
 
-          {aiConfig?.enabled && aiConfig.model.trim() && (
-            <BarBtn active={aiSummarizing} activeColor="var(--accent)" label={t('readingPane.summarize')} onClick={() => { void handleSummarize(false); }}>
-              <span className="text-lg" aria-hidden="true">✨</span>
-            </BarBtn>
-          )}
-
           <BarBtn active={readSettingsOpen} activeColor="var(--accent)" label={t('readingPane.more')}
             onClick={() => setReadSettingsOpen((o) => !o)}>
             <svg className="w-5 h-5" viewBox="0 0 24 24" fill="currentColor">
@@ -1691,9 +1687,6 @@ export default function ReadingPane({ showBack }: ReadingPaneProps) {
             onClose={() => setReadSettingsOpen(false)}
             title={t('readingPane.more')}
           >
-            <div className="px-4 py-2" style={{ borderBottom: '1px solid var(--panel-border)' }}>
-              <LabelMenu article={article} variant="sheet" />
-            </div>
             {article.url && (
               <a
                 href={article.url} target="_blank" rel="noopener noreferrer"
