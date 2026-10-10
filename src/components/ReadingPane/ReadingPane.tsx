@@ -28,6 +28,20 @@ import BottomSheet from '../BottomSheet';
 // extractFullContent is loaded on demand (code-split) — see handleExtract.
 
 const ARTICLE_FIND_HIGHLIGHT = 'frirss-article-find';
+
+// These destinations are better handled by the browser than by article extraction.
+const EXTERNAL_ONLY_HOSTS = [
+  'x.com', 'twitter.com', 'youtube.com', 'youtu.be', 'youtube-nocookie.com',
+  'vimeo.com', 'tiktok.com', 'instagram.com', 'facebook.com', 'fb.watch',
+  'twitch.tv', 'spotify.com', 'soundcloud.com', 'linkedin.com',
+];
+const NON_ARTICLE_FILE_EXTENSIONS = /\.(?:pdf|epub|docx?|pptx?|xlsx?|zip|rar|7z|mp3|mp4|m4v|mov|webm|m3u8)(?:$|\/)/i;
+
+function shouldOpenLinkedUrlExternally(url: URL): boolean {
+  const host = url.hostname.toLowerCase();
+  return EXTERNAL_ONLY_HOSTS.some((domain) => host === domain || host.endsWith(`.${domain}`))
+    || NON_ARTICLE_FILE_EXTENSIONS.test(url.pathname);
+}
 const ARTICLE_FIND_ACTIVE_HIGHLIGHT = 'frirss-article-find-active';
 
 type ArticleFindHighlightApi = {
@@ -225,6 +239,32 @@ export default function ReadingPane({ showBack }: ReadingPaneProps) {
       window.removeEventListener('ai-summary-config-changed', refreshConfig);
     };
   }, []);
+
+  // A linked page belongs to the feed article that opened it. Selecting another
+  // feed item must always restore that item's own content immediately.
+  useEffect(() => {
+    setLinkedPage(null);
+    setLinkedPageStack([]);
+    setLinkedPageLoading(false);
+  }, [selectedArticle?.id]);
+
+  // Escape first returns from a linked page to its feed article. The global
+  // keyboard handler then handles Escape normally on the next press.
+  useEffect(() => {
+    if (!linkedPage) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape' || event.defaultPrevented) return;
+      const target = event.target as HTMLElement | null;
+      if (target?.closest('input, textarea, select, [contenteditable="true"]')) return;
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      setLinkedPage(null);
+      setLinkedPageStack([]);
+      setLinkedPageLoading(false);
+    };
+    document.addEventListener('keydown', onKeyDown, true);
+    return () => document.removeEventListener('keydown', onKeyDown, true);
+  }, [linkedPage]);
 
   useEffect(() => {
     setAiSummary(null);
@@ -871,10 +911,21 @@ export default function ReadingPane({ showBack }: ReadingPaneProps) {
     if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || anchor.target === '_blank') return;
     event.preventDefault();
     if (url.href === (linkedPage?.url || selectedArticle?.url)) return;
+
+    // PDFs, media files, social networks and video platforms are not useful reader-mode targets.
+    // Open synchronously from the click so browser popup blockers allow the new tab.
+    if (shouldOpenLinkedUrlExternally(url)) {
+      window.open(url.href, '_blank', 'noopener,noreferrer');
+      return;
+    }
+
+    const sourceArticleId = selectedArticle?.id;
     setLinkedPageLoading(true);
     try {
       const { extractFullContent } = await import('../../utils/extractContent');
       const content = await extractFullContent(url.href);
+      // Ignore late extraction results if the user selected a different feed article meanwhile.
+      if (useFeedStore.getState().selectedArticle?.id !== sourceArticleId) return;
       setLinkedPageStack((stack) => [...stack, ...(linkedPage ? [linkedPage] : [])]);
       setLinkedPage({ url: url.href, content });
       if (scrollContainerRef.current) scrollContainerRef.current.scrollTop = 0;
@@ -884,7 +935,7 @@ export default function ReadingPane({ showBack }: ReadingPaneProps) {
     } finally {
       setLinkedPageLoading(false);
     }
-  }, [linkedPage, selectedArticle?.url]);
+  }, [linkedPage, selectedArticle?.id, selectedArticle?.url]);
 
   const handleExtract = useCallback(async () => {
     if (!selectedArticle?.url || extracting) return;
@@ -1382,96 +1433,52 @@ export default function ReadingPane({ showBack }: ReadingPaneProps) {
             ref={articleRef}
             className="article-enter px-4 py-4 md:px-8 md:py-6 lg:px-12 lg:py-8"
           >
-          {/* Source / Author / Date / Reading time */}
-          {isMobileOrTablet ? (
-            /* ── Mobile: 2-line — left: source+meta, right: reading time ── */
-            <div className="flex items-stretch gap-3 mb-3">
-              <div className="flex-1 min-w-0">
-                <div
-                  className="text-xs font-semibold uppercase tracking-wide truncate"
-                  style={{ color: 'var(--list-source)' }}
-                >
-                  {article.source}
+          {/* Source / Author / Date / Reading time. Linked pages use their own metadata. */}
+          {(() => {
+            const linkedUrl = linkedPage ? new URL(linkedPage.url) : null;
+            const linkedSource = linkedPage
+              ? (linkedPage.content.siteName || linkedUrl?.hostname.replace(/^www\./, '') || article.source)
+              : article.source;
+            const linkedAuthor = linkedPage ? linkedPage.content.byline : article.author;
+            const headerDate = linkedPage ? '' : date;
+            return isMobileOrTablet ? (
+              <div className="flex items-stretch gap-3 mb-3">
+                <div className="flex-1 min-w-0">
+                  <div className="text-xs font-semibold uppercase tracking-wide truncate" style={{ color: 'var(--list-source)' }}>
+                    {linkedSource}
+                  </div>
+                  <div className="text-xs truncate mt-0.5" style={{ color: 'var(--reading-meta)' }}>
+                    {linkedAuthor ? `${linkedAuthor}${headerDate ? ' · ' : ''}` : ''}{headerDate}
+                  </div>
                 </div>
-                <div className="text-xs truncate mt-0.5" style={{ color: 'var(--reading-meta)' }}>
-                  {article.author ? `${article.author} · ` : ''}{date}
-                </div>
-              </div>
-              {showReadingTime && (
-                <span
-                  className="flex items-center gap-1 px-2.5 rounded-lg text-[11px] font-medium flex-shrink-0"
-                  style={{ color: 'var(--accent)', background: 'var(--accent-glow)' }}
-                >
-                  <svg className="w-3 h-3 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z" />
-                  </svg>
-                  {t('readingPane.readingTime', { count: readingTime })}
-                </span>
-              )}
-            </div>
-          ) : (
-            /* ── Desktop: single-line layout ── */
-            <div className="flex items-center gap-2 mb-3">
-              <span
-                className="text-xs font-semibold uppercase tracking-wide"
-                style={{ color: 'var(--list-source)' }}
-              >
-                {article.source}
-              </span>
-              {article.author && (
-                <>
-                  <span style={{ color: 'var(--reading-meta)' }}>·</span>
-                  <span className="text-xs" style={{ color: 'var(--reading-meta)' }}>
-                    {article.author}
+                {!linkedPage && showReadingTime && (
+                  <span className="flex items-center gap-1 px-2.5 rounded-lg text-[11px] font-medium flex-shrink-0" style={{ color: 'var(--accent)', background: 'var(--accent-glow)' }}>
+                    <svg className="w-3 h-3 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                    {t('readingPane.readingTime', { count: readingTime })}
                   </span>
-                </>
-              )}
-              <span style={{ color: 'var(--reading-meta)' }}>·</span>
-              <span className="text-xs" style={{ color: 'var(--reading-meta)' }}>{date}</span>
-              {showReadingTime && (
-                <span
-                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium"
-                  style={{
-                    color: 'var(--accent)',
-                    background: 'var(--accent-glow)',
-                  }}
-                >
-                  <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z" />
-                  </svg>
-                  {readingTime} min
-                </span>
-              )}
-            </div>
-          )}
+                )}
+              </div>
+            ) : (
+              <div className="flex items-center gap-2 mb-3">
+                <span className="text-xs font-semibold uppercase tracking-wide" style={{ color: 'var(--list-source)' }}>{linkedSource}</span>
+                {linkedAuthor && <><span style={{ color: 'var(--reading-meta)' }}>·</span><span className="text-xs" style={{ color: 'var(--reading-meta)' }}>{linkedAuthor}</span></>}
+                {headerDate && <><span style={{ color: 'var(--reading-meta)' }}>·</span><span className="text-xs" style={{ color: 'var(--reading-meta)' }}>{headerDate}</span></>}
+                {!linkedPage && showReadingTime && <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium" style={{ color: 'var(--accent)', background: 'var(--accent-glow)' }}><svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>{readingTime} min</span>}
+              </div>
+            );
+          })()}
 
-          {/* Title — links to the original article */}
-          {article.url ? (
-            <a
-              href={article.url}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="block mb-4 hover:underline"
-              title={t('readingPane.openOriginal')}
-            >
-              <h1
-                dir="auto"
-                className="font-bold leading-tight article-title-target"
-                data-theme="reading-title"
-                style={{ color: 'var(--reading-title)', fontSize: 'var(--fs-reading-title)' }}
-              >
-                {article.title}
-              </h1>
+          {/* Linked page title links to that page; feed article title links to its original. */}
+          {linkedPage ? (
+            <h1 dir="auto" className="font-bold leading-tight mb-4 article-title-target" data-theme="reading-title" style={{ color: 'var(--reading-title)', fontSize: 'var(--fs-reading-title)' }}>
+              {linkedPage.content.title || article.title}
+            </h1>
+          ) : article.url ? (
+            <a href={article.url} target="_blank" rel="noopener noreferrer" className="block mb-4 hover:underline" title={t('readingPane.openOriginal')}>
+              <h1 dir="auto" className="font-bold leading-tight article-title-target" data-theme="reading-title" style={{ color: 'var(--reading-title)', fontSize: 'var(--fs-reading-title)' }}>{article.title}</h1>
             </a>
           ) : (
-            <h1
-              dir="auto"
-              className="font-bold leading-tight mb-4 article-title-target"
-              data-theme="reading-title"
-              style={{ color: 'var(--reading-title)', fontSize: 'var(--fs-reading-title)' }}
-            >
-              {linkedPage?.content.title || article.title}
-            </h1>
+            <h1 dir="auto" className="font-bold leading-tight mb-4 article-title-target" data-theme="reading-title" style={{ color: 'var(--reading-title)', fontSize: 'var(--fs-reading-title)' }}>{article.title}</h1>
           )}
 
           {linkedPage && (
