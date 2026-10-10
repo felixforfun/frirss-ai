@@ -109,7 +109,6 @@ export default function ArticleList() {
   const toggleShowListFavicons = () => setDeviceDisplaySetting(isMobile ? 'mobile' : 'desktop', 'feedIcons', !activeDisplaySettings.feedIcons);
   const topbarVisible = !!activeDisplaySettings.serverBar;
   const toggleTopbar = () => setDeviceDisplaySetting(isMobile ? 'mobile' : 'desktop', 'serverBar', !activeDisplaySettings.serverBar);
-  useEffect(() => { if (optionsOpen) setSettingsProfile(isMobile ? 'mobile' : 'desktop'); }, [optionsOpen, isMobile]);
   const layout = effectiveLayout(activeDisplaySettings.layout || panelLayout, feedSettings, selectedFeed?.id);
   const feedLayoutOverride = !!(selectedFeed && feedSettings[selectedFeed.id]?.layout);
   // Grid is a full-width layout: like 2-panel, the list body spans the whole
@@ -238,6 +237,7 @@ export default function ArticleList() {
     | null
   >(null);
   const [optionsOpen, setOptionsOpen] = useState(false); // mobile view-options sheet
+  useEffect(() => { if (optionsOpen) setSettingsProfile(isMobile ? 'mobile' : 'desktop'); }, [optionsOpen, isMobile]);
   // Menu contextuel d'un article (clic droit, touche Menu, appui long) — voir
   // `ArticleContextMenu`. On garde l'id et la vue, pas l'objet : le menu relit
   // l'article courant, et disparaît si l'article quitte la liste ou si la vue
@@ -819,7 +819,7 @@ export default function ArticleList() {
               <div className="option-track">
                 <SourceToggle
                   active={showSource}
-                  onClick={isInFeed ? toggleShowSourceInFeed : toggleShowSourceInAll}
+                  onClick={() => setDeviceDisplaySetting(isMobile ? 'mobile' : 'desktop', 'feedName', !activeDisplaySettings.feedName)}
                   tooltip={isInFeed ? t('articleList.sourceToggleFeed') : t('articleList.sourceToggleAll')}
                 />
                 <FaviconToggle />
@@ -1073,7 +1073,7 @@ export default function ArticleList() {
             loadMoreBusy={loadMoreBusy}
             onLoadMore={loadMore}
           />
-        ) : gridLayout && !gridDateSeparators ? (
+        ) : gridLayout && !dateSepActive ? (
           /* Grid, default: one continuous gallery, no date bands. */
           <div className="article-grid">
             {articles.map(renderCard)}
