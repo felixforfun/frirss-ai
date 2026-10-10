@@ -97,13 +97,7 @@ export default function ArticleList() {
   const dismissNewArticles = useFeedStore((s) => s.dismissNewArticles);
   const markReadOnScroll = useUiStore((s) => s.markReadOnScroll);
   const showSourceInAll = useUiStore((s) => s.showSourceInAll);
-  const toggleShowSourceInFeed = useUiStore((s) => s.toggleShowSourceInFeed);
-  const toggleShowSourceInAll = useUiStore((s) => s.toggleShowSourceInAll);
   const feedSettings = useUiStore((s) => s.feedSettings);
-  const showDateSeparators = useUiStore((s) => s.showDateSeparators);
-  const toggleDateSeparators = useUiStore((s) => s.toggleDateSeparators);
-  const gridDateSeparators = useUiStore((s) => s.gridDateSeparators);
-  const toggleGridDateSeparators = useUiStore((s) => s.toggleGridDateSeparators);
   const confirmMarkAllRead = useUiStore((s) => s.confirmMarkAllRead);
   const breakpoint = useBreakpoint();
   const isDesktop = breakpoint === 'desktop';
@@ -126,7 +120,7 @@ export default function ArticleList() {
   const panelLayoutReplacesList = layout === '2' || gridLayout;
   // Date grouping: the grid has its own (off-by-default) toggle; the list views
   // use the shared one.
-  const dateSepActive = gridLayout ? gridDateSeparators : !!activeDisplaySettings.dateSeparators;
+  const dateSepActive = !!activeDisplaySettings.dateSeparators;
   const toggleDateSep = () => setDeviceDisplaySetting(isMobile ? 'mobile' : 'desktop', 'dateSeparators', !activeDisplaySettings.dateSeparators);
 
   // Determine if source name should be shown. A category view aggregates many
@@ -869,7 +863,7 @@ export default function ArticleList() {
                     tooltip={isInFeed ? t('articleList.sourceToggleFeed') : t('articleList.sourceToggleAll')}
                   />
                   <FaviconToggle />
-                  <DateSepToggle active={showDateSeparators} onClick={toggleDateSeparators} />
+                  <DateSepToggle active={dateSepActive} onClick={toggleDateSep} />
                   <TopbarToggle />
                 </div>
                 <ViewModeSwitcher />
