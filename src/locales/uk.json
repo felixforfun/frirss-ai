@@ -146,6 +146,7 @@
   "readingPane": {
     "noArticle": "Виберіть статтю для читання",
     "back": "Назад",
+    "backToArticle": "Назад до статті",
     "markRead": "Прочитано",
     "markUnread": "Непрочитано",
     "star": "Обране",
