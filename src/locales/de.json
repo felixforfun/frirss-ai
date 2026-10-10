@@ -102,7 +102,12 @@
     "scanStopped": "Suchlauf angehalten",
     "scanOffline": "Offline – Ergebnisse aus den verfügbaren Artikeln",
     "scanNetworkError": "Verbindung während des Suchlaufs verloren",
-    "scanRateLimited": "Zu viele Anfragen – in einer Minute erneut versuchen"
+    "scanRateLimited": "Zu viele Anfragen – in einer Minute erneut versuchen",
+    "settingsFor": "Einstellungen für",
+    "mobileSettings": "Mobil",
+    "desktopSettings": "Desktop",
+    "twoPanelLayout": "Zwei Bereiche",
+    "threePanelLayout": "Drei Bereiche"
   },
   "articleRow": {
     "markRead": "Als gelesen markieren",
