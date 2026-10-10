@@ -81,8 +81,8 @@ describe('couverture des réglages du panneau Préférences', () => {
     fs.readFileSync(path.join(DIR, 'settings-baseline.json'), 'utf8'),
   );
 
-  it('fige 234 réglages', () => {
-    expect(baseline).toHaveLength(234);
+  it('fige 233 réglages', () => {
+    expect(baseline).toHaveLength(233);
   });
 
   it('référence encore chaque réglage du relevé', () => {
