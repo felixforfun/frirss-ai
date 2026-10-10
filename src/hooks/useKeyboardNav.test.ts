@@ -44,7 +44,7 @@ describe('useKeyboardNav — back to list', () => {
     expect(selectArticle).toHaveBeenCalledWith(null);
   });
 
-  it('uses the reassigned shortcut instead of hard-coding Escape', () => {
+  it('always supports Escape and also supports the reassigned back-to-list shortcut', () => {
     const selectArticle = vi.fn();
     useFeedStore.setState({ selectedArticle: article, selectArticle } as never);
     useUiStore.setState({
@@ -52,11 +52,13 @@ describe('useKeyboardNav — back to list', () => {
     });
     renderHook(() => useKeyboardNav());
 
-    pressKey('Escape');
-    expect(selectArticle).not.toHaveBeenCalled();
+    const escapeEvent = pressKey('Escape');
+    expect(escapeEvent.defaultPrevented).toBe(true);
+    expect(selectArticle).toHaveBeenCalledWith(null);
 
-    const event = pressKey('Backspace');
-    expect(event.defaultPrevented).toBe(true);
+    selectArticle.mockClear();
+    const reassignedEvent = pressKey('Backspace');
+    expect(reassignedEvent.defaultPrevented).toBe(true);
     expect(selectArticle).toHaveBeenCalledWith(null);
   });
 });
