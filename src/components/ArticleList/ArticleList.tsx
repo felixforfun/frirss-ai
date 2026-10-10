@@ -859,7 +859,7 @@ export default function ArticleList() {
                 <div className="option-track">
                   <SourceToggle
                     active={showSource}
-                    onClick={isInFeed ? toggleShowSourceInFeed : toggleShowSourceInAll}
+                    onClick={() => setDeviceDisplaySetting(isMobile ? 'mobile' : 'desktop', 'feedName', !activeDisplaySettings.feedName)}
                     tooltip={isInFeed ? t('articleList.sourceToggleFeed') : t('articleList.sourceToggleAll')}
                   />
                   <FaviconToggle />
