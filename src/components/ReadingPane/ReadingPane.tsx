@@ -1441,7 +1441,7 @@ export default function ReadingPane({ showBack }: ReadingPaneProps) {
               ? (linkedPage.content.siteName || linkedUrl?.hostname.replace(/^www\./, '') || article.source)
               : article.source;
             const linkedAuthor = linkedPage ? linkedPage.content.byline : article.author;
-            const headerDate = linkedPage ? (linkedPage.content.publishedDate ? formatArticleDate(linkedPage.content.publishedDate) : '') : date;
+            const headerDate = linkedPage ? (linkedPage.content.publishedDate ? formatArticleDate(Date.parse(linkedPage.content.publishedDate)) : '') : date;
             return isMobileOrTablet ? (
               <div className="flex items-stretch gap-3 mb-3">
                 <div className="flex-1 min-w-0">
