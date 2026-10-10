@@ -230,5 +230,6 @@
  "preferences.themes.savedThemes",
  "preferences.themes.share",
  "preferences.themes.themeName",
- "preferences.title"
+ "preferences.title",
+ "preferences.shortcuts.pullFullArticle"
 ]
