@@ -82,6 +82,7 @@ describe('couverture des réglages du panneau Préférences', () => {
     fs.readFileSync(path.join(DIR, 'settings-baseline.json'), 'utf8'),
   );
 
+  // Keep this assertion aligned with settings-baseline.json.
   it('locks the 234-setting baseline', () => {
     expect(baseline).toHaveLength(234);
   });
