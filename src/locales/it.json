@@ -364,7 +364,8 @@
       "customize": "Personalizza nelle preferenze",
       "gestureHelp": "Mostra questa finestra",
       "helpTitle": "Scorciatoie da tastiera",
-      "backToList": "Torna all’elenco degli articoli"
+      "backToList": "Torna all’elenco degli articoli",
+      "pullFullArticle": "Carica l’articolo completo"
     },
     "offline": {
       "title": "Offline",
