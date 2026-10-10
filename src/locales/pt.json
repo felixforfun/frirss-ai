@@ -102,7 +102,12 @@
     "scanStopped": "Análise interrompida",
     "scanOffline": "Offline — resultados entre os artigos disponíveis",
     "scanNetworkError": "Conexão perdida durante a análise",
-    "scanRateLimited": "Muitos pedidos — tente novamente em um minuto"
+    "scanRateLimited": "Muitos pedidos — tente novamente em um minuto",
+    "settingsFor": "Configurações para",
+    "mobileSettings": "Celular",
+    "desktopSettings": "Desktop",
+    "twoPanelLayout": "Dois painéis",
+    "threePanelLayout": "Três painéis"
   },
   "articleRow": {
     "markRead": "Marcar como lido",
