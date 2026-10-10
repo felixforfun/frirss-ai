@@ -868,7 +868,7 @@ export default function ReadingPane({ showBack }: ReadingPaneProps) {
     try { url = new URL(rawHref, linkedPage?.url || selectedArticle?.url || window.location.href); } catch { return; }
     if (url.protocol !== 'http:' && url.protocol !== 'https:') return;
     // Keep modified clicks and explicit new-window links behaving like normal browser links.
-    if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || anchor.target === '_blank') return;
+    if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
     event.preventDefault();
     if (url.href === (linkedPage?.url || selectedArticle?.url)) return;
     setLinkedPageLoading(true);
