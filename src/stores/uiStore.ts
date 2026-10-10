@@ -18,6 +18,18 @@ function normalizeImagePreset(v: unknown): OfflineImagePreset {
 }
 
 export type Shortcuts = Record<string, string>;
+export type DisplaySettingKey = 'feedName' | 'feedIcons' | 'dateSeparators' | 'serverBar' | 'layout';
+export type DeviceDisplaySettings = Record<DisplaySettingKey, boolean | string>;
+function loadDeviceDisplaySettings(device: 'mobile' | 'desktop'): DeviceDisplaySettings {
+  const saved = loadJson<Partial<DeviceDisplaySettings>>(`frirss_display_${device}`, {});
+  return {
+    feedName: typeof saved.feedName === 'boolean' ? saved.feedName : true,
+    feedIcons: typeof saved.feedIcons === 'boolean' ? saved.feedIcons : true,
+    dateSeparators: typeof saved.dateSeparators === 'boolean' ? saved.dateSeparators : true,
+    serverBar: typeof saved.serverBar === 'boolean' ? saved.serverBar : true,
+    layout: typeof saved.layout === 'string' && ['2', '3', 'grid'].includes(saved.layout) ? saved.layout : (localStorage.getItem('frirss_panelLayout') || '3'),
+  };
+}
 
 /* Identifiant croissant : deux messages identiques doivent coexister, donc la
  * clé ne peut pas être le texte. */
@@ -103,6 +115,8 @@ export interface UiState {
   updateToast: (id: number, patch: Partial<Omit<Toast, 'id'>>) => void;
   dismissToast: (id: number) => void;
 
+  deviceDisplaySettings: Record<'mobile' | 'desktop', DeviceDisplaySettings>;
+  setDeviceDisplaySetting: (device: 'mobile' | 'desktop', key: DisplaySettingKey, value: boolean | string) => void;
   viewMode: string;
   setViewMode: (mode: string) => void;
   mobileReadingFontSize: number;
@@ -245,6 +259,12 @@ export interface UiState {
 
 export const useUiStore = create<UiState>()((set, get) => ({
   // Article list view mode
+  deviceDisplaySettings: { mobile: loadDeviceDisplaySettings('mobile'), desktop: loadDeviceDisplaySettings('desktop') },
+  setDeviceDisplaySetting: (device, key, value) => set((state) => {
+    const next = { ...state.deviceDisplaySettings[device], [key]: value };
+    localStorage.setItem(`frirss_display_${device}`, JSON.stringify(next));
+    return { deviceDisplaySettings: { ...state.deviceDisplaySettings, [device]: next } };
+  }),
   viewMode: localStorage.getItem('frirss_viewMode') || 'preview',
   setViewMode: (mode) => {
     localStorage.setItem('frirss_viewMode', mode);
