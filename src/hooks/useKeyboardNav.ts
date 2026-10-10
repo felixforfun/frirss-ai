@@ -82,7 +82,8 @@ export function useKeyboardNav(): void {
         }
       } else if (key === shortcuts.openOriginal) {
         e.preventDefault();
-        openExternal(store.selectedArticle?.url);
+        const linkedUrl = document.querySelector<HTMLElement>('[data-linked-page-url]')?.dataset.linkedPageUrl;
+        openExternal(linkedUrl || store.selectedArticle?.url);
       } else if (key === shortcuts.toggleSidebar) {
         e.preventDefault();
         toggleSidebar();
