@@ -58,15 +58,15 @@ function referencedKeys(): Set<string> {
   const fr = JSON.parse(fs.readFileSync(path.join(process.cwd(), 'src/locales/fr.json'), 'utf8'));
   const src = sourceFiles(DIR)
     .map((f) => fs.readFileSync(f, 'utf8'))
-    .join('\n');
+    .join('\\n');
 
   const keys = new Set<string>();
-  // Clé statique : simple quotes, double quotes ou backticks. Le backreference \1
+  // Clé statique : simple quotes, double quotes ou backticks. Le backreference \\1
   // impose la même sorte de guillemet en ouverture/fermeture, et comme le
-  // caractère `$` n'appartient pas à la classe de la clé, un backtick avec
-  // interpolation (`${`) ne matche jamais ici — il tombe dans la regex suivante.
-  for (const m of src.matchAll(/t\(\s*(['"`])((?:preferences|admin)\.[a-zA-Z0-9_.]+)\1/g)) keys.add(m[2]);
-  for (const m of src.matchAll(/t\(\s*`((?:preferences|admin)\.[a-zA-Z0-9_.]+)\.\$\{/g)) {
+  // caractère '$' n'appartient pas à la classe de la clé, un backtick avec
+  // interpolation (`\${`) ne matche jamais ici — il tombe dans la regex suivante.
+  for (const m of src.matchAll(/t\\(\\s*(['"`])((?:preferences|admin)\\.[a-zA-Z0-9_.]+)\\1/g)) keys.add(m[2]);
+  for (const m of src.matchAll(/t\\(\\s*`((?:preferences|admin)\\.[a-zA-Z0-9_.]+)\\.\\$\\{/g)) {
     let d: unknown = fr;
     for (const part of m[1].split('.')) d = (d as Record<string, unknown>)?.[part];
     if (d && typeof d === 'object') {
@@ -82,14 +82,14 @@ describe('couverture des réglages du panneau Préférences', () => {
     fs.readFileSync(path.join(DIR, 'settings-baseline.json'), 'utf8'),
   );
 
-  it('fige 233 réglages', () => {
-    expect(baseline).toHaveLength(233);
+  it('fige 234 réglages', () => {
+    expect(baseline).toHaveLength(234);
   });
 
   it('référence encore chaque réglage du relevé', () => {
     const found = referencedKeys();
     const missing = baseline.filter((k) => !found.has(k));
-    expect(missing, `réglages perdus par la refonte :\n${missing.join('\n')}`).toEqual([]);
+    expect(missing, `réglages perdus par la refonte :\\n${missing.join('\\n')}`).toEqual([]);
   });
 
   it('chaque réglage du relevé existe dans les 9 locales (formes pluriel comprises)', () => {
@@ -105,7 +105,7 @@ describe('couverture des réglages du panneau Préférences', () => {
     }
     expect(
       missing,
-      `traductions manquantes (clé nue et toutes formes pluriel absentes) :\n${missing.slice(0, 20).join('\n')}`,
+      `traductions manquantes (clé nue et toutes formes pluriel absentes) :\\n${missing.slice(0, 20).join('\\n')}`,
     ).toEqual([]);
   });
 
