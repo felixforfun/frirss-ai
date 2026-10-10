@@ -850,11 +850,12 @@ export default function ReadingPane({ showBack }: ReadingPaneProps) {
   }, [isMobileOrTablet, selectNextArticle, selectPrevArticle]);
 
   const handleLinkedPageBack = useCallback(() => {
-    const next = linkedPageStack.slice(0, -1);
-    setLinkedPageStack(next);
-    setLinkedPage(next.length ? next[next.length - 1] : null);
-    if (scrollContainerRef.current) scrollContainerRef.current.scrollTop = 0;
-  }, [linkedPageStack]);
+    setLinkedPageStack((stack) => {
+      const next = stack.slice(0, -1);
+      setLinkedPage(next.length ? next[next.length - 1] : null);
+      return next;
+    });
+  }, []);
 
   const handleReadingBodyClick = useCallback(async (event: ReactMouseEvent<HTMLDivElement>) => {
     const target = event.target;
@@ -867,7 +868,7 @@ export default function ReadingPane({ showBack }: ReadingPaneProps) {
     try { url = new URL(rawHref, linkedPage?.url || selectedArticle?.url || window.location.href); } catch { return; }
     if (url.protocol !== 'http:' && url.protocol !== 'https:') return;
     // Keep modified clicks and explicit new-window links behaving like normal browser links.
-    if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+    if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || anchor.target === '_blank') return;
     event.preventDefault();
     if (url.href === (linkedPage?.url || selectedArticle?.url)) return;
     setLinkedPageLoading(true);
