@@ -76,6 +76,7 @@ function referencedKeys(): Set<string> {
   return keys;
 }
 
+// Keep this count aligned with settings-baseline.json.
 describe('couverture des réglages du panneau Préférences', () => {
   const baseline: string[] = JSON.parse(
     fs.readFileSync(path.join(DIR, 'settings-baseline.json'), 'utf8'),
