@@ -23,8 +23,8 @@ import path from 'path';
  * via ses formes suffixées (`_zero`, `_one`, `_two`, `_few`, `_many`,
  * `_other`). Le test considère donc une clé du relevé présente dans une
  * locale si la clé exacte OU au moins une de ces formes suffixées y résout
- * une chaîne. Ne pas ajouter de clé "nue" en doublon des formes `_one`/
- * `_other` pour faire passer ce test : ces clés nues seraient inatteignables
+ * une chaîne. Ne pas ajouter de clé "nue" en doublon des formes `_one`/`_other`
+ * pour faire passer ce test : ces clés nues seraient inatteignables
  * à l'exécution (cf. review du 21/08/2026 : 18 clés mortes ajoutées puis
  * retirées pour cette raison).
  */
@@ -85,11 +85,10 @@ describe('couverture des réglages du panneau Préférences', () => {
     fs.readFileSync(path.join(DIR, 'settings-baseline.json'), 'utf8'),
   );
 
-  // Keep this assertion aligned with settings-baseline.json.
-  // Baseline currently contains 233 keys.
+  // The baseline now includes the dynamically registered pullFullArticle shortcut.
   // Keep the count assertion explicit so baseline changes are intentional.
-  it('locks the 233-setting baseline', () => {
-    expect(baseline).toHaveLength(233);
+  it('locks the 234-setting baseline', () => {
+    expect(baseline).toHaveLength(234);
   });
 
   it('référence encore chaque réglage du relevé', () => {
