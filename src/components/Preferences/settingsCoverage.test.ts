@@ -84,6 +84,7 @@ describe('couverture des réglages du panneau Préférences', () => {
 
   // Keep this assertion aligned with settings-baseline.json.
   // Baseline currently contains 234 keys.
+  // Keep the count assertion explicit so baseline changes are intentional.
   it('locks the 234-setting baseline', () => {
     expect(baseline).toHaveLength(234);
   });
