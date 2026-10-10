@@ -850,12 +850,11 @@ export default function ReadingPane({ showBack }: ReadingPaneProps) {
   }, [isMobileOrTablet, selectNextArticle, selectPrevArticle]);
 
   const handleLinkedPageBack = useCallback(() => {
-    setLinkedPageStack((stack) => {
-      const next = stack.slice(0, -1);
-      setLinkedPage(next.length ? next[next.length - 1] : null);
-      return next;
-    });
-  }, []);
+    const next = linkedPageStack.slice(0, -1);
+    setLinkedPageStack(next);
+    setLinkedPage(next.length ? next[next.length - 1] : null);
+    if (scrollContainerRef.current) scrollContainerRef.current.scrollTop = 0;
+  }, [linkedPageStack]);
 
   const handleReadingBodyClick = useCallback(async (event: ReactMouseEvent<HTMLDivElement>) => {
     const target = event.target;
