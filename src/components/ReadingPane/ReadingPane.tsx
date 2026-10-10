@@ -1006,7 +1006,7 @@ export default function ReadingPane({ showBack }: ReadingPaneProps) {
       if (!selectedArticle?.url || !configuredKey || shortcutHelpOpen || linkedPage) return;
       if (event.defaultPrevented || event.altKey || event.ctrlKey || event.metaKey) return;
       const target = event.target as HTMLElement | null;
-      if (target?.closest('input, textarea, select, [contenteditable="true"], [role="textbox"], button[aria-pressed="true"]')) return;
+      if (target?.closest('input, textarea, select, button, [contenteditable="true"], [role="textbox"]')) return;
       if (event.key.toLocaleLowerCase() !== configuredKey.toLocaleLowerCase()) return;
       event.preventDefault();
       event.stopPropagation();
