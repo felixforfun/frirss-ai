@@ -139,3 +139,32 @@ export function extractArticle(url: string, html: string): ExtractedArticle | nu
     length: parsed.length || 0,
   };
 }
+
+/**
+ * Heuristic for detecting a paywall shell instead of an actual article.
+ * Keep this conservative: short legitimate articles are not enough on their own
+ * to trigger an archive lookup; explicit subscription/limit copy is required.
+ */
+export function isLikelyPaywalledArticle(article: ExtractedArticle | null): boolean {
+  if (!article) return true;
+  const text = article.content
+    .replace(/<[^>]*>/g, ' ')
+    .replace(/&nbsp;|&#160;/gi, ' ')
+    .replace(/&amp;/gi, '&')
+    .replace(/&quot;|&#34;/gi, '"')
+    .replace(/&#39;|&apos;/gi, "'")
+    .replace(/&lt;/gi, '<')
+    .replace(/&gt;/gi, '>')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toLowerCase();
+  const paywallMarkers = [
+    'subscribe to continue reading', 'subscribe to read', 'subscription required',
+    'already a subscriber', 'sign in to read', 'log in to read', 'unlock this article',
+    'you have reached your limit', 'you’ve reached your limit', "you've reached your limit",
+    'you have 0 articles remaining', 'this content is for subscribers',
+    'for subscribers only', 'subscriber-only content', 'subscribe now to continue',
+    'to continue reading this article', 'register to continue reading',
+  ];
+  return paywallMarkers.some((marker) => text.includes(marker));
+}
