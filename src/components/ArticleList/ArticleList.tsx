@@ -733,14 +733,26 @@ export default function ArticleList() {
               onClose={() => setOptionsOpen(false)}
               title={t('articleList.viewOptions')}
             >
-              <SheetRow icon={<SourceGlyph />} label={t('articleList.feedSource')} active={showSource}
-                onClick={() => setDeviceDisplaySetting(isMobile ? 'mobile' : 'desktop', 'feedName', !activeDisplaySettings.feedName)} />
-              <SheetRow icon={<FaviconGlyph />} label={t('articleList.listFavicons')} active={showListFavicons}
-                onClick={toggleShowListFavicons} />
-              <SheetRow icon={<DateGlyph />} label={t('articleList.dateSeparators')} active={dateSepActive}
-                onClick={toggleDateSep} />
-              <SheetRow icon={<TopbarGlyph on={topbarVisible} />} label={t('articleList.serverBar')} active={topbarVisible}
-                onClick={toggleTopbar} />
+              <div className="px-4 py-3">
+                <div className="text-[11px] font-semibold mb-2" style={{ color: 'var(--list-summary)' }}>{t('articleList.settingsFor')}</div>
+                <div className="flex gap-2">
+                  {(['mobile', 'desktop'] as const).map((profile) => (
+                    <button key={profile} onClick={() => setSettingsProfile(profile)}
+                      className="flex-1 rounded-lg px-3 py-2 text-sm"
+                      style={{ border: '1px solid var(--panel-border)', background: settingsProfile === profile ? 'var(--accent-glow)' : 'transparent', color: settingsProfile === profile ? 'var(--accent)' : 'var(--list-title)' }}>
+                      {t(profile === 'mobile' ? 'articleList.mobileSettings' : 'articleList.desktopSettings')}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <SheetRow icon={<SourceGlyph />} label={t('articleList.feedSource')} active={!!editableDisplaySettings.feedName}
+                onClick={() => setDeviceDisplaySetting(settingsProfile, 'feedName', !editableDisplaySettings.feedName)} />
+              <SheetRow icon={<FaviconGlyph />} label={t('articleList.listFavicons')} active={!!editableDisplaySettings.feedIcons}
+                onClick={() => setDeviceDisplaySetting(settingsProfile, 'feedIcons', !editableDisplaySettings.feedIcons)} />
+              <SheetRow icon={<DateGlyph />} label={t('articleList.dateSeparators')} active={!!editableDisplaySettings.dateSeparators}
+                onClick={() => setDeviceDisplaySetting(settingsProfile, 'dateSeparators', !editableDisplaySettings.dateSeparators)} />
+              <SheetRow icon={<TopbarGlyph on={topbarVisible} />} label={t('articleList.serverBar')} active={!!editableDisplaySettings.serverBar}
+                onClick={() => setDeviceDisplaySetting(settingsProfile, 'serverBar', !editableDisplaySettings.serverBar)} />
 
               {!gridLayout && (
                 <>
