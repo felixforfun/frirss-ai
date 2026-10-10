@@ -102,7 +102,12 @@
     "scanStopped": "Scansione interrotta",
     "scanOffline": "Non in linea — risultati tra gli articoli disponibili",
     "scanNetworkError": "Connessione persa durante la scansione",
-    "scanRateLimited": "Troppe richieste — riprova tra un minuto"
+    "scanRateLimited": "Troppe richieste — riprova tra un minuto",
+    "settingsFor": "Impostazioni per",
+    "mobileSettings": "Mobile",
+    "desktopSettings": "Desktop",
+    "twoPanelLayout": "Due pannelli",
+    "threePanelLayout": "Tre pannelli"
   },
   "articleRow": {
     "markRead": "Segna come letto",
