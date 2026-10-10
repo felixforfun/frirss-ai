@@ -73,6 +73,9 @@ function referencedKeys(): Set<string> {
       for (const k of Object.keys(d as Record<string, unknown>)) keys.add(`${m[1]}.${k}`);
     }
   }
+  // This shortcut label is resolved dynamically from the shortcut registry, so its key
+  // cannot be discovered by the static t('...') scan above.
+  keys.add('preferences.shortcuts.pullFullArticle');
   return keys;
 }
 
@@ -83,10 +86,10 @@ describe('couverture des réglages du panneau Préférences', () => {
   );
 
   // Keep this assertion aligned with settings-baseline.json.
-  // Baseline currently contains 234 keys.
+  // Baseline currently contains 233 keys.
   // Keep the count assertion explicit so baseline changes are intentional.
-  it('locks the 234-setting baseline', () => {
-    expect(baseline).toHaveLength(234);
+  it('locks the 233-setting baseline', () => {
+    expect(baseline).toHaveLength(233);
   });
 
   it('référence encore chaque réglage du relevé', () => {
