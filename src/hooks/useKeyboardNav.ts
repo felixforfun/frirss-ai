@@ -34,9 +34,10 @@ export function useKeyboardNav(): void {
       const key = e.key;
       const store = useFeedStore.getState();
 
-      // This action defaults to Escape but can be reassigned in Preferences.
-      // It closes the selected article in any layout, restoring the list view.
-      if (key === shortcuts.backToList && store.selectedArticle) {
+      // Escape always closes the reader; the configured shortcut remains an
+      // additional way to return to the list. A linked page consumes Escape first
+      // in ReadingPane so the first press returns to the feed article.
+      if ((key === shortcuts.backToList || key === 'Escape') && store.selectedArticle) {
         e.preventDefault();
         store.selectArticle(null);
         return;
