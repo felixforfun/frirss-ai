@@ -35,7 +35,7 @@ const EXTERNAL_ONLY_HOSTS = [
   'vimeo.com', 'tiktok.com', 'instagram.com', 'facebook.com', 'fb.watch',
   'twitch.tv', 'spotify.com', 'soundcloud.com', 'linkedin.com',
 ];
-const NON_ARTICLE_FILE_EXTENSIONS = /\\.(?:pdf|epub|docx?|pptx?|xlsx?|zip|rar|7z|mp3|mp4|m4v|mov|webm|m3u8)(?:$|\\/)/i;
+const NON_ARTICLE_FILE_EXTENSIONS = /\.(?:pdf|epub|docx?|pptx?|xlsx?|zip|rar|7z|mp3|mp4|m4v|mov|webm|m3u8)(?:$|\/)/i;
 
 function shouldOpenLinkedUrlExternally(url: URL): boolean {
   const host = url.hostname.toLowerCase();
