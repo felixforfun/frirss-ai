@@ -1430,6 +1430,7 @@ export default function ReadingPane({ showBack }: ReadingPaneProps) {
           style={isMobileOrTablet ? { touchAction: 'pan-y', overscrollBehaviorX: 'none', paddingBottom: '52px' } : undefined}
         >
           <article
+            data-linked-page-url={linkedPage?.url}
             ref={articleRef}
             className="article-enter px-4 py-4 md:px-8 md:py-6 lg:px-12 lg:py-8"
           >
@@ -1440,7 +1441,7 @@ export default function ReadingPane({ showBack }: ReadingPaneProps) {
               ? (linkedPage.content.siteName || linkedUrl?.hostname.replace(/^www\./, '') || article.source)
               : article.source;
             const linkedAuthor = linkedPage ? linkedPage.content.byline : article.author;
-            const headerDate = linkedPage ? '' : date;
+            const headerDate = linkedPage ? (linkedPage.content.publishedDate ? formatArticleDate(Date.parse(linkedPage.content.publishedDate)) : '') : date;
             return isMobileOrTablet ? (
               <div className="flex items-stretch gap-3 mb-3">
                 <div className="flex-1 min-w-0">
@@ -1470,9 +1471,11 @@ export default function ReadingPane({ showBack }: ReadingPaneProps) {
 
           {/* Linked page title links to that page; feed article title links to its original. */}
           {linkedPage ? (
-            <h1 dir="auto" className="font-bold leading-tight mb-4 article-title-target" data-theme="reading-title" style={{ color: 'var(--reading-title)', fontSize: 'var(--fs-reading-title)' }}>
-              {linkedPage.content.title || article.title}
-            </h1>
+            <a href={linkedPage.url} target="_blank" rel="noopener noreferrer" className="block mb-4 hover:underline" title={t('readingPane.openOriginal')}>
+              <h1 dir="auto" className="font-bold leading-tight article-title-target" data-theme="reading-title" style={{ color: 'var(--reading-title)', fontSize: 'var(--fs-reading-title)' }}>
+                {linkedPage.content.title || article.title}
+              </h1>
+            </a>
           ) : article.url ? (
             <a href={article.url} target="_blank" rel="noopener noreferrer" className="block mb-4 hover:underline" title={t('readingPane.openOriginal')}>
               <h1 dir="auto" className="font-bold leading-tight article-title-target" data-theme="reading-title" style={{ color: 'var(--reading-title)', fontSize: 'var(--fs-reading-title)' }}>{article.title}</h1>
