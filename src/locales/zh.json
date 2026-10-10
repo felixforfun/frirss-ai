@@ -102,7 +102,12 @@
     "scanStopped": "扫描已停止",
     "scanOffline": "离线 — 结果来自可用的文章",
     "scanNetworkError": "扫描过程中连接中断",
-    "scanRateLimited": "请求过多 — 请一分钟后重试"
+    "scanRateLimited": "请求过多 — 请一分钟后重试",
+    "settingsFor": "设置适用于",
+    "mobileSettings": "手机",
+    "desktopSettings": "桌面",
+    "twoPanelLayout": "双栏",
+    "threePanelLayout": "三栏"
   },
   "articleRow": {
     "markRead": "标为已读",
@@ -342,6 +347,7 @@
       "markUnread": "标为未读",
       "toggleStar": "切换收藏",
       "openOriginal": "打开原文",
+      "pullFullArticle": "获取全文",
       "toggleSidebar": "显示/隐藏侧边栏",
       "search": "搜索",
       "readLater": "稍后阅读",

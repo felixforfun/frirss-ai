@@ -102,7 +102,12 @@
     "scanStopped": "Scan stopped",
     "scanOffline": "Offline — results among the available articles",
     "scanNetworkError": "Connection lost during the scan",
-    "scanRateLimited": "Too many requests — try again in a minute"
+    "scanRateLimited": "Too many requests — try again in a minute",
+    "settingsFor": "Settings for",
+    "mobileSettings": "Mobile",
+    "desktopSettings": "Desktop",
+    "twoPanelLayout": "Two panels",
+    "threePanelLayout": "Three panels"
   },
   "articleRow": {
     "markRead": "Mark as read",
