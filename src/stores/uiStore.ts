@@ -23,10 +23,10 @@ export type DeviceDisplaySettings = Record<DisplaySettingKey, boolean | string>;
 function loadDeviceDisplaySettings(device: 'mobile' | 'desktop'): DeviceDisplaySettings {
   const saved = loadJson<Partial<DeviceDisplaySettings>>(`frirss_display_${device}`, {});
   return {
-    feedName: typeof saved.feedName === 'boolean' ? saved.feedName : true,
-    feedIcons: typeof saved.feedIcons === 'boolean' ? saved.feedIcons : true,
-    dateSeparators: typeof saved.dateSeparators === 'boolean' ? saved.dateSeparators : true,
-    serverBar: typeof saved.serverBar === 'boolean' ? saved.serverBar : true,
+    feedName: typeof saved.feedName === 'boolean' ? saved.feedName : loadJson('frirss_showSourceInFeed', true),
+    feedIcons: typeof saved.feedIcons === 'boolean' ? saved.feedIcons : loadJson('frirss_showListFavicons', true),
+    dateSeparators: typeof saved.dateSeparators === 'boolean' ? saved.dateSeparators : loadJson('frirss_showDateSeparators', true),
+    serverBar: typeof saved.serverBar === 'boolean' ? saved.serverBar : loadJson('frirss_topbarVisible', true),
     layout: typeof saved.layout === 'string' && ['2', '3', 'grid'].includes(saved.layout) ? saved.layout : (localStorage.getItem('frirss_panelLayout') || '3'),
   };
 }
