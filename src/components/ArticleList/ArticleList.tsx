@@ -79,12 +79,15 @@ export default function ArticleList() {
   } = useFeedStore();
   const viewMode = useUiStore((s) => s.viewMode);
   const panelLayout = useUiStore((s) => s.panelLayout);
+  const deviceDisplaySettings = useUiStore((s) => s.deviceDisplaySettings);
+  const setDeviceDisplaySetting = useUiStore((s) => s.setDeviceDisplaySetting);
+  const [settingsProfile, setSettingsProfile] = useState<'mobile' | 'desktop'>('mobile');
   const sidebarVisible = useUiStore((s) => s.sidebarVisible);
   const toggleSidebar = useUiStore((s) => s.toggleSidebar);
   const showSourceInFeed = useUiStore((s) => s.showSourceInFeed);
-  const showListFavicons = useUiStore((s) => s.showListFavicons);
+
   const rowActions = useUiStore((s) => s.rowActions);
-  const toggleShowListFavicons = useUiStore((s) => s.toggleShowListFavicons);
+
   const subscriptions = useFeedStore((s) => s.subscriptions);
   const unreadCounts = useFeedStore((s) => s.unreadCounts);
   const pushToast = useUiStore((s) => s.pushToast);
@@ -94,21 +97,19 @@ export default function ArticleList() {
   const dismissNewArticles = useFeedStore((s) => s.dismissNewArticles);
   const markReadOnScroll = useUiStore((s) => s.markReadOnScroll);
   const showSourceInAll = useUiStore((s) => s.showSourceInAll);
-  const toggleShowSourceInFeed = useUiStore((s) => s.toggleShowSourceInFeed);
-  const toggleShowSourceInAll = useUiStore((s) => s.toggleShowSourceInAll);
   const feedSettings = useUiStore((s) => s.feedSettings);
-  const showDateSeparators = useUiStore((s) => s.showDateSeparators);
-  const toggleDateSeparators = useUiStore((s) => s.toggleDateSeparators);
-  const gridDateSeparators = useUiStore((s) => s.gridDateSeparators);
-  const toggleGridDateSeparators = useUiStore((s) => s.toggleGridDateSeparators);
   const confirmMarkAllRead = useUiStore((s) => s.confirmMarkAllRead);
-  const topbarVisible = useUiStore((s) => s.topbarVisible);
-  const toggleTopbar = useUiStore((s) => s.toggleTopbar);
   const breakpoint = useBreakpoint();
   const isDesktop = breakpoint === 'desktop';
   const isMobile = breakpoint === 'mobile';
   // A feed can override the global layout (set from its sidebar context menu).
-  const layout = effectiveLayout(panelLayout, feedSettings, selectedFeed?.id);
+  const activeDisplaySettings = deviceDisplaySettings[isMobile ? 'mobile' : 'desktop'];
+  const editableDisplaySettings = deviceDisplaySettings[settingsProfile];
+  const showListFavicons = !!activeDisplaySettings.feedIcons;
+  const toggleShowListFavicons = () => setDeviceDisplaySetting(isMobile ? 'mobile' : 'desktop', 'feedIcons', !activeDisplaySettings.feedIcons);
+  const topbarVisible = !!activeDisplaySettings.serverBar;
+  const toggleTopbar = () => setDeviceDisplaySetting(isMobile ? 'mobile' : 'desktop', 'serverBar', !activeDisplaySettings.serverBar);
+  const layout = effectiveLayout(activeDisplaySettings.layout || panelLayout, feedSettings, selectedFeed?.id);
   const feedLayoutOverride = !!(selectedFeed && feedSettings[selectedFeed.id]?.layout);
   // Grid is a full-width layout: like 2-panel, the list body spans the whole
   // width and the reading pane replaces it on selection.
@@ -118,14 +119,14 @@ export default function ArticleList() {
   const panelLayoutReplacesList = layout === '2' || gridLayout;
   // Date grouping: the grid has its own (off-by-default) toggle; the list views
   // use the shared one.
-  const dateSepActive = gridLayout ? gridDateSeparators : showDateSeparators;
-  const toggleDateSep = gridLayout ? toggleGridDateSeparators : toggleDateSeparators;
+  const dateSepActive = !!activeDisplaySettings.dateSeparators;
+  const toggleDateSep = () => setDeviceDisplaySetting(isMobile ? 'mobile' : 'desktop', 'dateSeparators', !activeDisplaySettings.dateSeparators);
 
   // Determine if source name should be shown. A category view aggregates many
   // feeds, so it behaves like the multi-source "all feeds" view, not a single
   // feed (where the source would be redundant).
   const isInFeed = !!selectedFeed && !isCategoryStreamId(selectedFeed.id);
-  const showSource = isInFeed ? showSourceInFeed : showSourceInAll;
+  const showSource = !!activeDisplaySettings.feedName && (isInFeed ? showSourceInFeed : showSourceInAll);
 
   // Les mots de la recherche en cours, pour que chaque ligne puisse montrer
   // POURQUOI elle est un résultat. Découpés ici, une fois par requête, plutôt
@@ -236,6 +237,7 @@ export default function ArticleList() {
     | null
   >(null);
   const [optionsOpen, setOptionsOpen] = useState(false); // mobile view-options sheet
+  useEffect(() => { if (optionsOpen) setSettingsProfile(isMobile ? 'mobile' : 'desktop'); }, [optionsOpen, isMobile]);
   // Menu contextuel d'un article (clic droit, touche Menu, appui long) — voir
   // `ArticleContextMenu`. On garde l'id et la vue, pas l'objet : le menu relit
   // l'article courant, et disparaît si l'article quitte la liste ou si la vue
@@ -725,14 +727,26 @@ export default function ArticleList() {
               onClose={() => setOptionsOpen(false)}
               title={t('articleList.viewOptions')}
             >
-              <SheetRow icon={<SourceGlyph />} label={t('articleList.feedSource')} active={showSource}
-                onClick={isInFeed ? toggleShowSourceInFeed : toggleShowSourceInAll} />
-              <SheetRow icon={<FaviconGlyph />} label={t('articleList.listFavicons')} active={showListFavicons}
-                onClick={toggleShowListFavicons} />
-              <SheetRow icon={<DateGlyph />} label={t('articleList.dateSeparators')} active={dateSepActive}
-                onClick={toggleDateSep} />
-              <SheetRow icon={<TopbarGlyph on={topbarVisible} />} label={t('articleList.serverBar')} active={topbarVisible}
-                onClick={toggleTopbar} />
+              <div className="px-4 py-3">
+                <div className="text-[11px] font-semibold mb-2" style={{ color: 'var(--list-summary)' }}>{t('articleList.settingsFor')}</div>
+                <div className="flex gap-2">
+                  {(['mobile', 'desktop'] as const).map((profile) => (
+                    <button key={profile} onClick={() => setSettingsProfile(profile)}
+                      className="flex-1 rounded-lg px-3 py-2 text-sm"
+                      style={{ border: '1px solid var(--panel-border)', background: settingsProfile === profile ? 'var(--accent-glow)' : 'transparent', color: settingsProfile === profile ? 'var(--accent)' : 'var(--list-title)' }}>
+                      {t(profile === 'mobile' ? 'articleList.mobileSettings' : 'articleList.desktopSettings')}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <SheetRow icon={<SourceGlyph />} label={t('articleList.feedSource')} active={!!editableDisplaySettings.feedName}
+                onClick={() => setDeviceDisplaySetting(settingsProfile, 'feedName', !editableDisplaySettings.feedName)} />
+              <SheetRow icon={<FaviconGlyph />} label={t('articleList.listFavicons')} active={!!editableDisplaySettings.feedIcons}
+                onClick={() => setDeviceDisplaySetting(settingsProfile, 'feedIcons', !editableDisplaySettings.feedIcons)} />
+              <SheetRow icon={<DateGlyph />} label={t('articleList.dateSeparators')} active={!!editableDisplaySettings.dateSeparators}
+                onClick={() => setDeviceDisplaySetting(settingsProfile, 'dateSeparators', !editableDisplaySettings.dateSeparators)} />
+              <SheetRow icon={<TopbarGlyph on={topbarVisible} />} label={t('articleList.serverBar')} active={!!editableDisplaySettings.serverBar}
+                onClick={() => setDeviceDisplaySetting(settingsProfile, 'serverBar', !editableDisplaySettings.serverBar)} />
 
               {!gridLayout && (
                 <>
@@ -743,6 +757,19 @@ export default function ArticleList() {
                   </div>
                 </>
               )}
+              <SheetDivider />
+              <div className="px-4 py-3">
+                <div className="text-[15px] font-medium mb-3" style={{ color: 'var(--list-title)' }}>{t('articleList.displayMode')}</div>
+                <div className="flex gap-2">
+                  {(['grid', '2', '3'] as const).map((mode) => (
+                    <button key={mode} onClick={() => setDeviceDisplaySetting(settingsProfile, 'layout', mode)}
+                      className="flex-1 rounded-lg px-3 py-2 text-sm"
+                      style={{ border: '1px solid var(--panel-border)', background: editableDisplaySettings.layout === mode ? 'var(--accent-glow)' : 'transparent', color: editableDisplaySettings.layout === mode ? 'var(--accent)' : 'var(--list-title)' }}>
+                      {t(mode === 'grid' ? 'articleList.gridLayout' : mode === '2' ? 'articleList.twoPanelLayout' : 'articleList.threePanelLayout')}
+                    </button>
+                  ))}
+                </div>
+              </div>
             </BottomSheet>
           </div>
         ) : is2Panel ? (
@@ -792,7 +819,7 @@ export default function ArticleList() {
               <div className="option-track">
                 <SourceToggle
                   active={showSource}
-                  onClick={isInFeed ? toggleShowSourceInFeed : toggleShowSourceInAll}
+                  onClick={() => setDeviceDisplaySetting(isMobile ? 'mobile' : 'desktop', 'feedName', !activeDisplaySettings.feedName)}
                   tooltip={isInFeed ? t('articleList.sourceToggleFeed') : t('articleList.sourceToggleAll')}
                 />
                 <FaviconToggle />
@@ -832,11 +859,11 @@ export default function ArticleList() {
                 <div className="option-track">
                   <SourceToggle
                     active={showSource}
-                    onClick={isInFeed ? toggleShowSourceInFeed : toggleShowSourceInAll}
+                    onClick={() => setDeviceDisplaySetting(isMobile ? 'mobile' : 'desktop', 'feedName', !activeDisplaySettings.feedName)}
                     tooltip={isInFeed ? t('articleList.sourceToggleFeed') : t('articleList.sourceToggleAll')}
                   />
                   <FaviconToggle />
-                  <DateSepToggle active={showDateSeparators} onClick={toggleDateSeparators} />
+                  <DateSepToggle active={dateSepActive} onClick={toggleDateSep} />
                   <TopbarToggle />
                 </div>
                 <ViewModeSwitcher />
@@ -1046,7 +1073,7 @@ export default function ArticleList() {
             loadMoreBusy={loadMoreBusy}
             onLoadMore={loadMore}
           />
-        ) : gridLayout && !gridDateSeparators ? (
+        ) : gridLayout && !dateSepActive ? (
           /* Grid, default: one continuous gallery, no date bands. */
           <div className="article-grid">
             {articles.map(renderCard)}

@@ -23,8 +23,8 @@ import path from 'path';
  * via ses formes suffixées (`_zero`, `_one`, `_two`, `_few`, `_many`,
  * `_other`). Le test considère donc une clé du relevé présente dans une
  * locale si la clé exacte OU au moins une de ces formes suffixées y résout
- * une chaîne. Ne pas ajouter de clé "nue" en doublon des formes `_one`/
- * `_other` pour faire passer ce test : ces clés nues seraient inatteignables
+ * une chaîne. Ne pas ajouter de clé "nue" en doublon des formes `_one`/`_other`
+ * pour faire passer ce test : ces clés nues seraient inatteignables
  * à l'exécution (cf. review du 21/08/2026 : 18 clés mortes ajoutées puis
  * retirées pour cette raison).
  */
@@ -63,8 +63,8 @@ function referencedKeys(): Set<string> {
   const keys = new Set<string>();
   // Clé statique : simple quotes, double quotes ou backticks. Le backreference \1
   // impose la même sorte de guillemet en ouverture/fermeture, et comme le
-  // caractère `$` n'appartient pas à la classe de la clé, un backtick avec
-  // interpolation (`${`) ne matche jamais ici — il tombe dans la regex suivante.
+  // caractère '$' n'appartient pas à la classe de la clé, un backtick avec
+  // interpolation (`\${`) ne matche jamais ici — il tombe dans la regex suivante.
   for (const m of src.matchAll(/t\(\s*(['"`])((?:preferences|admin)\.[a-zA-Z0-9_.]+)\1/g)) keys.add(m[2]);
   for (const m of src.matchAll(/t\(\s*`((?:preferences|admin)\.[a-zA-Z0-9_.]+)\.\$\{/g)) {
     let d: unknown = fr;
@@ -73,16 +73,22 @@ function referencedKeys(): Set<string> {
       for (const k of Object.keys(d as Record<string, unknown>)) keys.add(`${m[1]}.${k}`);
     }
   }
+  // This shortcut label is resolved dynamically from the shortcut registry, so its key
+  // cannot be discovered by the static t('...') scan above.
+  keys.add('preferences.shortcuts.pullFullArticle');
   return keys;
 }
 
+// Keep this count aligned with settings-baseline.json; CI guards the baseline.
 describe('couverture des réglages du panneau Préférences', () => {
   const baseline: string[] = JSON.parse(
     fs.readFileSync(path.join(DIR, 'settings-baseline.json'), 'utf8'),
   );
 
-  it('fige 233 réglages', () => {
-    expect(baseline).toHaveLength(233);
+  // The baseline now includes the dynamically registered pullFullArticle shortcut.
+  // Keep the count assertion explicit so baseline changes are intentional.
+  it('locks the 234-setting baseline', () => {
+    expect(baseline).toHaveLength(234);
   });
 
   it('référence encore chaque réglage du relevé', () => {

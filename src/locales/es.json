@@ -102,7 +102,12 @@
     "scanStopped": "Análisis detenido",
     "scanOffline": "Sin conexión — resultados entre los artículos disponibles",
     "scanNetworkError": "Conexión perdida durante el análisis",
-    "scanRateLimited": "Demasiadas solicitudes — inténtalo de nuevo en un minuto"
+    "scanRateLimited": "Demasiadas solicitudes — inténtalo de nuevo en un minuto",
+    "settingsFor": "Ajustes para",
+    "mobileSettings": "Móvil",
+    "desktopSettings": "Escritorio",
+    "twoPanelLayout": "Dos paneles",
+    "threePanelLayout": "Tres paneles"
   },
   "articleRow": {
     "markRead": "Marcar como leído",
@@ -360,7 +365,7 @@
       "gestureHelp": "Mostrar esta ventana",
       "helpTitle": "Atajos de teclado",
       "backToList": "Volver a la lista de artículos",
-      "pullFullArticle": "Cargar artículo completo"
+      "pullFullArticle": "Cargar el artículo completo"
     },
     "offline": {
       "title": "Sin conexión",

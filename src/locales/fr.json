@@ -102,7 +102,12 @@
     "scanStopped": "Balayage interrompu",
     "scanOffline": "Hors ligne — résultats parmi les articles disponibles",
     "scanNetworkError": "Connexion perdue pendant le balayage",
-    "scanRateLimited": "Trop de requêtes — réessayez dans une minute"
+    "scanRateLimited": "Trop de requêtes — réessayez dans une minute",
+    "settingsFor": "Paramètres pour",
+    "mobileSettings": "Mobile",
+    "desktopSettings": "Ordinateur",
+    "twoPanelLayout": "Deux panneaux",
+    "threePanelLayout": "Trois panneaux"
   },
   "articleRow": {
     "markRead": "Marquer lu",
