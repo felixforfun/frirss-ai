@@ -170,10 +170,6 @@ export default function ReadingPane({ showBack }: ReadingPaneProps) {
 
   // Full content extraction state
   const [extractedContent, setExtractedContent] = useState<ExtractedContent | null>(null);
-  // Linked pages are rendered as reader-mode documents without replacing the feed article.
-  const [linkedPage, setLinkedPage] = useState<{ url: string; content: ExtractedContent } | null>(null);
-  const [linkedPageStack, setLinkedPageStack] = useState<Array<{ url: string; content: ExtractedContent }>>([]);
-  const [linkedPageLoading, setLinkedPageLoading] = useState(false);
   const [extracting, setExtracting] = useState(false);
   const [extractError, setExtractError] = useState<string | null>(null);
   const [aiConfig, setAiConfig] = useState<AiSummaryConfig | null>(null);
@@ -849,43 +845,6 @@ export default function ReadingPane({ showBack }: ReadingPaneProps) {
     };
   }, [isMobileOrTablet, selectNextArticle, selectPrevArticle]);
 
-  const handleLinkedPageBack = useCallback(() => {
-    setLinkedPageStack((stack) => {
-      const next = stack.slice(0, -1);
-      setLinkedPage(next.length ? next[next.length - 1] : null);
-      return next;
-    });
-  }, []);
-
-  const handleReadingBodyClick = useCallback(async (event: ReactMouseEvent<HTMLDivElement>) => {
-    const target = event.target;
-    if (!(target instanceof Element)) return;
-    const anchor = target.closest('a[href]') as HTMLAnchorElement | null;
-    if (!anchor || anchor.hasAttribute('download')) return;
-    const rawHref = anchor.getAttribute('href');
-    if (!rawHref) return;
-    let url: URL;
-    try { url = new URL(rawHref, linkedPage?.url || selectedArticle?.url || window.location.href); } catch { return; }
-    if (url.protocol !== 'http:' && url.protocol !== 'https:') return;
-    // Keep modified clicks and explicit new-window links behaving like normal browser links.
-    if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || anchor.target === '_blank') return;
-    event.preventDefault();
-    if (url.href === (linkedPage?.url || selectedArticle?.url)) return;
-    setLinkedPageLoading(true);
-    try {
-      const { extractFullContent } = await import('../../utils/extractContent');
-      const content = await extractFullContent(url.href);
-      setLinkedPageStack((stack) => [...stack, ...(linkedPage ? [linkedPage] : [])]);
-      setLinkedPage({ url: url.href, content });
-      if (scrollContainerRef.current) scrollContainerRef.current.scrollTop = 0;
-    } catch {
-      // Extraction failures should not strand the reader: open the source normally.
-      window.open(url.href, '_blank', 'noopener,noreferrer');
-    } finally {
-      setLinkedPageLoading(false);
-    }
-  }, [linkedPage, selectedArticle?.url]);
-
   const handleExtract = useCallback(async () => {
     if (!selectedArticle?.url || extracting) return;
     const id = selectedArticle.id;
@@ -953,7 +912,7 @@ export default function ReadingPane({ showBack }: ReadingPaneProps) {
     }),
     [selectedArticle?.content, extractedContent?.content, inlineVideos, videoPlayLabel, videoOpenLabel],
   );
-  const bodyProp = useMemo(() => ({ __html: linkedPage ? sanitizeHtml(linkedPage.content.content) : body.html }), [body.html, linkedPage]);
+  const bodyProp = useMemo(() => ({ __html: body.html }), [body.html]);
 
   // Un article de flux YouTube EST la vidéo : on la montre en tête, sauf si le
   // corps porte déjà la même (l'injection ci-dessus l'a alors transformée en
@@ -1470,16 +1429,9 @@ export default function ReadingPane({ showBack }: ReadingPaneProps) {
               data-theme="reading-title"
               style={{ color: 'var(--reading-title)', fontSize: 'var(--fs-reading-title)' }}
             >
-              {linkedPage?.content.title || article.title}
+              {article.title}
             </h1>
           )}
-
-          {linkedPage && (
-            <button type="button" onClick={handleLinkedPageBack} className="mb-3 inline-flex items-center gap-2 rounded-lg px-3 py-2 text-sm" style={{ color: 'var(--accent)', background: 'var(--accent-glow)' }}>
-              <span aria-hidden="true">←</span>{t('readingPane.backToArticle', 'Back to article')}
-            </button>
-          )}
-          {linkedPageLoading && <div className="mb-3 text-xs" style={{ color: 'var(--reading-meta)' }}>Loading linked article…</div>}
 
           {/* Tags & Labels */}
           {(() => {
@@ -1587,7 +1539,7 @@ export default function ReadingPane({ showBack }: ReadingPaneProps) {
           {headFacadeHtml && (
             <div
               className="article-content"
-              onClick={(event) => { handleVideoClick(event); void handleReadingBodyClick(event); }}
+              onClick={handleVideoClick}
               dangerouslySetInnerHTML={headFacadeProp}
             />
           )}
@@ -1608,7 +1560,7 @@ export default function ReadingPane({ showBack }: ReadingPaneProps) {
               className="article-content leading-relaxed reading-body-enter"
               data-theme="reading-text"
               style={{ color: 'var(--reading-text)', fontSize: 'var(--fs-reading-body)' }}
-              onClick={(event) => { handleVideoClick(event); void handleReadingBodyClick(event); }}
+              onClick={handleVideoClick}
               dangerouslySetInnerHTML={bodyProp}
             />
           )}
