@@ -38,7 +38,10 @@ export default function GeneralTab() {
     [editing, setShortcut]
   );
 
-  function formatKey(key: string) {
+  function formatKey(key: unknown) {
+    // Old or partially synced shortcut settings can contain a missing value.
+    // Preferences must remain usable even if one shortcut is malformed.
+    if (typeof key !== 'string' || key.length === 0) return '?';
     const names: Record<string, string> = {
       ArrowUp: '↑',
       ArrowDown: '↓',
