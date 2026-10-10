@@ -7,6 +7,7 @@ export interface ExtractedArticle {
   excerpt: string;
   byline: string;
   siteName: string;
+  publishedDate: string;
   length: number;
 }
 
@@ -115,6 +116,16 @@ export function extractArticle(url: string, html: string): ExtractedArticle | nu
   base.setAttribute('href', url);
   document.head?.prepend(base);
 
+  const publishedDate = (() => {
+    const selectors = ['meta[property="article:published_time"]', 'meta[property="og:published_time"]', 'meta[name="pubdate"]', 'meta[name="publishdate"]', 'meta[name="date"]', 'meta[itemprop="datePublished"]', 'time[datetime]'];
+    for (const selector of selectors) {
+      const element = document.querySelector(selector);
+      const raw = element?.getAttribute('content') || element?.getAttribute('datetime') || '';
+      const timestamp = Date.parse(raw);
+      if (raw && Number.isFinite(timestamp)) return new Date(timestamp).toISOString();
+    }
+    return '';
+  })();
   const parsed = new Readability(document as never, { charThreshold: 50 }).parse();
   if (!parsed?.content) return null;
 
@@ -124,6 +135,7 @@ export function extractArticle(url: string, html: string): ExtractedArticle | nu
     excerpt: parsed.excerpt || '',
     byline: parsed.byline || '',
     siteName: parsed.siteName || '',
+    publishedDate,
     length: parsed.length || 0,
   };
 }
