@@ -79,12 +79,15 @@ export default function ArticleList() {
   } = useFeedStore();
   const viewMode = useUiStore((s) => s.viewMode);
   const panelLayout = useUiStore((s) => s.panelLayout);
+  const deviceDisplaySettings = useUiStore((s) => s.deviceDisplaySettings);
+  const setDeviceDisplaySetting = useUiStore((s) => s.setDeviceDisplaySetting);
+  const [settingsProfile, setSettingsProfile] = useState<'mobile' | 'desktop'>('mobile');
   const sidebarVisible = useUiStore((s) => s.sidebarVisible);
   const toggleSidebar = useUiStore((s) => s.toggleSidebar);
   const showSourceInFeed = useUiStore((s) => s.showSourceInFeed);
-  const showListFavicons = useUiStore((s) => s.showListFavicons);
+
   const rowActions = useUiStore((s) => s.rowActions);
-  const toggleShowListFavicons = useUiStore((s) => s.toggleShowListFavicons);
+
   const subscriptions = useFeedStore((s) => s.subscriptions);
   const unreadCounts = useFeedStore((s) => s.unreadCounts);
   const pushToast = useUiStore((s) => s.pushToast);
@@ -102,13 +105,18 @@ export default function ArticleList() {
   const gridDateSeparators = useUiStore((s) => s.gridDateSeparators);
   const toggleGridDateSeparators = useUiStore((s) => s.toggleGridDateSeparators);
   const confirmMarkAllRead = useUiStore((s) => s.confirmMarkAllRead);
-  const topbarVisible = useUiStore((s) => s.topbarVisible);
-  const toggleTopbar = useUiStore((s) => s.toggleTopbar);
   const breakpoint = useBreakpoint();
   const isDesktop = breakpoint === 'desktop';
   const isMobile = breakpoint === 'mobile';
   // A feed can override the global layout (set from its sidebar context menu).
-  const layout = effectiveLayout(panelLayout, feedSettings, selectedFeed?.id);
+  const activeDisplaySettings = deviceDisplaySettings[isMobile ? 'mobile' : 'desktop'];
+  const editableDisplaySettings = deviceDisplaySettings[settingsProfile];
+  const showListFavicons = !!activeDisplaySettings.feedIcons;
+  const toggleShowListFavicons = () => setDeviceDisplaySetting(isMobile ? 'mobile' : 'desktop', 'feedIcons', !activeDisplaySettings.feedIcons);
+  const topbarVisible = !!activeDisplaySettings.serverBar;
+  const toggleTopbar = () => setDeviceDisplaySetting(isMobile ? 'mobile' : 'desktop', 'serverBar', !activeDisplaySettings.serverBar);
+  useEffect(() => { if (optionsOpen) setSettingsProfile(isMobile ? 'mobile' : 'desktop'); }, [optionsOpen, isMobile]);
+  const layout = effectiveLayout(activeDisplaySettings.layout || panelLayout, feedSettings, selectedFeed?.id);
   const feedLayoutOverride = !!(selectedFeed && feedSettings[selectedFeed.id]?.layout);
   // Grid is a full-width layout: like 2-panel, the list body spans the whole
   // width and the reading pane replaces it on selection.
@@ -118,14 +126,14 @@ export default function ArticleList() {
   const panelLayoutReplacesList = layout === '2' || gridLayout;
   // Date grouping: the grid has its own (off-by-default) toggle; the list views
   // use the shared one.
-  const dateSepActive = gridLayout ? gridDateSeparators : showDateSeparators;
-  const toggleDateSep = gridLayout ? toggleGridDateSeparators : toggleDateSeparators;
+  const dateSepActive = gridLayout ? gridDateSeparators : !!activeDisplaySettings.dateSeparators;
+  const toggleDateSep = () => setDeviceDisplaySetting(isMobile ? 'mobile' : 'desktop', 'dateSeparators', !activeDisplaySettings.dateSeparators);
 
   // Determine if source name should be shown. A category view aggregates many
   // feeds, so it behaves like the multi-source "all feeds" view, not a single
   // feed (where the source would be redundant).
   const isInFeed = !!selectedFeed && !isCategoryStreamId(selectedFeed.id);
-  const showSource = isInFeed ? showSourceInFeed : showSourceInAll;
+  const showSource = !!activeDisplaySettings.feedName && (isInFeed ? showSourceInFeed : showSourceInAll);
 
   // Les mots de la recherche en cours, pour que chaque ligne puisse montrer
   // POURQUOI elle est un résultat. Découpés ici, une fois par requête, plutôt
@@ -726,7 +734,7 @@ export default function ArticleList() {
               title={t('articleList.viewOptions')}
             >
               <SheetRow icon={<SourceGlyph />} label={t('articleList.feedSource')} active={showSource}
-                onClick={isInFeed ? toggleShowSourceInFeed : toggleShowSourceInAll} />
+                onClick={() => setDeviceDisplaySetting(isMobile ? 'mobile' : 'desktop', 'feedName', !activeDisplaySettings.feedName)} />
               <SheetRow icon={<FaviconGlyph />} label={t('articleList.listFavicons')} active={showListFavicons}
                 onClick={toggleShowListFavicons} />
               <SheetRow icon={<DateGlyph />} label={t('articleList.dateSeparators')} active={dateSepActive}
