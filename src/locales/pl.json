@@ -370,7 +370,8 @@
       "customize": "Dostosuj w preferencjach",
       "gestureHelp": "Pokaż to okno",
       "helpTitle": "Skróty klawiszowe",
-      "backToList": "Wróć do listy artykułów"
+      "backToList": "Wróć do listy artykułów",
+      "pullFullArticle": "Pobierz pełny artykuł"
     },
     "offline": {
       "title": "Offline",
