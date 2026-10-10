@@ -275,7 +275,7 @@ export default function ReadingPane({ showBack }: ReadingPaneProps) {
     setArticleFindMatches([]);
     setArticleFindIndex(0);
     clearArticleFindHighlights();
-  }, [selectedArticle?.id]);
+  }, [selectedArticle?.id, linkedPage?.url]);
 
   // Restore an existing summary on article reopen without triggering inference.
   // A read-only endpoint checks the same content/config hashes as generation;
@@ -284,7 +284,8 @@ export default function ReadingPane({ showBack }: ReadingPaneProps) {
   useEffect(() => {
     let cancelled = false;
     const article = selectedArticle;
-    if (!article || !aiConfig?.enabled || !aiConfig.model.trim()) return;
+    // Cache restoration here is only for the feed article; linked pages have their own URL key.
+    if (linkedPage || !article || !aiConfig?.enabled || !aiConfig.model.trim()) return;
 
     const content = extractedContent?.content || article.content || article.summary || '';
     if (!content.trim()) return;
@@ -306,6 +307,7 @@ export default function ReadingPane({ showBack }: ReadingPaneProps) {
     return () => { cancelled = true; };
   }, [
     selectedArticle?.id,
+    linkedPage?.url,
     selectedArticle?.sourceId,
     selectedArticle?.title,
     selectedArticle?.url,
@@ -379,17 +381,20 @@ export default function ReadingPane({ showBack }: ReadingPaneProps) {
   const handleSummarize = useCallback(async (regenerate = false) => {
     if (!selectedArticle || !aiConfig?.enabled || !aiConfig.model.trim() || aiSummarizing) return;
     const article = selectedArticle;
+    // Summarize the document currently shown in the reader, not always the
+    // underlying FreshRSS item. Linked pages use a separate cache key.
+    const currentLinkedPage = linkedPage;
+    const content = currentLinkedPage?.content.content
+      || extractedContent?.content || article.content || article.summary || '';
+    const title = currentLinkedPage?.content.title || article.title || '';
+    const url = currentLinkedPage?.url || article.url || '';
+    const articleKey = currentLinkedPage
+      ? `${article.sourceId}::${article.id}::linked::${currentLinkedPage.url}`
+      : `${article.sourceId}::${article.id}`;
     setAiSummarizing(true);
     setAiSummaryError(null);
     try {
-      const content = extractedContent?.content || article.content || article.summary || '';
-      const result = await summarizeArticle({
-        articleKey: `${article.sourceId}::${article.id}`,
-        title: article.title || '',
-        url: article.url || '',
-        content,
-        regenerate,
-      });
+      const result = await summarizeArticle({ articleKey, title, url, content, regenerate });
       if (useFeedStore.getState().selectedArticle?.id === article.id) {
         setAiSummary({ articleId: article.id, summary: result.summary, cached: result.cached });
       }
@@ -398,7 +403,7 @@ export default function ReadingPane({ showBack }: ReadingPaneProps) {
     } finally {
       if (useFeedStore.getState().selectedArticle?.id === article.id) setAiSummarizing(false);
     }
-  }, [selectedArticle, aiConfig, aiSummarizing, extractedContent?.content, t]);
+  }, [selectedArticle, linkedPage, aiConfig, aiSummarizing, extractedContent?.content, t]);
 
   // Article change — fade animation on tap, no animation on swipe
   const prevArticleIdRef = useRef<string | null>(null);
