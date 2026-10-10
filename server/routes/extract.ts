@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { requireAuth } from '../middleware/auth.js';
 import { assertTargetSafe, fetchUpstream, finishError, proxyRateLimiter, UnresolvedTargetError } from './proxy.js';
 import { cacheEnabled, cacheGet, cacheSet, extractKey } from '../cache.js';
-import { extractArticle, ExtractorBusyError, withExtractSlot } from '../extract.js';
+import { extractArticle, isLikelyPaywalledArticle, ExtractorBusyError, withExtractSlot } from '../extract.js';
 
 const router = Router();
 
@@ -48,6 +48,25 @@ const BODY_TIMEOUT_MS = 20_000;
 
 /** Types de contenu dont il y a un article à extraire. */
 const HTML_TYPES = /^(text\/html|application\/xhtml\+xml)\b/i;
+
+ // Archive lookup is deliberately limited to the requested publishers. Bypass
+ // Paywalls Clean is a browser extension: its rules depend on browser cookies,
+ // DOM execution and script blocking, so importing it here would not reproduce
+ // its behaviour. archive.is is a best-effort fallback.
+const ARCHIVE_FALLBACK_HOSTS = new Set(['ft.com', 'nytimes.com', 'wsj.com', 'msn.com']);
+function supportsArchiveFallback(rawUrl: string): boolean {
+  try {
+    const host = new URL(rawUrl).hostname.toLowerCase();
+    return [...ARCHIVE_FALLBACK_HOSTS].some((domain) => host === domain || host.endsWith('.' + domain));
+  } catch { return false; }
+}
+
+const ARTICLE_HEADERS = {
+  Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
+  'Accept-Language': 'en-US,en;q=0.9,de;q=0.7',
+  'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+};
+
 
 /** Plafond dépassé : échec ordinaire, dont le client doit pouvoir se replier. */
 class BodyTooLargeError extends Error {}
@@ -140,7 +159,7 @@ async function produce(url: string, key: string | null): Promise<Outcome> {
     // `fetchUpstream` et pas `fetch` : c'est lui qui porte la garde anti-SSRF
     // et les réécritures PROXY_REWRITES. Un appel direct rouvrirait la porte
     // que le proxy ferme.
-    const upstream = await fetchUpstream(url, { headers: { Accept: 'text/html' } });
+    const upstream = await fetchUpstream(url, { headers: ARTICLE_HEADERS });
     if (!upstream.ok) {
       // Corps annulé, comme pour un type refusé : sous undici la socket reste
       // retenue jusqu'au ramassage tant que le flux n'est ni lu ni annulé —
@@ -181,7 +200,33 @@ async function produce(url: string, key: string | null): Promise<Outcome> {
   }
   // Pas d'article lisible : on le dit, pour que le client puisse extraire de
   // son côté. Un corps vide renvoyé en 200 le priverait de ce repli.
-  if (!article) return json(422, { error: 'Not extractable' });
+  // If the publisher returned only its subscription shell, try the newest
+  // archive.is snapshot once. This is best-effort and never blocks ordinary
+  // extraction on sites outside the explicit allowlist.
+  if (supportsArchiveFallback(url) && isLikelyPaywalledArticle(article)) {
+    try {
+      const archiveTarget = new URL(url);
+      archiveTarget.search = '';
+      archiveTarget.hash = '';
+      const archiveUrl = `https://archive.is/newest/${archiveTarget.href}`;
+      const archived = await fetchUpstream(archiveUrl, {
+        headers: { ...ARTICLE_HEADERS, Referer: 'https://archive.is/' },
+        timeoutMs: 15_000,
+      });
+      if (archived.ok && HTML_TYPES.test(archived.headers.get('content-type') || '')) {
+        const archivedHtml = await readBoundedText(archived, MAX_HTML_BYTES, 15_000);
+        const archivedArticle = await withExtractSlot(() => extractArticle(url, archivedHtml));
+        if (archivedArticle && !isLikelyPaywalledArticle(archivedArticle)) article = archivedArticle;
+      } else {
+        archived.body?.cancel().catch(() => {});
+      }
+    } catch {
+      // Archive outages, missing snapshots, rate limits and captchas are normal;
+      // preserve the original extraction result and let the client continue.
+    }
+  }
+
+  if (!article || isLikelyPaywalledArticle(article)) return json(422, { error: 'Not extractable' });
 
   const body = JSON.stringify(article);
   // Écriture au mieux : un Redis en panne ne doit pas priver le client de sa
