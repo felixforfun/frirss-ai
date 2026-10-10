@@ -28,6 +28,20 @@ import BottomSheet from '../BottomSheet';
 // extractFullContent is loaded on demand (code-split) — see handleExtract.
 
 const ARTICLE_FIND_HIGHLIGHT = 'frirss-article-find';
+
+// These destinations are better handled by the browser than by article extraction.
+const EXTERNAL_ONLY_HOSTS = [
+  'x.com', 'twitter.com', 'youtube.com', 'youtu.be', 'youtube-nocookie.com',
+  'vimeo.com', 'tiktok.com', 'instagram.com', 'facebook.com', 'fb.watch',
+  'twitch.tv', 'spotify.com', 'soundcloud.com', 'linkedin.com',
+];
+const NON_ARTICLE_FILE_EXTENSIONS = /\\.(?:pdf|epub|docx?|pptx?|xlsx?|zip|rar|7z|mp3|mp4|m4v|mov|webm|m3u8)(?:$|\\/)/i;
+
+function shouldOpenLinkedUrlExternally(url: URL): boolean {
+  const host = url.hostname.toLowerCase();
+  return EXTERNAL_ONLY_HOSTS.some((domain) => host === domain || host.endsWith(`.${domain}`))
+    || NON_ARTICLE_FILE_EXTENSIONS.test(url.pathname);
+}
 const ARTICLE_FIND_ACTIVE_HIGHLIGHT = 'frirss-article-find-active';
 
 type ArticleFindHighlightApi = {
@@ -225,6 +239,32 @@ export default function ReadingPane({ showBack }: ReadingPaneProps) {
       window.removeEventListener('ai-summary-config-changed', refreshConfig);
     };
   }, []);
+
+  // A linked page belongs to the feed article that opened it. Selecting another
+  // feed item must always restore that item's own content immediately.
+  useEffect(() => {
+    setLinkedPage(null);
+    setLinkedPageStack([]);
+    setLinkedPageLoading(false);
+  }, [selectedArticle?.id]);
+
+  // Escape first returns from a linked page to its feed article. The global
+  // keyboard handler then handles Escape normally on the next press.
+  useEffect(() => {
+    if (!linkedPage) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape' || event.defaultPrevented) return;
+      const target = event.target as HTMLElement | null;
+      if (target?.closest('input, textarea, select, [contenteditable="true"]')) return;
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      setLinkedPage(null);
+      setLinkedPageStack([]);
+      setLinkedPageLoading(false);
+    };
+    document.addEventListener('keydown', onKeyDown, true);
+    return () => document.removeEventListener('keydown', onKeyDown, true);
+  }, [linkedPage]);
 
   useEffect(() => {
     setAiSummary(null);
@@ -871,10 +911,21 @@ export default function ReadingPane({ showBack }: ReadingPaneProps) {
     if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || anchor.target === '_blank') return;
     event.preventDefault();
     if (url.href === (linkedPage?.url || selectedArticle?.url)) return;
+
+    // PDFs, media files, social networks and video platforms are not useful reader-mode targets.
+    // Open synchronously from the click so browser popup blockers allow the new tab.
+    if (shouldOpenLinkedUrlExternally(url)) {
+      window.open(url.href, '_blank', 'noopener,noreferrer');
+      return;
+    }
+
+    const sourceArticleId = selectedArticle?.id;
     setLinkedPageLoading(true);
     try {
       const { extractFullContent } = await import('../../utils/extractContent');
       const content = await extractFullContent(url.href);
+      // Ignore late extraction results if the user selected a different feed article meanwhile.
+      if (useFeedStore.getState().selectedArticle?.id !== sourceArticleId) return;
       setLinkedPageStack((stack) => [...stack, ...(linkedPage ? [linkedPage] : [])]);
       setLinkedPage({ url: url.href, content });
       if (scrollContainerRef.current) scrollContainerRef.current.scrollTop = 0;
@@ -884,7 +935,7 @@ export default function ReadingPane({ showBack }: ReadingPaneProps) {
     } finally {
       setLinkedPageLoading(false);
     }
-  }, [linkedPage, selectedArticle?.url]);
+  }, [linkedPage, selectedArticle?.id, selectedArticle?.url]);
 
   const handleExtract = useCallback(async () => {
     if (!selectedArticle?.url || extracting) return;
