@@ -156,7 +156,7 @@ describe('ReadingPane — corps d’article', () => {
     // l'image d'en-tête — le cas fréquent, que `displayedHtml` rattrape.
     await putExtract('a2', {
       title: 'Titre', content: '<p>full</p>',
-      excerpt: '', byline: '', siteName: '', length: 10,
+      excerpt: '', byline: '', siteName: '', publishedDate: '', length: 10,
     });
     const spy = spyOnBodyWrites();
     const btn = container.querySelector('[title="readingPane.fullContent"]') as HTMLElement;
