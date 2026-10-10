@@ -71,10 +71,10 @@ describe('extractFullContent', () => {
     const out = await extractFullContent('https://example.com/a');
     expect(out).toEqual({
       title: '', content: '<p>corps serveur</p>',
-      excerpt: '', byline: '', siteName: '', length: 0,
+      excerpt: '', byline: '', siteName: '', publishedDate: '', length: 0,
     });
     expect(Object.keys(out).sort()).toEqual(
-      ['byline', 'content', 'excerpt', 'length', 'siteName', 'title'],
+      ['byline', 'content', 'excerpt', 'length', 'publishedDate', 'siteName', 'title'],
     );
   });
 
