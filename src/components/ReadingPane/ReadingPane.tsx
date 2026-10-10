@@ -165,20 +165,33 @@ export default function ReadingPane({ showBack }: ReadingPaneProps) {
   // l'ouvrir d'abord dans Safari. `navigator.share` là où il existe, le
   // presse-papiers partout ailleurs.
   const pushToast = useUiStore((s) => s.pushToast);
-  const canNativeShare = typeof navigator !== 'undefined' && typeof navigator.share === 'function';
-  const shareArticle = useCallback(async (article: Article) => {
-    if (!article.url) return;
+  const shareArticle = useCallback(async (title: string, url: string) => {
+    if (!url) return;
     try {
-      if (typeof navigator !== 'undefined' && typeof navigator.share === 'function') {
-        await navigator.share({ title: article.title, url: article.url });
-        return;
+      // Clipboard API can be unavailable in installed iOS PWAs or when browser
+      // permissions reject it. Fall back to the legacy copy command.
+      if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(url);
+      } else {
+        throw new Error('Clipboard API unavailable');
       }
-      await navigator.clipboard.writeText(article.url);
       pushToast(t('toast.linkCopied'));
-    } catch (err) {
-      // Un partage refusé par l'utilisateur n'est pas une erreur à annoncer.
-      if (err instanceof DOMException && err.name === 'AbortError') return;
-      pushToast(t('toast.copyFailed'), { tone: 'error' });
+    } catch {
+      try {
+        const textarea = document.createElement('textarea');
+        textarea.value = url;
+        textarea.setAttribute('readonly', '');
+        textarea.style.position = 'fixed';
+        textarea.style.opacity = '0';
+        document.body.appendChild(textarea);
+        textarea.select();
+        const copied = document.execCommand('copy');
+        textarea.remove();
+        if (!copied) throw new Error('Copy command failed');
+        pushToast(t('toast.linkCopied'));
+      } catch {
+        pushToast(t('toast.copyFailed'), { tone: 'error' });
+      }
     }
   }, [pushToast, t]);
 
@@ -1251,7 +1264,7 @@ export default function ReadingPane({ showBack }: ReadingPaneProps) {
         {/* Open original */}
         {article.url && (
           <a
-            href={article.url}
+            href={linkedPage?.url || article.url}
             target="_blank"
             rel="noopener noreferrer"
             className="action-btn flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] font-semibold transition-all duration-200"
@@ -1271,16 +1284,16 @@ export default function ReadingPane({ showBack }: ReadingPaneProps) {
         {/* Partager / copier le lien */}
         {article.url && (
           <button
-            onClick={() => shareArticle(article)}
+            onClick={() => shareArticle(linkedPage?.content.title || article.title, linkedPage?.url || article.url || '')}
             className="action-btn flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] font-semibold transition-all duration-200"
             style={{ color: 'var(--reading-meta)', border: '1.5px solid transparent' }}
-            title={canNativeShare ? t('readingPane.share') : t('readingPane.copyLink')}
-            aria-label={canNativeShare ? t('readingPane.share') : t('readingPane.copyLink')}
+            title={t('readingPane.copyLink')}
+            aria-label={t('readingPane.copyLink')}
           >
             <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M7.217 10.907a2.25 2.25 0 100 2.186m0-2.186c.18.324.283.696.283 1.093s-.103.77-.283 1.093m0-2.186l9.566-5.314m-9.566 7.5l9.566 5.314m0 0a2.25 2.25 0 103.935 2.186 2.25 2.25 0 00-3.935-2.186zm0-12.814a2.25 2.25 0 103.933-2.185 2.25 2.25 0 00-3.933 2.185z" />
             </svg>
-            <span className="toolbar-label">{canNativeShare ? t('readingPane.share') : t('readingPane.copyLink')}</span>
+            <span className="toolbar-label">{t('readingPane.copyLink')}</span>
           </button>
         )}
 
@@ -1709,9 +1722,9 @@ export default function ReadingPane({ showBack }: ReadingPaneProps) {
             <div className="px-4 py-2" style={{ borderBottom: '1px solid var(--panel-border)' }}>
               <LabelMenu article={article} variant="sheet" />
             </div>
-            {article.url && (
+            {(linkedPage?.url || article.url) && (
               <a
-                href={article.url} target="_blank" rel="noopener noreferrer"
+                href={linkedPage?.url || article.url} target="_blank" rel="noopener noreferrer"
                 onClick={() => setReadSettingsOpen(false)}
                 className="sheet-row flex items-center gap-3 px-4 py-3"
                 style={{ color: 'var(--reading-text)' }}
@@ -1735,14 +1748,14 @@ export default function ReadingPane({ showBack }: ReadingPaneProps) {
             )}
             {article.url && (
               <button
-                onClick={() => { setReadSettingsOpen(false); shareArticle(article); }}
+                onClick={() => { setReadSettingsOpen(false); void shareArticle(linkedPage?.content.title || article.title, linkedPage?.url || article.url || ''); }}
                 className="sheet-row w-full flex items-center gap-3 px-4 py-3 text-left"
                 style={{ color: 'var(--reading-text)', borderTop: '1px solid var(--panel-border)' }}
               >
                 <svg className="w-5 h-5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.6}>
                   <path strokeLinecap="round" strokeLinejoin="round" d="M7.217 10.907a2.25 2.25 0 100 2.186m0-2.186c.18.324.283.696.283 1.093s-.103.77-.283 1.093m0-2.186l9.566-5.314m-9.566 7.5l9.566 5.314m0 0a2.25 2.25 0 103.935 2.186 2.25 2.25 0 00-3.935-2.186zm0-12.814a2.25 2.25 0 103.933-2.185 2.25 2.25 0 00-3.933 2.185z" />
                 </svg>
-                <span className="font-medium">{canNativeShare ? t('readingPane.share') : t('readingPane.copyLink')}</span>
+                <span className="font-medium">{t('readingPane.copyLink')}</span>
               </button>
             )}
             <div className="flex items-center justify-between gap-2 px-4 py-3" style={{ borderTop: '1px solid var(--panel-border)' }}>
