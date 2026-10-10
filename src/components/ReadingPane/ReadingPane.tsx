@@ -152,6 +152,8 @@ export default function ReadingPane({ showBack }: ReadingPaneProps) {
   const setFontSize = useThemeStore((s) => s.setFontSize);
   const feedSettings = useUiStore((s) => s.feedSettings);
   const readingFocus = useUiStore((s) => s.readingFocus);
+  const shortcuts = useUiStore((s) => s.shortcuts);
+  const shortcutHelpOpen = useUiStore((s) => s.shortcutHelpOpen);
   const inlineVideos = useUiStore((s) => s.inlineVideos);
   // Which saved-category picker is open (null = none).
   const [filing, setFiling] = useState<{ prefix: string; x: number; y: number } | null>(null);
@@ -995,6 +997,24 @@ export default function ReadingPane({ showBack }: ReadingPaneProps) {
       setExtracting(false);
     }
   }, [selectedArticle, extracting, t]);
+
+  // Pull the full article on the configured shortcut (default: W).
+  // Ignore typing targets and dialogs so this never hijacks text entry or help.
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      const configuredKey = shortcuts.pullFullArticle;
+      if (!selectedArticle?.url || !configuredKey || shortcutHelpOpen || linkedPage) return;
+      if (event.defaultPrevented || event.altKey || event.ctrlKey || event.metaKey) return;
+      const target = event.target as HTMLElement | null;
+      if (target?.closest('input, textarea, select, [contenteditable="true"], [role="textbox"], button[aria-pressed="true"]')) return;
+      if (event.key.toLocaleLowerCase() !== configuredKey.toLocaleLowerCase()) return;
+      event.preventDefault();
+      event.stopPropagation();
+      void handleExtract();
+    };
+    document.addEventListener('keydown', onKeyDown);
+    return () => document.removeEventListener('keydown', onKeyDown);
+  }, [shortcuts.pullFullArticle, selectedArticle?.url, shortcutHelpOpen, linkedPage, handleExtract]);
 
   // ── Corps de l'article ────────────────────────────────────────────────────
   // Mémoïsé, et il FAUT que ce soit avant le retour anticipé ci-dessous : les
