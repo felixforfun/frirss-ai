@@ -102,7 +102,12 @@
     "scanStopped": "Zoekactie gestopt",
     "scanOffline": "Offline — resultaten uit de beschikbare artikelen",
     "scanNetworkError": "Verbinding verloren tijdens het doorzoeken",
-    "scanRateLimited": "Te veel aanvragen — probeer het over een minuut opnieuw"
+    "scanRateLimited": "Te veel aanvragen — probeer het over een minuut opnieuw",
+    "settingsFor": "Instellingen voor",
+    "mobileSettings": "Mobiel",
+    "desktopSettings": "Desktop",
+    "twoPanelLayout": "Twee panelen",
+    "threePanelLayout": "Drie panelen"
   },
   "articleRow": {
     "markRead": "Als gelezen markeren",
