@@ -19,13 +19,14 @@ function memSet(id: string, content: ExtractedContent): void {
   }
 }
 
-function toContent(rec: { title: string; content: string; excerpt: string; byline: string; siteName: string; length: number }): ExtractedContent {
+function toContent(rec: { title: string; content: string; excerpt: string; byline: string; siteName: string; publishedDate?: string; length: number }): ExtractedContent {
   return {
     title: rec.title,
     content: rec.content,
     excerpt: rec.excerpt,
     byline: rec.byline,
     siteName: rec.siteName,
+    publishedDate: rec.publishedDate || '',
     length: rec.length,
   };
 }
