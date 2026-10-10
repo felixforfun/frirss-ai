@@ -359,7 +359,8 @@
       "customize": "Personalizar en las preferencias",
       "gestureHelp": "Mostrar esta ventana",
       "helpTitle": "Atajos de teclado",
-      "backToList": "Volver a la lista de artículos"
+      "backToList": "Volver a la lista de artículos",
+      "pullFullArticle": "Cargar artículo completo"
     },
     "offline": {
       "title": "Sin conexión",
