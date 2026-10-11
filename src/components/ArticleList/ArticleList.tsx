@@ -759,6 +759,8 @@ export default function ArticleList() {
                 onClick={() => setDeviceDisplaySetting(settingsProfile, 'feedName', !editableDisplaySettings.feedName)} />
               <SheetRow icon={<FaviconGlyph />} label={t('articleList.listFavicons')} active={!!editableDisplaySettings.feedIcons}
                 onClick={() => setDeviceDisplaySetting(settingsProfile, 'feedIcons', !editableDisplaySettings.feedIcons)} />
+              <SheetRow icon={<span aria-hidden="true">↵</span>} label={t('articleList.wrapTitles')} active={editableDisplaySettings.wrapTitles}
+                onClick={() => setDeviceDisplaySetting(settingsProfile, 'wrapTitles', !editableDisplaySettings.wrapTitles)} />
               <SheetRow icon={<DateGlyph />} label={t('articleList.dateSeparators')} active={!!editableDisplaySettings.dateSeparators}
                 onClick={() => setDeviceDisplaySetting(settingsProfile, 'dateSeparators', !editableDisplaySettings.dateSeparators)} />
               <SheetRow icon={<TopbarGlyph on={topbarVisible} />} label={t('articleList.serverBar')} active={!!editableDisplaySettings.serverBar}
@@ -1643,7 +1645,7 @@ export function ArticleRow({ article, viewMode, showSource, rowActions, favicon,
         )}
         <span
           dir="auto"
-          className={`article-title truncate flex-1 ${article.read ? 'font-normal' : 'font-medium'}`}
+          className={`article-title ${activeDisplaySettings.wrapTitles ? 'line-clamp-2 whitespace-normal break-words' : 'truncate'} flex-1 ${article.read ? 'font-normal' : 'font-medium'}`}
           data-theme={article.read ? 'list-title-read' : 'list-title'}
           style={{ color: article.read ? 'var(--list-title-read)' : 'var(--list-title)', fontSize: 'var(--fs-list-title)' }}
         >
