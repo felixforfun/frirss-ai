@@ -212,7 +212,7 @@ export default function LabelsTab({ resetLabelColors }: { resetLabelColors: () =
     setCreateLabelError(null);
     setCreateLabelSuccess(false);
 
-    if (!name || name.length > 128 || /[\u0000-\u001f]/.test(name) || name.split('/').some((part) => !part.trim())) {
+    if (!name || name.length > 128 || name.split('').some((char) => char.charCodeAt(0) < 32) || name.split('/').some((part) => !part.trim())) {
       setCreateLabelError(t('preferences.labels.invalidName'));
       return;
     }
