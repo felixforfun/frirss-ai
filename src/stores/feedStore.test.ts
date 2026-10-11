@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import type { Article, Subscription } from '../types';
+import { READ_LATER_LABEL } from './feedStore';
 import { publishListCanScroll, resetListCanScroll, listCanScroll } from '../lib/listOverflow';
 
 // Mock the FreshRSS API layer so the store never hits the network.
@@ -652,7 +653,7 @@ describe('resolveSearchStreamId', () => {
     expect(resolveSearchStreamId(feed, 'unread')).toBe('feed/https://ex.com/rss');
   });
   it('scopes to read-later when that filter is active', () => {
-    expect(resolveSearchStreamId(null, 'readlater')).toBe('user/-/label/À lire plus tard');
+    expect(resolveSearchStreamId(null, 'readlater')).toBe(READ_LATER_LABEL);
   });
   it('scopes to starred (global) when that filter is active', () => {
     expect(resolveSearchStreamId(null, 'starred')).toBe('user/-/state/com.google/starred');
