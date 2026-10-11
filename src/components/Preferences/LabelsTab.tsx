@@ -208,11 +208,11 @@ export default function LabelsTab({ resetLabelColors }: { resetLabelColors: () =
   const dragProps = { dragId, setDragId, dropTarget, setDropTarget, onDrop: handleDrop, onDragCleanup: cleanup };
 
   async function createLabel() {
-    const name = newLabelName.trim().replace(/\\s*\\/\\s*/g, '/');
+    const name = newLabelName.trim().replace(/\s*\/\s*/g, '/');
     setCreateLabelError(null);
     setCreateLabelSuccess(false);
 
-    if (!name || name.length > 128 || /[\\u0000-\\u001f]/.test(name) || name.split('/').some((part) => !part.trim())) {
+    if (!name || name.length > 128 || /[\u0000-\u001f]/.test(name) || name.split('/').some((part) => !part.trim())) {
       setCreateLabelError(t('preferences.labels.invalidName'));
       return;
     }
