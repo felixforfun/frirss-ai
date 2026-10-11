@@ -779,6 +779,21 @@ export const useUiStore = create<UiState>()((set, get) => ({
       }
     }
 
+    // Existing accounts may only have the former global row-action preference
+    // on the server. Use it to seed device profiles that have not been customised.
+    if (has('rowActions') && prefs.rowActions && typeof prefs.rowActions === 'object') {
+      const legacyActions = normalizeRowActions(prefs.rowActions);
+      const updatedProfiles = { ...get().deviceDisplaySettings };
+      for (const device of ['mobile', 'desktop'] as const) {
+        const savedProfile = loadJson<Partial<DeviceDisplaySettings>>(`frirss_display_${device}`, {});
+        if (!savedProfile.rowActions) {
+          updatedProfiles[device] = { ...updatedProfiles[device], rowActions: legacyActions };
+          localStorage.setItem(`frirss_display_${device}`, JSON.stringify(updatedProfiles[device]));
+        }
+      }
+      next.deviceDisplaySettings = updatedProfiles;
+    }
+
     if (Object.keys(next).length) set(next as Partial<UiState>);
   },
 }));
