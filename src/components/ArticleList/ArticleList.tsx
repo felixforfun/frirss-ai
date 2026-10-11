@@ -1156,6 +1156,7 @@ export default function ArticleList() {
                       viewMode={viewMode}
                       showSource={showSource}
                       rowActions={rowActions}
+                      wrapTitles={activeDisplaySettings.wrapTitles}
                       favicon={showListFavicons ? iconByFeedId.get(article.sourceId) ?? null : undefined}
                       staggerIndex={staggerById.get(article.id)}
                       active={selectedArticle?.id === article.id}
@@ -1550,6 +1551,7 @@ interface ArticleRowProps {
   viewMode: string;
   showSource: boolean;
   rowActions: RowActionSettings;
+  wrapTitles: boolean;
   /** URL de l'icône du flux ; `null` = pas d'icône connue mais on affiche le
    *  repli (pastille-lettre) ; `undefined` = favicons désactivés. */
   favicon?: string | null;
@@ -1575,7 +1577,7 @@ interface ArticleRowProps {
  * tenaient qu'à travers la carte de la vue grille. `ArticleList` reste
  * l'unique consommateur applicatif.
  */
-export function ArticleRow({ article, viewMode, showSource, rowActions, favicon, staggerIndex, active, searchTerms, onSelect, onToggleStar, onToggleRead, onToggleReadLater, onOpenSource, onOpenMenu }: ArticleRowProps) {
+export function ArticleRow({ article, viewMode, showSource, rowActions, wrapTitles, favicon, staggerIndex, active, searchTerms, onSelect, onToggleStar, onToggleRead, onToggleReadLater, onOpenSource, onOpenMenu }: ArticleRowProps) {
   const { t } = useTranslation();
   const gestures = useArticleMenuGestures(onOpenMenu, onOpenSource);
   const isReadLater = article.labels?.includes(READ_LATER_LABEL);
@@ -1645,7 +1647,7 @@ export function ArticleRow({ article, viewMode, showSource, rowActions, favicon,
         )}
         <span
           dir="auto"
-          className={`article-title ${activeDisplaySettings.wrapTitles ? 'line-clamp-2 whitespace-normal break-words' : 'truncate'} flex-1 ${article.read ? 'font-normal' : 'font-medium'}`}
+          className={`article-title ${wrapTitles ? 'line-clamp-2 whitespace-normal break-words' : 'truncate'} flex-1 ${article.read ? 'font-normal' : 'font-medium'}`}
           data-theme={article.read ? 'list-title-read' : 'list-title'}
           style={{ color: article.read ? 'var(--list-title-read)' : 'var(--list-title)', fontSize: 'var(--fs-list-title)' }}
         >
