@@ -1551,7 +1551,7 @@ interface ArticleRowProps {
   viewMode: string;
   showSource: boolean;
   rowActions: RowActionSettings;
-  wrapTitles: boolean;
+  wrapTitles?: boolean;
   /** URL de l'icône du flux ; `null` = pas d'icône connue mais on affiche le
    *  repli (pastille-lettre) ; `undefined` = favicons désactivés. */
   favicon?: string | null;
