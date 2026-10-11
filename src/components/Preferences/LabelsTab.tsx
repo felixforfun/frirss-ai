@@ -221,7 +221,7 @@ export default function LabelsTab({ resetLabelColors }: { resetLabelColors: () =
       setCreateLabelError(t('preferences.labels.duplicateName'));
       return;
     }
-    if (name === 'À lire plus tard') {
+    if (normalizedName === 'à lire plus tard') {
       setCreateLabelError(t('preferences.labels.reservedName'));
       return;
     }
