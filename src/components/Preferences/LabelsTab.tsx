@@ -233,28 +233,36 @@ export default function LabelsTab({ resetLabelColors }: { resetLabelColors: () =
     }
 
     const labelId = `user/-/label/${name}`;
-    let assignmentAttempted = false;
-    let primaryError: unknown = null;
+    let addFailed = false;
+    let removalFailed = false;
     let cleanupFailed = false;
     setCreatingLabel(true);
     try {
       // FreshRSS has no documented create-label endpoint. Assigning the label
-      // creates it; cleanup runs even when the add response is ambiguous.
-      assignmentAttempted = true;
-      await setArticleLabel(article.id, labelId, true);
-      await setArticleLabel(article.id, labelId, false);
-    } catch (error) {
-      primaryError = error;
-    } finally {
-      if (assignmentAttempted) {
+      // creates it; removal runs even if the add response is ambiguous.
+      try {
+        await setArticleLabel(article.id, labelId, true);
+      } catch {
+        addFailed = true;
+      }
+
+      try {
+        await setArticleLabel(article.id, labelId, false);
+      } catch {
+        removalFailed = true;
+      }
+
+      // If removal failed (including a network error after the server may have
+      // applied it), make one more cleanup attempt before reporting the result.
+      if (removalFailed || addFailed) {
         try {
-          // A second removal is intentionally attempted if the first removal
-          // failed, including network errors after FreshRSS may have applied it.
           await setArticleLabel(article.id, labelId, false);
+          removalFailed = false;
         } catch {
           cleanupFailed = true;
         }
       }
+    } finally {
       try {
         await loadLabels();
       } catch {
@@ -263,10 +271,16 @@ export default function LabelsTab({ resetLabelColors }: { resetLabelColors: () =
       setCreatingLabel(false);
     }
 
-    if (primaryError || cleanupFailed) {
-      setCreateLabelError(cleanupFailed
-        ? t('preferences.labels.cleanupError')
-        : t('preferences.labels.createError'));
+    if (cleanupFailed) {
+      setCreateLabelError(t('preferences.labels.cleanupError'));
+      return;
+    }
+    if (addFailed) {
+      setCreateLabelError(t('preferences.labels.createError'));
+      return;
+    }
+    if (removalFailed) {
+      setCreateLabelError(t('preferences.labels.cleanupError'));
       return;
     }
     setNewLabelName('');
