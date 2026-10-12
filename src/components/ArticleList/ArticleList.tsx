@@ -38,6 +38,7 @@ import { prefersReducedMotion } from '../../lib/reducedMotion';
 import { staggerIndexes, rememberStagger } from '../../lib/rowStagger';
 import type { Article, Filter } from '../../types';
 import { getArticleFeedback, type ArticleFeedback } from '../../api/intelligence';
+import { rankInterestingArticles } from '../../lib/intelligenceRanking';
 
 // Per-view scroll position, kept across remounts (e.g. returning from an
 // article in 2-panel desktop, or any re-mount of the list).
@@ -655,32 +656,7 @@ export default function ArticleList() {
       ? t('articleList.readLaterSuffix')
       : feedName;
 
-  const rankedArticles = useMemo(() => {
-    if (filter !== 'interesting') return articles;
-    const tokenize = (text: string) => new Set(
-      text.toLocaleLowerCase().replace(/<[^>]*>/g, ' ').match(/[\\p{L}\\p{N}]{3,}/gu) ?? []
-    );
-    const examples = intelligenceFeedback.map((f) => ({
-      vote: f.vote,
-      terms: tokenize(`${f.title} ${f.summary} ${f.content} ${f.sourceId}`),
-    }));
-    const score = (article: Article) => {
-      const terms = tokenize(`${article.title} ${article.summary} ${article.content} ${article.source}`);
-      let positive = 0;
-      let negative = 0;
-      for (const example of examples) {
-        let shared = 0;
-        for (const term of example.terms) if (terms.has(term)) shared++;
-        const similarity = shared / Math.max(1, Math.sqrt(terms.size * example.terms.size));
-        if (example.vote === 1) positive += similarity;
-        else negative += similarity;
-      }
-      const ageHours = Math.max(0, (Date.now() - article.published) / 3600000);
-      const freshness = 1 / (1 + ageHours / 72);
-      return positive - negative * 1.25 + freshness * 0.03;
-    };
-    return [...articles].sort((a, b) => score(b) - score(a));
-  }, [articles, filter, intelligenceFeedback]);
+  const rankedArticles = useMemo(() => rankInterestingArticles(articles, intelligenceFeedback), [articles, intelligenceFeedback]);
   const groups = groupByDate(filter === 'interesting' ? rankedArticles : articles);
 
   // Une liste vide ne veut dire « il n'y a plus rien » que si le flux est
