@@ -2,7 +2,7 @@ import type { Article } from '../types';
 import type { ArticleFeedback } from '../api/intelligence';
 
 function tokenize(text: string): Set<string> {
-  return new Set(text.toLocaleLowerCase().replace(/<[^>]*>/g, ' ').match(/[\\p{L}\\p{N}]{3,}/gu) ?? []);
+  return new Set(text.toLocaleLowerCase().replace(/<[^>]*>/g, ' ').match(/[\p{L}\p{N}]{3,}/gu) ?? []);
 }
 
 /**
