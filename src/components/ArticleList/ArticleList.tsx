@@ -17,6 +17,7 @@ import ViewModeSwitcher from './ViewModeSwitcher';
 import SwipeableArticleRow from './SwipeableArticleRow';
 import { ArticleRowActions } from './ArticleActions';
 import ArticleCard from './ArticleCard';
+import IntelligenceFeedback from './IntelligenceFeedback';
 import FeedFavicon from '../FeedFavicon';
 import BottomSheet from '../BottomSheet';
 import ArticleContextMenu from './ArticleContextMenu';
@@ -1762,6 +1763,7 @@ export function ArticleRow({ article, viewMode, showSource, rowActions, wrapTitl
             <Highlighted text={resultSummary(article, searchTerms ?? [])} terms={searchTerms} />
           </p>
         )}
+        <IntelligenceFeedback article={article} />
       </div>
 
       {/* Une COLONNE, et elle coûte de la hauteur — c'est assumé. Quatre
