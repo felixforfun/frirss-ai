@@ -241,7 +241,13 @@ function medianInterval(times: number[]): number {
   const mid = Math.floor(intervals.length / 2);
   return intervals.length % 2 ? intervals[mid] : (intervals[mid - 1] + intervals[mid]) / 2;
 }
-async function fetchInfrequentArticles(subscriptions: Subscription[]): Promise<Article[]> {
+const INFREQUENT_SCAN_PAGE_SIZE = 100;
+const INFREQUENT_SCAN_MAX_PAGES = 5;
+
+async function fetchInfrequentArticles(
+  subscriptions: Subscription[],
+  shouldContinue: () => boolean,
+): Promise<Article[]> {
   const cutoff = Date.now() - INFREQUENT_WINDOW_MS;
   const eligible: string[] = [];
   const subscriptionIds = subscriptions.map((feed) => feed.id).sort();
@@ -265,13 +271,17 @@ async function fetchInfrequentArticles(subscriptions: Subscription[]): Promise<A
     let next = 0;
     let scanHadErrors = false;
     const workers = Array.from({ length: Math.min(4, subscriptions.length) }, async () => {
-      while (next < subscriptions.length) {
+      while (next < subscriptions.length && shouldContinue()) {
         const feed = subscriptions[next++];
         try {
           const times: number[] = [];
           let continuation: string | null = null;
-          for (let page = 0; page < 5; page++) {
-            const result = await getStreamContents(feed.id, 1000, continuation);
+          for (let page = 0; page < INFREQUENT_SCAN_MAX_PAGES && shouldContinue(); page++) {
+            const result = await getStreamContents(feed.id, INFREQUENT_SCAN_PAGE_SIZE, continuation);
+            // Navigation away from Infrequent sites must stop the scan after
+            // the current request; otherwise it keeps flooding FreshRSS while
+            // the user opens another view.
+            if (!shouldContinue()) return;
             if (!result || !result.items.length) break;
             let old = false;
             for (const item of result.items) {
@@ -294,6 +304,8 @@ async function fetchInfrequentArticles(subscriptions: Subscription[]): Promise<A
       }
     });
     await Promise.all(workers);
+    // Do not cache a partial result if the user navigated away mid-scan.
+    if (!shouldContinue()) return [];
     // Never persist a partial classification. A transient FreshRSS/API error
     // must not turn into a week-long empty or incomplete Infrequent sites view.
     if (!scanHadErrors && eligible.length > 0) {
@@ -319,7 +331,7 @@ async function fetchInfrequentArticles(subscriptions: Subscription[]): Promise<A
     for (let page = 0; page < 100; page++) {
       const result = await getStreamContents(
         'user/-/state/com.google/reading-list',
-        1000,
+        INFREQUENT_SCAN_PAGE_SIZE,
         continuation,
         'user/-/state/com.google/read',
       );
@@ -1281,7 +1293,11 @@ export const useFeedStore = create<FeedState>()((set, get) => ({
       const serverId = useAuthStore.getState().activeServerId;
       set({ loading: true, loadingMore: false, revalidating: true, continuation: null, articles: [], selectedArticle: null });
       try {
-        const articles = await fetchInfrequentArticles(get().subscriptions);
+        const articles = await fetchInfrequentArticles(get().subscriptions, () =>
+          get().filter === 'infrequent' &&
+          !get().selectedFeed &&
+          serverId === useAuthStore.getState().activeServerId
+        );
         if (get().filter === 'infrequent' && serverId === useAuthStore.getState().activeServerId) set({ articles, loading: false, revalidating: false, continuation: null });
       } catch (error) {
         console.error('[FriRSS] infrequent-sites scan failed:', error);
