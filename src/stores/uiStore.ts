@@ -18,7 +18,7 @@ function normalizeImagePreset(v: unknown): OfflineImagePreset {
 }
 
 export type Shortcuts = Record<string, string>;
-export type DisplaySettingKey = 'feedName' | 'feedIcons' | 'dateSeparators' | 'serverBar' | 'layout' | 'wrapTitles';
+export type DisplaySettingKey = 'feedName' | 'feedIcons' | 'dateSeparators' | 'serverBar' | 'layout' | 'wrapTitles' | 'showArticleVoting';
 export interface DeviceDisplaySettings { feedName: boolean; feedIcons: boolean; dateSeparators: boolean; serverBar: boolean; layout: string; wrapTitles: boolean; showArticleVoting: boolean; rowActions: RowActionSettings; }
 function loadDeviceDisplaySettings(device: 'mobile' | 'desktop'): DeviceDisplaySettings {
   const saved = loadJson<Partial<DeviceDisplaySettings>>(`frirss_display_${device}`, {});
