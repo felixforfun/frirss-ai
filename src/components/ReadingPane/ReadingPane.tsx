@@ -561,6 +561,8 @@ export default function ReadingPane({ showBack }: ReadingPaneProps) {
     };
   }, [selectedArticle?.id]);
 
+  const breakpoint = useBreakpoint();
+  const breakpoint = useBreakpoint();
   const isMobileOrTablet = breakpoint !== 'desktop';
 
   // Dynamic theme-color for Safari status bar
