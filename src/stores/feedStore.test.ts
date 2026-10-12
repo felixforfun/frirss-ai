@@ -1972,7 +1972,7 @@ describe('feedStore.loadArticles — Infrequent sites classification cache', () 
 
     await useFeedStore.getState().loadArticles();
 
-    expect(api.getStreamContents).toHaveBeenCalledWith('feed/one', 1000, null);
+    expect(api.getStreamContents).toHaveBeenCalledWith('feed/one', 100, null);
     expect(backendApi.saveInfrequentFeedCache).not.toHaveBeenCalled();
     expect(useFeedStore.getState().loading).toBe(false);
   });
@@ -2001,12 +2001,37 @@ describe('feedStore.loadArticles — Infrequent sites classification cache', () 
     expect(api.getStreamContents).toHaveBeenCalledTimes(1);
     expect(api.getStreamContents).toHaveBeenCalledWith(
       'user/-/state/com.google/reading-list',
-      1000,
+      100,
       null,
       'user/-/state/com.google/read',
     );
     expect(useFeedStore.getState().articles.map((article) => article.id)).toContain('eligible');
     expect(useFeedStore.getState().articles.map((article) => article.id)).not.toContain('other');
+  });
+
+  it('stops scanning when the user navigates away from Infrequent sites', async () => {
+    vi.mocked(backendApi.getInfrequentFeedCache).mockResolvedValueOnce({ cached: false, feedIds: [] });
+    vi.mocked(api.getStreamContents).mockImplementationOnce(async () => {
+      // Simulate the user selecting another view while the request is in flight.
+      useFeedStore.setState({ filter: 'all' });
+      return {
+        items: [{ id: 'a1', title: 'Article', published: Math.floor(Date.now() / 1000), categories: [] }],
+        continuation: 'next',
+      } as never;
+    });
+    useFeedStore.setState({
+      filter: 'infrequent',
+      selectedFeed: null,
+      subscriptions: [
+        { id: 'feed/one', title: 'One' },
+        { id: 'feed/two', title: 'Two' },
+      ] as Subscription[],
+    });
+
+    await useFeedStore.getState().loadArticles();
+
+    expect(api.getStreamContents).toHaveBeenCalledTimes(1);
+    expect(backendApi.saveInfrequentFeedCache).not.toHaveBeenCalled();
   });
 
   it('does not persist a partial classification when a feed scan fails', async () => {
