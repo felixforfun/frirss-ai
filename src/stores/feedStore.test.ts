@@ -2012,16 +2012,16 @@ describe('feedStore.loadArticles — Infrequent sites classification cache', () 
     expect(useFeedStore.getState().articles.map((article) => article.id)).not.toContain('other');
   });
 
-  it('stops scanning when the user navigates away from Infrequent sites', async () => {
+  it('aborts an in-flight scan when the user navigates away from Infrequent sites', async () => {
     vi.mocked(backendApi.getInfrequentFeedCache).mockResolvedValueOnce({ cached: false, feedIds: [] });
-    vi.mocked(api.getStreamContents).mockImplementationOnce(async () => {
-      // Simulate the user selecting another view while the request is in flight.
-      useFeedStore.setState({ filter: 'all' });
-      return {
-        items: [{ id: 'a1', title: 'Article', published: Math.floor(Date.now() / 1000), categories: [] }],
-        continuation: 'next',
-      } as never;
-    });
+    vi.mocked(api.getStreamContents).mockResolvedValue({ items: [], continuation: null } as never);
+    let scanSignal: AbortSignal | undefined;
+    vi.mocked(api.getStreamContents).mockImplementationOnce((_streamId, _count, _continuation, _excludeTag, options) =>
+      new Promise((_resolve, reject) => {
+        scanSignal = options?.signal;
+        scanSignal?.addEventListener('abort', () => reject(new DOMException('Aborted', 'AbortError')), { once: true });
+      }) as never
+    );
     useFeedStore.setState({
       filter: 'infrequent',
       selectedFeed: null,
@@ -2031,9 +2031,13 @@ describe('feedStore.loadArticles — Infrequent sites classification cache', () 
       ] as Subscription[],
     });
 
-    await useFeedStore.getState().loadArticles();
+    const scan = useFeedStore.getState().loadArticles();
+    await vi.waitFor(() => expect(scanSignal).toBeDefined());
+    useFeedStore.getState().selectView(null, 'all');
+    await scan;
 
-    expect(api.getStreamContents).toHaveBeenCalledTimes(1);
+    expect(scanSignal?.aborted).toBe(true);
+    expect(vi.mocked(api.getStreamContents).mock.calls.filter(([streamId]) => streamId === 'feed/one')).toHaveLength(1);
     expect(backendApi.saveInfrequentFeedCache).not.toHaveBeenCalled();
   });
 
