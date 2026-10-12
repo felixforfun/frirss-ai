@@ -44,6 +44,8 @@ export default function IntelligenceFeedback({ article }: { article: Article }) 
           articleId: article.id,
           url: article.url || '',
           title: article.title || '',
+          summary: article.summary || '',
+          content: article.content || '',
           sourceId: article.sourceId || '',
           vote: next,
         });
