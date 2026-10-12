@@ -662,7 +662,7 @@ export default function ArticleList() {
     );
     const examples = intelligenceFeedback.map((f) => ({
       vote: f.vote,
-      terms: tokenize(`${f.title} ${f.url} ${f.sourceId}`),
+      terms: tokenize(`${f.title} ${f.summary} ${f.content} ${f.sourceId}`),
     }));
     const score = (article: Article) => {
       const terms = tokenize(`${article.title} ${article.summary} ${article.content} ${article.source}`);
