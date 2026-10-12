@@ -1961,8 +1961,23 @@ describe('feedStore.silentRefresh — gardes contre une recherche en cours', () 
 
 
 describe('feedStore.loadArticles — Infrequent sites classification cache', () => {
-  it('rescans an empty cached classification instead of treating it as a cache hit', async () => {
+  it('reuses a cached empty classification instead of rescanning every visit', async () => {
     vi.mocked(backendApi.getInfrequentFeedCache).mockResolvedValueOnce({ cached: true, feedIds: [] });
+    useFeedStore.setState({
+      filter: 'infrequent',
+      selectedFeed: null,
+      subscriptions: [{ id: 'feed/one', title: 'One' }] as Subscription[],
+    });
+
+    await useFeedStore.getState().loadArticles();
+
+    expect(api.getStreamContents).not.toHaveBeenCalled();
+    expect(backendApi.saveInfrequentFeedCache).not.toHaveBeenCalled();
+    expect(useFeedStore.getState().loading).toBe(false);
+  });
+
+  it('caches a successful empty classification', async () => {
+    vi.mocked(backendApi.getInfrequentFeedCache).mockResolvedValueOnce({ cached: false, feedIds: [] });
     vi.mocked(api.getStreamContents).mockResolvedValue({ items: [], continuation: null } as never);
     useFeedStore.setState({
       filter: 'infrequent',
@@ -1975,7 +1990,7 @@ describe('feedStore.loadArticles — Infrequent sites classification cache', () 
     expect(api.getStreamContents).toHaveBeenCalledWith(
       'feed/one', 100, null, null, { signal: expect.any(AbortSignal) },
     );
-    expect(backendApi.saveInfrequentFeedCache).not.toHaveBeenCalled();
+    expect(backendApi.saveInfrequentFeedCache).toHaveBeenCalledWith(['feed/one'], []);
     expect(useFeedStore.getState().loading).toBe(false);
   });
 
