@@ -39,6 +39,7 @@ export default function IntelligenceFeedback({ article }: { article: Article }) 
         feedbackById.delete(article.id);
         feedbackPromise = null;
         setVote(null);
+        window.dispatchEvent(new Event('frirss-intelligence-feedback-changed'));
       } else {
         await setArticleFeedback({
           articleId: article.id,
@@ -52,6 +53,7 @@ export default function IntelligenceFeedback({ article }: { article: Article }) 
         feedbackById.set(article.id, next);
         feedbackPromise = null;
         setVote(next);
+        window.dispatchEvent(new Event('frirss-intelligence-feedback-changed'));
       }
     } finally {
       setBusy(false);
