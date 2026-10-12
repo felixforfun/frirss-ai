@@ -57,8 +57,15 @@ export default function ArticleList() {
   const [intelligenceFeedback, setIntelligenceFeedback] = useState<ArticleFeedback[]>([]);
   useEffect(() => {
     let active = true;
-    getArticleFeedback().then((rows) => { if (active) setIntelligenceFeedback(rows); }).catch(() => {});
-    return () => { active = false; };
+    const refreshFeedback = () => {
+      getArticleFeedback().then((rows) => { if (active) setIntelligenceFeedback(rows); }).catch(() => {});
+    };
+    refreshFeedback();
+    window.addEventListener('frirss-intelligence-feedback-changed', refreshFeedback);
+    return () => {
+      active = false;
+      window.removeEventListener('frirss-intelligence-feedback-changed', refreshFeedback);
+    };
   }, []);
 
   const {
