@@ -243,10 +243,12 @@ function medianInterval(times: number[]): number {
 }
 const INFREQUENT_SCAN_PAGE_SIZE = 100;
 const INFREQUENT_SCAN_MAX_PAGES = 5;
+let infrequentScanController: AbortController | null = null;
 
 async function fetchInfrequentArticles(
   subscriptions: Subscription[],
   shouldContinue: () => boolean,
+  signal: AbortSignal,
 ): Promise<Article[]> {
   const cutoff = Date.now() - INFREQUENT_WINDOW_MS;
   const eligible: string[] = [];
@@ -277,7 +279,9 @@ async function fetchInfrequentArticles(
           const times: number[] = [];
           let continuation: string | null = null;
           for (let page = 0; page < INFREQUENT_SCAN_MAX_PAGES && shouldContinue(); page++) {
-            const result = await getStreamContents(feed.id, INFREQUENT_SCAN_PAGE_SIZE, continuation);
+            const result = await getStreamContents(
+              feed.id, INFREQUENT_SCAN_PAGE_SIZE, continuation, null, { signal },
+            );
             // Navigation away from Infrequent sites must stop the scan after
             // the current request; otherwise it keeps flooding FreshRSS while
             // the user opens another view.
@@ -298,6 +302,7 @@ async function fetchInfrequentArticles(
           const mean = intervals.reduce((sum, n) => sum + n, 0) / intervals.length;
           if (mean >= INFREQUENT_MIN_INTERVAL_MS && medianInterval(times) >= INFREQUENT_MIN_INTERVAL_MS) eligible.push(feed.id);
         } catch (error) {
+          if (!shouldContinue() || signal.aborted) return;
           scanHadErrors = true;
           console.warn('[FriRSS] infrequent-sites: feed scan failed:', feed.id, error);
         }
@@ -334,8 +339,9 @@ async function fetchInfrequentArticles(
         INFREQUENT_SCAN_PAGE_SIZE,
         continuation,
         'user/-/state/com.google/read',
+        { signal },
       );
-      if (!shouldContinue()) return [];
+      if (!shouldContinue() || signal.aborted) return [];
       if (!result || !result.items.length) break;
 
       let reachedCutoff = false;
@@ -354,6 +360,7 @@ async function fetchInfrequentArticles(
       if (!continuation || reachedCutoff) break;
     }
   } catch (error) {
+    if (!shouldContinue() || signal.aborted) return [];
     console.warn('[FriRSS] infrequent-sites: global unread fetch failed:', error);
   }
   return articles.sort((a, b) => b.published - a.published);
@@ -1291,21 +1298,31 @@ export const useFeedStore = create<FeedState>()((set, get) => ({
   loadArticles: async () => {
     bumpCountsEpoch();
     if (get().filter === 'infrequent' && !get().selectedFeed) {
+      infrequentScanController?.abort();
+      const controller = new AbortController();
+      infrequentScanController = controller;
       const serverId = useAuthStore.getState().activeServerId;
+      const shouldContinue = () =>
+        !controller.signal.aborted &&
+        get().filter === 'infrequent' &&
+        !get().selectedFeed &&
+        serverId === useAuthStore.getState().activeServerId;
       set({ loading: true, loadingMore: false, revalidating: true, continuation: null, articles: [], selectedArticle: null });
       try {
-        const articles = await fetchInfrequentArticles(get().subscriptions, () =>
-          get().filter === 'infrequent' &&
-          !get().selectedFeed &&
-          serverId === useAuthStore.getState().activeServerId
-        );
-        if (get().filter === 'infrequent' && serverId === useAuthStore.getState().activeServerId) set({ articles, loading: false, revalidating: false, continuation: null });
+        const articles = await fetchInfrequentArticles(get().subscriptions, shouldContinue, controller.signal);
+        if (shouldContinue()) set({ articles, loading: false, revalidating: false, continuation: null });
       } catch (error) {
-        console.error('[FriRSS] infrequent-sites scan failed:', error);
-        set({ loading: false, revalidating: false });
+        if (shouldContinue()) {
+          console.error('[FriRSS] infrequent-sites scan failed:', error);
+          set({ loading: false, revalidating: false });
+        }
+      } finally {
+        if (infrequentScanController === controller) infrequentScanController = null;
       }
       return;
     }
+    infrequentScanController?.abort();
+    infrequentScanController = null;
     const { selectedFeed, filter } = get();
     const key = viewKey(selectedFeed, filter);
     // `viewKey` ne voit que le flux et le filtre : une recherche démarrée
