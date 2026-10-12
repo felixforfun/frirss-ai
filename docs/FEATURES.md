@@ -3114,7 +3114,7 @@ An **Interesting** view ranks articles using per-user feedback while leaving Fre
 
 - **Où** : `server/routes/intelligence.ts`, `src/api/intelligence.ts`, `src/lib/intelligenceRanking.ts`, `src/components/ArticleList/IntelligenceFeedback.tsx`, `src/components/Sidebar/Sidebar.tsx`.
 - **Routes** :
-  - `GET /api/intelligence/feedback`
-  - `PUT /api/intelligence/feedback`
-  - `DELETE /api/intelligence/feedback/:articleId`
+  - GET `/api/intelligence/feedback`
+  - PUT `/api/intelligence/feedback`
+  - DELETE `/api/intelligence/feedback/:articleId`
 - **Limite connue** : lexical matching is a first implementation, not semantic understanding. Local embeddings and bounded background processing remain follow-up work; do not describe this version as embedding-based.
