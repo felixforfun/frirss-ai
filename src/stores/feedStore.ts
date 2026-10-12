@@ -320,21 +320,22 @@ async function fetchInfrequentArticles(
   // Fetch the global unread stream once instead of querying up to three pages
   // for every eligible feed. FreshRSS orders this stream newest-first, so we
   // can stop as soon as we reach the 90-day cutoff and retain only eligible
-  // sources. This turns N-per-feed requests into roughly one request per 1000
-  // recent unread articles, independent of the number of infrequent feeds.
-  if (eligible.length === 0) return [];
+  // sources. Small pages keep each response bounded; this is still a scan,
+  // but it no longer downloads tens of megabytes in one request.
+  if (eligible.length === 0 || !shouldContinue()) return [];
 
   const eligibleSet = new Set(eligible);
   const articles: Article[] = [];
   let continuation: string | null = null;
   try {
-    for (let page = 0; page < 100; page++) {
+    for (let page = 0; page < 100 && shouldContinue(); page++) {
       const result = await getStreamContents(
         'user/-/state/com.google/reading-list',
         INFREQUENT_SCAN_PAGE_SIZE,
         continuation,
         'user/-/state/com.google/read',
       );
+      if (!shouldContinue()) return [];
       if (!result || !result.items.length) break;
 
       let reachedCutoff = false;
