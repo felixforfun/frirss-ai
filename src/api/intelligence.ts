@@ -12,6 +12,8 @@ export interface ArticleFeedback {
   articleId: string;
   url: string;
   title: string;
+  summary: string;
+  content: string;
   sourceId: string;
   vote: 1 | -1;
   createdAt?: string;
