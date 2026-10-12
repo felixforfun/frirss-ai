@@ -255,14 +255,14 @@ async function fetchInfrequentArticles(
   const subscriptionIds = subscriptions.map((feed) => feed.id).sort();
   let cacheHit = false;
   // Classification is persisted in the FriRSS SQLite DB, so all devices on
-  // this instance can reuse it. An empty or wholly stale classification is
-  // not treated as a hit: earlier partial scans could cache an empty list for
-  // seven days after individual feed requests failed.
+  // this instance can reuse it. The cache key includes a classifier version,
+  // so a successful empty result is safe to reuse and older partial results
+  // from the previous algorithm are ignored.
   try {
     const cached = await getInfrequentFeedCache(subscriptionIds);
     if (cached.cached) {
       eligible.push(...cached.feedIds.filter((id) => subscriptionIds.includes(id)));
-      cacheHit = eligible.length > 0;
+      cacheHit = true;
     }
   } catch (error) {
     console.warn('[FriRSS] infrequent-sites: cache lookup failed; rescanning', error);
@@ -313,7 +313,7 @@ async function fetchInfrequentArticles(
     if (!shouldContinue()) return [];
     // Never persist a partial classification. A transient FreshRSS/API error
     // must not turn into a week-long empty or incomplete Infrequent sites view.
-    if (!scanHadErrors && eligible.length > 0) {
+    if (!scanHadErrors) {
       try {
         await saveInfrequentFeedCache(subscriptionIds, eligible);
       } catch (error) {
