@@ -359,6 +359,7 @@ async function fetchInfrequentArticles(
   await Promise.all(articleWorkers);
   if (!shouldContinue()) return [];
   return articles.sort((a, b) => b.published - a.published);
+}
 
 // ── Client-side memory cache ─────────────────────────────────────────
 // Keeps recently-opened views in memory so switching back is instant (0 ms,
