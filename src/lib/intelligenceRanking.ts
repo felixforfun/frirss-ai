@@ -88,10 +88,12 @@ function stemTerm(term: string): string {
   }
 
   // Remove a doubled final consonant: runn -> run, stopp -> stop.
-  if (/(bb|cc|dd|ff|gg|mm|nn|pp|rr|tt)$/.test(stem)) stem = stem.slice(0, -1);
+  const hadDoubleConsonant = /(bb|cc|dd|ff|gg|mm|nn|pp|rr|tt)$/.test(stem);
+  if (hadDoubleConsonant) stem = stem.slice(0, -1);
 
   // Restore a silent e for common CVC forms: hik -> hike, mak -> make.
-  if (stem.length >= 3 && /[^aeiou][aeiou][^aeiouwxy]$/.test(stem)) stem += 'e';
+  // Do not do this after de-doubling: runn -> run, not rune.
+  if (!hadDoubleConsonant && stem.length >= 3 && /[^aeiou][aeiou][^aeiouwxy]$/.test(stem)) stem += 'e';
   return stem;
 }
 
