@@ -2056,7 +2056,7 @@ describe('feedStore.loadArticles — Infrequent sites classification cache', () 
     expect(backendApi.saveInfrequentFeedCache).not.toHaveBeenCalled();
   });
 
-  it('does not persist a partial classification when a feed scan fails', async () => {
+  it('caches a conservative empty classification when a feed scan fails', async () => {
     vi.mocked(backendApi.getInfrequentFeedCache).mockResolvedValueOnce({ cached: false, feedIds: [] });
     vi.mocked(api.getStreamContents).mockRejectedValueOnce(new Error('FreshRSS unavailable'));
     useFeedStore.setState({
@@ -2067,7 +2067,7 @@ describe('feedStore.loadArticles — Infrequent sites classification cache', () 
 
     await useFeedStore.getState().loadArticles();
 
-    expect(backendApi.saveInfrequentFeedCache).not.toHaveBeenCalled();
+    expect(backendApi.saveInfrequentFeedCache).toHaveBeenCalledWith(['feed/one'], []);
     expect(useFeedStore.getState().loading).toBe(false);
   });
 });
