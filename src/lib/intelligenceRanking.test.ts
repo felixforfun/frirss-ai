@@ -99,8 +99,9 @@ describe('rankInterestingArticles', () => {
     const relevant = article('relevant', 'AI chip research', 'Artificial intelligence advances');
     const unrelated = article('other', 'Gardening tools', 'Pruning and soil care');
     const malformed = { ...feedback('AI chip research', 'Artificial intelligence advances', 1), vote: 0 } as unknown as ArticleFeedback;
-    const ranked = rankInterestingArticles([unrelated, relevant], [malformed], Date.now(), 'current');
-    expect(ranked[0].id).toBe('relevant');
+    const withoutFeedback = rankInterestingArticles([unrelated, relevant], [], Date.now(), 'current');
+    const withMalformedFeedback = rankInterestingArticles([unrelated, relevant], [malformed], Date.now(), 'current');
+    expect(withMalformedFeedback.map((item) => item.id)).toEqual(withoutFeedback.map((item) => item.id));
   });
 
 });
