@@ -12,7 +12,7 @@ export const INTERESTING_ALGORITHMS: Array<{ value: InterestingAlgorithm; label:
 ];
 
 function tokenize(text: string): Set<string> {
-  return new Set(text.toLocaleLowerCase().replace(/<[^>]*>/g, ' ').match(/[\\p{L}\\p{N}]{3,}/gu) ?? []);
+  return new Set(text.toLocaleLowerCase().replace(/<[^>]*>/g, ' ').match(/[\p{L}\p{N}]{3,}/gu) ?? []);
 }
 
 function articleText(article: Article): string {
