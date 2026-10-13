@@ -19,7 +19,7 @@ function tokenize(text: string): Set<string> {
 }
 
 function articleText(article: Article): string {
-  return \`\${article.title} \${article.summary} \${article.content}\`;
+  return `${article.title} ${article.summary} ${article.content}`;
 }
 
 function validVote(vote: unknown): vote is 1 | -1 {
@@ -32,7 +32,7 @@ function rankCurrent(articles: Article[], feedback: ArticleFeedback[], now: numb
     .filter((item) => validVote(item.vote))
     .map((item) => ({
       vote: item.vote,
-      terms: tokenize(\`\${item.title} \${item.summary} \${item.content}\`),
+      terms: tokenize(`${item.title} ${item.summary} ${item.content}`),
     }));
   const score = (article: Article) => {
     const terms = tokenize(articleText(article));
@@ -72,7 +72,7 @@ for (const group of synonymGroups) for (const word of group) synonymMap.set(word
  * leaving doubled consonants or losing a final silent "e" (running/run, hiking/hike).
  */
 function stemTerm(term: string): string {
-  if (term.length > 5 && term.endsWith('ies')) return \`\${term.slice(0, -3)}y\`;
+  if (term.length > 5 && term.endsWith('ies')) return `${term.slice(0, -3)}y`;
 
   if (term.length > 5 && term.endsWith('sses')) return term.slice(0, -2);
   if (term.length > 4 && /(ches|shes|xes|zes)$/.test(term)) return term.slice(0, -2);
@@ -139,7 +139,7 @@ function rankByTermModel(
   const candidates = articles.map((article) => ({ article, terms: termsFor(articleText(article)) }));
   const examples = feedback
     .filter((item) => validVote(item.vote))
-    .map((item) => ({ vote: item.vote, terms: termsFor(\`\${item.title} \${item.summary} \${item.content}\`) }));
+    .map((item) => ({ vote: item.vote, terms: termsFor(`${item.title} ${item.summary} ${item.content}`) }));
 
   // Estimate document frequency over candidate articles and feedback examples,
   // so the profile and candidates use the same corpus and IDF is applied once.
@@ -178,7 +178,7 @@ function rankTopics(articles: Article[], feedback: ArticleFeedback[], now: numbe
   const profile = new Map<string, number>();
   for (const item of feedback) {
     if (!validVote(item.vote)) continue;
-    for (const topic of topicSet(\`\${item.title} \${item.summary} \${item.content}\`)) {
+    for (const topic of topicSet(`${item.title} ${item.summary} ${item.content}`)) {
       profile.set(topic, (profile.get(topic) ?? 0) + item.vote);
     }
   }
