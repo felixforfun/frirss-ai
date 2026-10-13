@@ -198,7 +198,7 @@ function diversify(articles: Article[], maxRun = 2): Article[] {
     const recentSources = result.slice(-maxRun).map((article) => article.sourceId || article.source || '');
     const alternativeIndex = remaining.findIndex((article) => {
       const source = article.sourceId || article.source || '';
-      return !recentSources.every((recent) => recent === source);
+      return recentSources.length < maxRun || !recentSources.every((recent) => recent === source);
     });
     // If every remaining item is from the same source, do not lose articles;
     // relevance order is the least-bad fallback.
