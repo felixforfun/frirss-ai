@@ -38,7 +38,7 @@ import { noFocusOnPointer } from '../../lib/pointerFocus';
 import { prefersReducedMotion } from '../../lib/reducedMotion';
 import { staggerIndexes, rememberStagger } from '../../lib/rowStagger';
 import type { Article, Filter } from '../../types';
-import { getArticleFeedback, type ArticleFeedback } from '../../api/intelligence';
+import { useIntelligenceFeedback } from '../../hooks/useIntelligenceFeedback';
 import { rankInterestingArticles, INTERESTING_ALGORITHMS } from '../../lib/intelligenceRanking';
 
 // Per-view scroll position, kept across remounts (e.g. returning from an
@@ -55,24 +55,12 @@ interface PullState {
 export default function ArticleList() {
   const { t } = useTranslation();
 
-  const [intelligenceFeedback, setIntelligenceFeedback] = useState<ArticleFeedback[]>([]);
+  const intelligenceFeedback = useIntelligenceFeedback();
   const [interestingAlgorithm, setInterestingAlgorithm] = useState<import('../../lib/intelligenceRanking').InterestingAlgorithm>(() => {
     const saved = localStorage.getItem('frirss_interesting_algorithm');
     return saved === 'weighted-idf' || saved === 'synonyms' || saved === 'topics' || saved === 'combined' || saved === 'microsoft-news' || saved === 'personal-news' ? saved : 'current';
   });
   useEffect(() => { localStorage.setItem('frirss_interesting_algorithm', interestingAlgorithm); }, [interestingAlgorithm]);
-  useEffect(() => {
-    let active = true;
-    const refreshFeedback = () => {
-      getArticleFeedback().then((rows) => { if (active) setIntelligenceFeedback(rows); }).catch(() => {});
-    };
-    refreshFeedback();
-    window.addEventListener('frirss-intelligence-feedback-changed', refreshFeedback);
-    return () => {
-      active = false;
-      window.removeEventListener('frirss-intelligence-feedback-changed', refreshFeedback);
-    };
-  }, []);
 
   const {
     articles,

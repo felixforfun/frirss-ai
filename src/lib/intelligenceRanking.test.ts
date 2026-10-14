@@ -171,3 +171,99 @@ it('keeps all candidates in Personal News mode with empty feedback', () => {
   expect(ranked).toHaveLength(2);
   expect(new Set(ranked).size).toBe(2);
 });
+
+describe('correctness fixes for the existing term models', () => {
+  const ids = (ranked: Article[]) => ranked.map((item) => item.id);
+  const at = (ranked: Article[], id: string) => ranked.findIndex((item) => item.id === id);
+  const sameTime = Date.UTC(2026, 9, 1, 12);
+  const now = sameTime + 3600000;
+
+  // "quokka" is rare among the candidates, "harbor"/"ferry" are common, so
+  // with candidate IDF the rare shared term outweighs the two common ones.
+  const idfCorpus = () => [
+    article('rare', 'Quokka violin cello', '', sameTime),
+    article('common', 'Harbor ferry tulip', '', sameTime),
+    ...['lemon', 'mango', 'peach', 'grape', 'melon', 'olive'].map((word) =>
+      article(`filler-${word}`, `Harbor ferry ${word}`, '', sameTime)),
+  ];
+  const idfUpvote = feedback('Quokka harbor ferry', '', 1);
+  const unrelatedDownvotes = Array.from({ length: 30 }, () => feedback('Zeppelin airship', '', -1));
+
+  for (const algorithm of ['weighted-idf', 'synonyms', 'microsoft-news', 'personal-news'] as const) {
+    it(`${algorithm}: computes IDF from candidates only, so votes on absent topics do not reorder candidates`, () => {
+      const plain = rankInterestingArticles(idfCorpus(), [idfUpvote], now, algorithm);
+      const withUnrelatedHistory = rankInterestingArticles(idfCorpus(), [idfUpvote, ...unrelatedDownvotes], now, algorithm);
+      expect(ids(withUnrelatedHistory)).toEqual(ids(plain));
+      expect(at(withUnrelatedHistory, 'rare')).toBeLessThan(at(withUnrelatedHistory, 'common'));
+    });
+  }
+
+  it('synonyms mode applies IDF like weighted-idf when no synonym or stem applies', () => {
+    const weighted = rankInterestingArticles(idfCorpus(), [idfUpvote], now, 'weighted-idf');
+    const synonyms = rankInterestingArticles(idfCorpus(), [idfUpvote], now, 'synonyms');
+    expect(ids(synonyms)).toEqual(ids(weighted));
+    expect(synonyms[0].id).toBe('rare');
+  });
+
+  // 30 upvotes, 3 of which mention crypto; both downvotes are about crypto.
+  // A raw signed sum gives "crypto" +1 (looks liked); averaging each polarity
+  // separately shows it is in 10% of upvotes but 100% of downvotes.
+  const heavyUpvoterHistory = [
+    ...Array.from({ length: 3 }, () => feedback('Crypto custody rules', '', 1)),
+    ...Array.from({ length: 27 }, () => feedback('Linux kernel scheduler', '', 1)),
+    ...Array.from({ length: 2 }, () => feedback('Crypto scam warning', '', -1)),
+  ];
+
+  for (const algorithm of ['weighted-idf', 'synonyms'] as const) {
+    it(`${algorithm}: normalises upvote and downvote profiles independently`, () => {
+      const items = [
+        article('crypto', 'Crypto token listing', '', sameTime),
+        article('neutral', 'Garden compost tips', '', sameTime),
+      ];
+      const ranked = rankInterestingArticles(items, heavyUpvoterHistory, now, algorithm);
+      expect(ids(ranked)).toEqual(['neutral', 'crypto']);
+    });
+  }
+
+  // "film" shares no words with any vote, so only the topic profile decides.
+  // Culture: 3 of 13 upvotes, but 2 of 2 downvotes.
+  const topicHistory = [
+    ...Array.from({ length: 10 }, () => feedback('Linux kernel software', '', 1)),
+    ...Array.from({ length: 3 }, () => feedback('Movie premiere', '', 1)),
+    ...Array.from({ length: 2 }, () => feedback('Music festival', '', -1)),
+  ];
+
+  for (const algorithm of ['topics', 'personal-news'] as const) {
+    it(`${algorithm}: normalises positive and negative topic profiles independently`, () => {
+      const items = [
+        article('culture', 'Film review', '', sameTime),
+        article('neutral', 'Garden compost tips', '', sameTime),
+      ];
+      const ranked = rankInterestingArticles(items, topicHistory, now, algorithm);
+      expect(ids(ranked)).toEqual(['neutral', 'culture']);
+    });
+  }
+
+  it('personal-news: bounds diversity reranking so large candidate sets stay fast', () => {
+    const words = ['policy', 'chip', 'energy', 'market', 'climate', 'rocket', 'vaccine', 'battery', 'satellite', 'election'];
+    const items = Array.from({ length: 600 }, (_, index) => {
+      const item = article(
+        `bulk-${index}`,
+        `${words[index % 10]} ${words[(index * 3) % 10]} report ${index}`,
+        `${words[(index * 7) % 10]} analysis and ${words[(index + 4) % 10]} outlook`,
+        sameTime - index * 60000,
+      );
+      item.sourceId = `feed/${index % 12}`;
+      return item;
+    });
+    const history = Array.from({ length: 50 }, (_, index) =>
+      feedback(`${words[index % 10]} briefing`, `${words[(index + 1) % 10]} update`, index % 4 === 0 ? -1 : 1));
+    const started = performance.now();
+    const ranked = rankInterestingArticles(items, history, now, 'personal-news');
+    const elapsed = performance.now() - started;
+    expect(ranked).toHaveLength(items.length);
+    expect(new Set(ranked).size).toBe(items.length);
+    // Generous bound: the unbounded greedy loop needed minutes at this size.
+    expect(elapsed).toBeLessThan(3000);
+  });
+});
