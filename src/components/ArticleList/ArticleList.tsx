@@ -759,16 +759,19 @@ export default function ArticleList() {
     ].join('\\u001f')).join('\\u001e'),
     [articles],
   );
-  const rankingIdentity = (article: Article) => `${article.id}\\u001f${article.url}\\u001f${article.title}`;
+  const rankingIdentity = useCallback(
+    (article: Article) => `${article.id}\\u001f${article.url}\\u001f${article.title}`,
+    [],
+  );
   const rankedArticleKeys = useMemo(
     () => rankInterestingArticles(articles, intelligenceFeedback, Date.now(), interestingAlgorithm)
       .map(rankingIdentity),
-    [interestingRankingKey, intelligenceFeedback, interestingAlgorithm],
+    [interestingRankingKey, intelligenceFeedback, interestingAlgorithm, rankingIdentity],
   );
   const rankedArticles = useMemo(() => {
     const currentByKey = new Map(articles.map((article) => [rankingIdentity(article), article]));
     return rankedArticleKeys.map((key) => currentByKey.get(key)).filter((article): article is Article => !!article);
-  }, [articles, rankedArticleKeys]);
+  }, [articles, rankedArticleKeys, rankingIdentity]);
   const groups = groupByDate(filter === 'interesting' ? rankedArticles : articles);
 
   // Une liste vide ne veut dire « il n'y a plus rien » que si le flux est
