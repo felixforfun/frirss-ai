@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { Article } from '../types';
 import type { ArticleFeedback } from '../api/intelligence';
-import { rankInterestingArticles } from './intelligenceRanking';
+import { DEFAULT_INTERESTING_ALGORITHM, INTERESTING_ALGORITHMS, isInterestingAlgorithm, rankInterestingArticles } from './intelligenceRanking';
 
 function article(id: string, title: string, summary: string, published = Date.now()): Article {
   return {
@@ -265,5 +265,38 @@ describe('correctness fixes for the existing term models', () => {
     expect(new Set(ranked).size).toBe(items.length);
     // Generous bound: the unbounded greedy loop needed minutes at this size.
     expect(elapsed).toBeLessThan(3000);
+  });
+});
+
+describe('algorithm registry and selection contract', () => {
+  it('keeps the default and every existing algorithm, adding Intelligence Next last', () => {
+    expect(DEFAULT_INTERESTING_ALGORITHM).toBe('current');
+    expect(INTERESTING_ALGORITHMS.map((a) => a.value)).toEqual([
+      'current', 'weighted-idf', 'synonyms', 'topics', 'combined', 'microsoft-news', 'personal-news', 'intelligence-next',
+    ]);
+    expect(INTERESTING_ALGORITHMS.every((a) => isInterestingAlgorithm(a.value))).toBe(true);
+    for (const value of ['', 'Current', 'intelligence', null, undefined, 3]) expect(isInterestingAlgorithm(value)).toBe(false);
+  });
+
+  it('existing algorithms ignore the Intelligence Next context entirely', () => {
+    const now = Date.UTC(2026, 9, 15);
+    const items = [
+      article('a', 'Rust compiler release', 'Faster builds and borrow checking', now - 3_600_000),
+      article('b', 'Tomato garden tips', 'Grow tomatoes on a balcony', now - 7_200_000),
+      article('c', 'Compiler internals', 'How the Rust borrow checker works', now - 1_800_000),
+      article('d', 'Stock market wobble', 'Bond yields jump again', now - 900_000),
+    ];
+    items[1].sourceId = 'feed/2';
+    items[3].sourceId = 'feed/3';
+    const votes = [feedback('Rust compiler', 'borrow checker', 1), feedback('Stock market', 'bond yields', -1)];
+    const context = {
+      subscriptions: [{ id: 'feed/2', title: 'Garden weekly' }],
+      savedArticles: [{ id: 's', title: 'Tomato garden tips', summary: '', content: '', sourceId: 'feed/2', starred: true, readLater: true }],
+    };
+    for (const { value } of INTERESTING_ALGORITHMS) {
+      if (value === 'intelligence-next') continue;
+      const without = rankInterestingArticles(items, votes, now, value).map((x) => x.id);
+      expect(rankInterestingArticles(items, votes, now, value, context).map((x) => x.id), value).toEqual(without);
+    }
   });
 });
