@@ -1,6 +1,6 @@
 import type { Article } from '../types';
 import type { ArticleFeedback } from '../api/intelligence';
-import { diversify, normalizeTerm, normalizedTokens, tokenize, validVote } from './intelligenceShared';
+import { diversify, normalizeTerm, normalizedTokens, synonymMap, tokenize, validVote } from './intelligenceShared';
 import { rankIntelligenceNext, type IntelligenceContext } from './intelligenceNext';
 
 export type { IntelligenceContext, SavedArticleSignal } from './intelligenceNext';
@@ -63,8 +63,27 @@ const topicKeywords: Record<string, string[]> = {
   culture: ['book', 'movie', 'film', 'music', 'art', 'game', 'culture', 'author', 'celebrity', 'sport'],
 };
 
-function topicSet(text: string): Set<string> {
+/**
+ * The taxonomy topics a text mentions.
+ *
+ * `listedSynonyms` also looks each word up as written. `normalizeTerm` stems a
+ * word before its synonym lookup, so the inflected forms the synonym groups
+ * list ("learning", "armed", "emissions", "warming", "markets", "politics")
+ * never reached their group, and e.g. a deep-learning article had no topic.
+ * Only the exact listed spellings are added, never other inflections ("learn"
+ * is not AI, "warm" is not climate), so a text can gain topics but never lose
+ * one. The Topic model (and so Combined) uses it; Personal News keeps the
+ * original lookup for its topic features, so its rankings are unchanged.
+ * Fixing the shared lookup for every model is a separate, deferred change.
+ */
+function topicSet(text: string, listedSynonyms = false): Set<string> {
   const terms = normalizedTokens(text);
+  if (listedSynonyms) {
+    for (const word of tokenize(text)) {
+      const synonym = synonymMap.get(word);
+      if (synonym !== undefined) terms.add(synonym);
+    }
+  }
   const topics = new Set<string>();
   for (const [topic, keywords] of Object.entries(topicKeywords)) {
     if (keywords.some((word) => terms.has(normalizeTerm(word)))) topics.add(topic);
@@ -163,12 +182,12 @@ function rankTopics(articles: Article[], feedback: ArticleFeedback[], now: numbe
   const { positive, negative } = polarityProfiles(
     feedback
       .filter((item) => validVote(item.vote))
-      .map((item) => ({ vote: item.vote, keys: topicSet(`${item.title} ${item.summary} ${item.content}`) })),
+      .map((item) => ({ vote: item.vote, keys: topicSet(`${item.title} ${item.summary} ${item.content}`, true) })),
     () => 1,
     'per-example',
   );
   return articles.map((article) => {
-    const topics = topicSet(articleText(article));
+    const topics = topicSet(articleText(article), true);
     let score = 0;
     for (const topic of topics) score += (positive.get(topic) ?? 0) - (negative.get(topic) ?? 0);
     return { article, score: score / Math.max(1, topics.size) + freshness(article, now) };
