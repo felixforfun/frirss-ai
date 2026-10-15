@@ -1,7 +1,11 @@
 import type { Article } from '../types';
 import type { ArticleFeedback } from '../api/intelligence';
+import { diversify, normalizeTerm, normalizedTokens, tokenize, validVote } from './intelligenceShared';
+import { rankIntelligenceNext, type IntelligenceContext } from './intelligenceNext';
 
-export type InterestingAlgorithm = 'current' | 'weighted-idf' | 'synonyms' | 'topics' | 'combined' | 'microsoft-news' | 'personal-news';
+export type { IntelligenceContext, SavedArticleSignal } from './intelligenceNext';
+
+export type InterestingAlgorithm = 'current' | 'weighted-idf' | 'synonyms' | 'topics' | 'combined' | 'microsoft-news' | 'personal-news' | 'intelligence-next';
 
 export const INTERESTING_ALGORITHMS: Array<{ value: InterestingAlgorithm; label: string }> = [
   { value: 'current', label: 'Current' },
@@ -11,21 +15,18 @@ export const INTERESTING_ALGORITHMS: Array<{ value: InterestingAlgorithm; label:
   { value: 'combined', label: 'Combined' },
   { value: 'microsoft-news', label: 'MS NewsRec' },
   { value: 'personal-news', label: 'Personal News' },
+  { value: 'intelligence-next', label: 'Intelligence Next' },
 ];
 
-const meaningfulShortTerms = new Set(['ai', 'eu', 'uk', 'us', 'ua', 'un', 'uk']);
+/** The default; also the fallback for a missing or unknown saved choice. */
+export const DEFAULT_INTERESTING_ALGORITHM: InterestingAlgorithm = 'current';
 
-function tokenize(text: string): Set<string> {
-  const words = text.toLocaleLowerCase().replace(/<[^>]*>/g, ' ').match(/[\p{L}\p{N}]+/gu) ?? [];
-  return new Set(words.filter((word) => word.length >= 3 || meaningfulShortTerms.has(word)));
+export function isInterestingAlgorithm(value: unknown): value is InterestingAlgorithm {
+  return INTERESTING_ALGORITHMS.some((algorithm) => algorithm.value === value);
 }
 
 function articleText(article: Article): string {
   return `${article.title} ${article.summary} ${article.content}`;
-}
-
-function validVote(vote: unknown): vote is 1 | -1 {
-  return vote === 1 || vote === -1;
 }
 
 /** Existing baseline, with source identifiers excluded from lexical similarity. */
@@ -51,61 +52,6 @@ function rankCurrent(articles: Article[], feedback: ArticleFeedback[], now: numb
     return positive - negative * 1.25 + (1 / (1 + ageHours / 72)) * 0.03;
   };
   return [...articles].sort((a, b) => score(b) - score(a));
-}
-
-const synonymGroups: string[][] = [
-  ['defence', 'defense', 'military', 'armed', 'security'],
-  ['ai', 'artificial', 'intelligence', 'machine', 'learning'],
-  ['economy', 'economic', 'economics', 'finance', 'financial', 'markets'],
-  ['government', 'politics', 'political', 'policy', 'parliament'],
-  ['climate', 'environment', 'emissions', 'warming', 'renewable'],
-  ['company', 'companies', 'business', 'corporate', 'enterprise'],
-  ['car', 'cars', 'automobile', 'automotive', 'vehicle', 'vehicles'],
-  ['buy', 'bought', 'purchase', 'purchasing', 'procurement'],
-  ['produce', 'produced', 'production', 'manufacturing', 'manufacture'],
-];
-
-const synonymMap = new Map<string, string>();
-for (const group of synonymGroups) for (const word of group) synonymMap.set(word, group[0]);
-
-/**
- * A small deterministic stemmer for common English inflections. It is not a
- * full Porter implementation, but handles plurals, -ed and -ing forms without
- * leaving doubled consonants or losing a final silent "e" (running/run, hiking/hike).
- */
-function stemTerm(term: string): string {
-  if (term.length > 5 && term.endsWith('ies')) return `${term.slice(0, -3)}y`;
-
-  if (term.length > 5 && term.endsWith('sses')) return term.slice(0, -2);
-  if (term.length > 4 && /(ches|shes|xes|zes)$/.test(term)) return term.slice(0, -2);
-  if (term.length > 3 && term.endsWith('s') && !/(ss|us|is)$/.test(term)) return term.slice(0, -1);
-
-  let stem = term;
-  if (stem.length > 5 && stem.endsWith('ing')) {
-    stem = stem.slice(0, -3);
-  } else if (stem.length > 4 && stem.endsWith('ed')) {
-    stem = stem.slice(0, -2);
-  } else {
-    return stem;
-  }
-
-  // Remove a doubled final consonant: runn -> run, stopp -> stop.
-  const hadDoubleConsonant = /(bb|cc|dd|ff|gg|mm|nn|pp|rr|tt)$/.test(stem);
-  if (hadDoubleConsonant) stem = stem.slice(0, -1);
-
-  // Restore a silent e for common CVC forms: hik -> hike, mak -> make.
-  // Do not do this after de-doubling: runn -> run, not rune.
-  if (!hadDoubleConsonant && stem.length >= 3 && /[^aeiou][aeiou][^aeiouwxy]$/.test(stem)) stem += 'e';
-  return stem;
-}
-
-function normalizeTerm(term: string): string {
-  const stem = stemTerm(term);
-  return synonymMap.get(stem) ?? stem;
-}
-
-function normalizedTokens(text: string): Set<string> {
-  return new Set([...tokenize(text)].map(normalizeTerm));
 }
 
 const topicKeywords: Record<string, string[]> = {
@@ -228,26 +174,6 @@ function rankTopics(articles: Article[], feedback: ArticleFeedback[], now: numbe
     return { article, score: score / Math.max(1, topics.size) + freshness(article, now) };
   }).sort((a, b) => b.score - a.score).map(({ article }) => article);
 }
-
-/** Avoid more than maxRun consecutive items from one source when alternatives exist. */
-function diversify(articles: Article[], maxRun = 2): Article[] {
-  const remaining = [...articles];
-  const result: Article[] = [];
-  while (remaining.length) {
-    const recentSources = result.slice(-maxRun).map((article) => article.sourceId || article.source || '');
-    const alternativeIndex = remaining.findIndex((article) => {
-      const source = article.sourceId || article.source || '';
-      return recentSources.length < maxRun || !recentSources.every((recent) => recent === source);
-    });
-    // If every remaining item is from the same source, do not lose articles;
-    // relevance order is the least-bad fallback.
-    const nextIndex = alternativeIndex >= 0 ? alternativeIndex : 0;
-    result.push(remaining.splice(nextIndex, 1)[0]);
-  }
-  return result;
-}
-
-
 
 /** Candidates reranked for diversity by Personal News; the rest keep relevance order. */
 const PERSONAL_NEWS_MMR_POOL = 120;
@@ -455,14 +381,17 @@ function rankMicrosoftNews(articles: Article[], feedback: ArticleFeedback[], now
  * Local deterministic ranking methods for the Interesting feed.
  * All lexical models use article text only; source identifiers are reserved for
  * diversification, where source identity is compared consistently.
+ * `context` (subscriptions, saved articles) is used by Intelligence Next only.
  */
 export function rankInterestingArticles(
   articles: Article[],
   feedback: ArticleFeedback[],
   now = Date.now(),
-  algorithm: InterestingAlgorithm = 'current',
+  algorithm: InterestingAlgorithm = DEFAULT_INTERESTING_ALGORITHM,
+  context: IntelligenceContext = {},
 ): Article[] {
   if (algorithm === 'current') return rankCurrent(articles, feedback, now);
+  if (algorithm === 'intelligence-next') return rankIntelligenceNext(articles, feedback, now, context);
   if (algorithm === 'weighted-idf') return rankByTermModel(articles, feedback, now, 'weighted-idf');
   if (algorithm === 'synonyms') return rankByTermModel(articles, feedback, now, 'synonyms');
   if (algorithm === 'topics') return rankTopics(articles, feedback, now);
