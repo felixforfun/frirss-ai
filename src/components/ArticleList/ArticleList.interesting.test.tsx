@@ -66,7 +66,7 @@ afterEach(() => {
 describe('ArticleList — Interesting algorithm choice', () => {
   it('desktop: the toolbar offers Intelligence Next and remembers the choice', () => {
     show('interesting', 'desktop');
-    const select = screen.getByRole('combobox', { name: 'Interesting ranking algorithm' }) as HTMLSelectElement;
+    const select = screen.getByRole('combobox', { name: 'articleList.rankingAlgorithmLabel' }) as HTMLSelectElement;
     expect(select.value).toBe('current');
     expect([...select.options].map((o) => o.value)).toContain('intelligence-next');
     fireEvent.change(select, { target: { value: 'intelligence-next' } });
@@ -87,9 +87,9 @@ describe('ArticleList — Interesting algorithm choice', () => {
   it('mobile: the View options sheet offers the same choice', () => {
     localStorage.setItem(INTERESTING_ALGORITHM_STORAGE_KEY, 'personal-news');
     show('interesting', 'mobile');
-    expect(screen.queryByRole('combobox', { name: 'Interesting ranking algorithm' })).toBeNull();
+    expect(screen.queryByRole('combobox', { name: 'articleList.rankingAlgorithmLabel' })).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: 'articleList.viewOptions' }));
-    const select = screen.getByRole('combobox', { name: 'Interesting ranking algorithm' }) as HTMLSelectElement;
+    const select = screen.getByRole('combobox', { name: 'articleList.rankingAlgorithmLabel' }) as HTMLSelectElement;
     expect(select.value).toBe('personal-news');
     expect([...select.options].map((o) => o.textContent)).toContain('Intelligence Next');
   });
@@ -167,6 +167,6 @@ describe('ArticleList — Interesting algorithm choice', () => {
   it('other views neither rank nor show the selector', () => {
     show('all', 'desktop');
     expect(ranker).not.toHaveBeenCalled();
-    expect(screen.queryByRole('combobox', { name: 'Interesting ranking algorithm' })).toBeNull();
+    expect(screen.queryByRole('combobox', { name: 'articleList.rankingAlgorithmLabel' })).toBeNull();
   });
 });
