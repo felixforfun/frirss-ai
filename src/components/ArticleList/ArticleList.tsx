@@ -47,7 +47,7 @@ import InterestingAlgorithmSelect from './InterestingAlgorithmSelect';
 /** Algorithms other than Intelligence Next take no context; one shared object keeps their ranking memo stable. */
 const NO_INTELLIGENCE_CONTEXT: IntelligenceContext = {};
 interface IntelligenceContextInputs {
-  /** JSON of `[id, title, folder labels]` per subscription; `'[]'` when none (or unused). */
+  /** JSON of `[id, title, folder labels, feed URL, site URL]` per subscription; `'[]'` when none (or unused). */
   subscriptionsKey: string;
   /** `null` until the starred / read-later lists have loaded once. */
   savedArticles: NonNullable<IntelligenceContext['savedArticles']> | null;
@@ -777,7 +777,9 @@ export default function ArticleList() {
   const usesIntelligenceContext = isInterestingView && interestingAlgorithm === 'intelligence-next';
   const rankingSubscriptionsKey = useMemo(
     () => (usesIntelligenceContext
-      ? JSON.stringify(subscriptions.map((feed) => [feed.id, feed.title, (feed.categories ?? []).map((category) => category?.label ?? '')]))
+      ? JSON.stringify(subscriptions.map((feed) => [
+        feed.id, feed.title, (feed.categories ?? []).map((category) => category?.label ?? ''), feed.url ?? '', feed.htmlUrl ?? '',
+      ]))
       : '[]'),
     [subscriptions, usesIntelligenceContext],
   );
@@ -793,9 +795,13 @@ export default function ArticleList() {
   );
   const intelligenceContext = useMemo<IntelligenceContext>(() => {
     if (!usesIntelligenceContext) return NO_INTELLIGENCE_CONTEXT;
-    const feeds = JSON.parse(contextInputs.subscriptionsKey) as Array<[string, string, string[]]>;
+    const feeds = JSON.parse(contextInputs.subscriptionsKey) as Array<[string, string, string[], string, string]>;
     return {
-      subscriptions: feeds.map(([id, feedTitle, labels]) => ({ id, title: feedTitle, categories: labels.map((label) => ({ id: label, label })) })),
+      // The URLs tell Intelligence Next which feeds share a publisher (host).
+      subscriptions: feeds.map(([id, feedTitle, labels, url, htmlUrl]) => ({
+        id, title: feedTitle, categories: labels.map((label) => ({ id: label, label })),
+        ...(url ? { url } : {}), ...(htmlUrl ? { htmlUrl } : {}),
+      })),
       savedArticles: contextInputs.savedArticles ?? [],
     };
   }, [usesIntelligenceContext, contextInputs]);

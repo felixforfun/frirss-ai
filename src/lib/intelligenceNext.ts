@@ -8,11 +8,23 @@
  * - starred and read-later articles (weak positive),
  * - subscriptions (weak positive): every subscribed feed is a feed-level
  *   example, profiled from its recent articles plus its title and folders;
- *   an article scores by its closest few *other* feeds. Each feed is one
- *   unit-length profile however many articles it has, so a prolific feed
- *   weighs no more than a small one, a just-added feed counts from its title
- *   and folders alone, and a repetitive feed cannot vouch for itself,
- * - freshness, which scales relevance instead of replacing it.
+ *   an article is corroborated by the closest feeds of *other publishers*
+ *   (feeds grouped by site host). Each feed is one unit-length profile however
+ *   many articles it has, a just-added feed counts from its title and folders
+ *   alone, and a repetitive feed — or its sibling feeds on the same site —
+ *   cannot vouch for itself,
+ * - a small own-feed prior: every subscribed publisher has the same fixed
+ *   budget, shared among its unread candidates, so a niche feed's few
+ *   articles each get a little and a prolific feed's many get almost nothing,
+ * - freshness, which scales relevance instead of replacing it. An undated
+ *   article counts as neither new nor old.
+ *
+ * Example evidence is support-aware: it is the similarity of the best
+ * matching example, discounted when few *distinct* examples back it up (one
+ * example gives half its similarity, two give three quarters, …). Near
+ * duplicates — the same story voted or saved twice — count once. So one vote
+ * on a topic whose articles all look alike no longer counts almost as much as
+ * twenty.
  *
  * A bounded maximal-marginal-relevance pass then adds variety to the head of
  * the list. Its penalties scale an article's relevance by at most 35 %, so it
@@ -30,6 +42,7 @@
 import type { Article, Subscription } from '../types';
 import type { ArticleFeedback } from '../api/intelligence';
 import { articleSource, diversifyBy, meaningfulShortTerms, stemTerm, synonymMap, validVote } from './intelligenceShared';
+import { feedSiteUrl } from './feedSiteUrl';
 
 /** Starred / read-later article the reader saved; may be read (not a candidate). */
 export interface SavedArticleSignal {
@@ -51,27 +64,43 @@ export interface IntelligenceContext {
 
 /** Every tunable used by Intelligence Next, in one place. Heuristic, not fitted. */
 export const INTELLIGENCE_NEXT_PARAMETERS = Object.freeze({
-  // Representation
+  // Representation (fixed: the term cache depends on them)
   titleWeight: 2,
   titleTokens: 30,
   leadTokens: 100,
   maxRawChars: 20_000,
   bm25K1: 1.2,
   bm25B: 0.75,
-  // Evidence
+  // Example evidence (votes, saved articles)
   maxExplicitExamples: 1000,
   maxSavedExamples: 400,
-  nearestExamples: 3,
+  /** Distinct examples that can support one candidate. */
+  nearestExamples: 8,
+  exampleAggregation: 'best-support' as ExampleAggregation,
+  /** `best-support`: share of the best similarity one example gives (two give 1 − (1 − h)², …). */
+  supportHalf: 0.5,
+  /** `shrunk` (evaluation only): pseudo-count of the shrunk mean. */
+  supportPseudoCount: 1,
+  /** Skip examples that near-duplicate a stronger one already counted. */
+  distinctExamples: true,
   starredStrength: 1,
   readLaterStrength: 0.6,
+  // Subscription evidence
+  nearestFeeds: 3,
   feedRecentArticles: 30,
   feedMetadataWeight: 1,
+  /** Feeds of one site host are one publisher: they do not corroborate each other. */
+  groupFeedsByHost: true,
+  ownFeedPrior: 'volume' as OwnFeedPrior,
+  /** `volume`: candidates per publisher that each get the full prior; more share it. */
+  ownFeedShare: 5,
   confidenceTerms: 5,
   // Score
   upvoteWeight: 1,
   downvoteWeight: 1.5,
   savedWeight: 0.35,
   subscriptionWeight: 0.2,
+  ownFeedWeight: 0.1,
   freshnessHalfLifeHours: 72,
   freshnessShare: 0.3,
   freshnessTieBreak: 0.02,
@@ -86,6 +115,27 @@ export const INTELLIGENCE_NEXT_PARAMETERS = Object.freeze({
   nearDuplicateMinTitleTerms: 3,
   maxSourceRun: 2,
 });
+/**
+ * How the similarities of the distinct nearest examples combine. The shipped
+ * default is `best-support`; the others are kept so the committed synthetic
+ * evaluation (`evaluation/interesting`) can reproduce the comparison:
+ * `noisy-or` is the first version of this ranker (saturates: one close
+ * example ≈ many), `squared` and `shrunk` are the support-aware alternatives
+ * that were measured and not chosen.
+ */
+export type ExampleAggregation = 'noisy-or' | 'squared' | 'shrunk' | 'best-support';
+/**
+ * Own-feed prior: `volume` (default) shares a fixed budget among a publisher's
+ * candidates; `similarity` (evaluation only; not chosen: it rewards repetitive
+ * feeds) is the similarity to the article's own feed profile; `none` is the
+ * first version of this ranker.
+ */
+export type OwnFeedPrior = 'none' | 'volume' | 'similarity';
+type Widen<T> = T extends number ? number : T extends boolean ? boolean : T;
+/** The parameters as values (the frozen object's literal types widened). */
+type Settings = { readonly [K in keyof typeof INTELLIGENCE_NEXT_PARAMETERS]: Widen<(typeof INTELLIGENCE_NEXT_PARAMETERS)[K]> };
+/** Overridable for evaluation and tests; the representation parameters are not. */
+export type IntelligenceNextOverrides = Partial<Omit<Settings, 'titleWeight' | 'titleTokens' | 'leadTokens' | 'maxRawChars' | 'bm25K1' | 'bm25B'>>;
 const P = INTELLIGENCE_NEXT_PARAMETERS;
 
 /** FreshRSS stream id of the read-later label (mirrors `READ_LATER_LABEL` in feedStore). */
@@ -114,6 +164,7 @@ export interface IntelligenceNextExplanation {
     downvote: number;
     saved: number;
     subscription: number;
+    ownFeed: number;
     freshness: number;
     confidence: number;
   };
@@ -334,6 +385,35 @@ function noisyOr(values: number[]): number {
   return 1 - miss;
 }
 
+/**
+ * Evidence in [0, 1] from the similarities (descending) of the distinct
+ * examples that count. `best-support`: the best similarity s₁, scaled by how
+ * well it is backed up, s₁ · (1 − (1 − h)^n) with n = Σ (sᵢ / s₁)² — one
+ * example gives h·s₁, several about as close give nearly s₁, and weak extra
+ * matches add little. It grows with every similarity and every added example.
+ */
+function aggregateSupport(similarities: number[], S: Settings): number {
+  if (!similarities.length) return 0;
+  switch (S.exampleAggregation) {
+    case 'noisy-or':
+      return noisyOr(similarities);
+    case 'squared':
+      return noisyOr(similarities.map((similarity) => similarity * similarity));
+    case 'shrunk': {
+      let sum = 0;
+      let squares = 0;
+      for (const similarity of similarities) { sum += similarity; squares += similarity * similarity; }
+      return squares / (S.supportPseudoCount + sum);
+    }
+    case 'best-support': {
+      const best = similarities[0];
+      let support = 0;
+      for (const similarity of similarities) support += (similarity / best) ** 2;
+      return best * (1 - (1 - S.supportHalf) ** support);
+    }
+  }
+}
+
 // ── Example evidence (votes and saved articles) ─────────────────────────
 
 type ExampleKind = 0 | 1 | 2; // upvote, downvote, saved
@@ -346,16 +426,30 @@ interface Example {
   strength: number;
   articleId: string;
   title: string;
+  titleTerms: Map<string, number>;
   vector: Vector;
 }
 
 interface NearestEvidence {
+  /** Similarities of the distinct examples that count, strongest first. */
   values: [number[], number[], number[]];
   best: [EvidenceMatch | null, EvidenceMatch | null, EvidenceMatch | null];
 }
 
-/** Inverted index over example vectors, so scoring touches only examples sharing a term. */
-function createExampleMatcher(examples: Example[]) {
+function nearDuplicate(aVector: Vector, aTitle: Map<string, number>, bVector: Vector, bTitle: Map<string, number>): boolean {
+  if (dot(aVector, bVector) >= P.nearDuplicateCosine) return true;
+  return aTitle.size >= P.nearDuplicateMinTitleTerms && bTitle.size >= P.nearDuplicateMinTitleTerms
+    && jaccard(aTitle, bTitle) >= P.nearDuplicateTitleJaccard;
+}
+
+/**
+ * Inverted index over example vectors, so scoring touches only examples
+ * sharing a term. For each kind it returns the strongest `nearestExamples`
+ * *distinct* examples: an example that is a near duplicate of a stronger one
+ * already counted (the same story syndicated or voted twice) is skipped, so
+ * it does not count as independent support.
+ */
+function createExampleMatcher(examples: Example[], S: Settings) {
   const postings = new Map<string, Array<[number, number]>>();
   examples.forEach((example, index) => {
     for (const [term, weight] of example.vector) {
@@ -366,6 +460,18 @@ function createExampleMatcher(examples: Example[]) {
   });
   const accumulator = new Float64Array(examples.length);
   const touched: number[] = [];
+  // Spare places, so skipped duplicates do not leave the list short.
+  const shortlist = S.distinctExamples ? 2 * S.nearestExamples : S.nearestExamples;
+  const duplicates = new Map<number, boolean>();
+  const isDuplicate = (a: number, b: number) => {
+    const key = a < b ? a * examples.length + b : b * examples.length + a;
+    let result = duplicates.get(key);
+    if (result === undefined) {
+      result = nearDuplicate(examples[a].vector, examples[a].titleTerms, examples[b].vector, examples[b].titleTerms);
+      duplicates.set(key, result);
+    }
+    return result;
+  };
 
   return (vector: Vector): NearestEvidence => {
     for (const [term, weight] of vector) {
@@ -376,34 +482,40 @@ function createExampleMatcher(examples: Example[]) {
         accumulator[index] += weight * exampleWeight;
       }
     }
-    const values: NearestEvidence['values'] = [[], [], []];
-    const best: NearestEvidence['best'] = [null, null, null];
+    const top: [number[], number[], number[]] = [[], [], []];
     const topIndexes: [number[], number[], number[]] = [[], [], []];
     for (const index of touched) {
       const example = examples[index];
       const similarity = Math.min(1, accumulator[index]) * example.strength;
       accumulator[index] = 0;
       if (similarity <= 0) continue;
-      const top = values[example.kind];
+      const values = top[example.kind];
       const indexes = topIndexes[example.kind];
       // Keep the strongest few, ties resolved by example order (most recent first).
-      let position = top.length;
-      while (position > 0 && (top[position - 1] < similarity || (top[position - 1] === similarity && indexes[position - 1] > index))) position--;
-      if (position < P.nearestExamples) {
-        top.splice(position, 0, similarity);
+      let position = values.length;
+      while (position > 0 && (values[position - 1] < similarity || (values[position - 1] === similarity && indexes[position - 1] > index))) position--;
+      if (position < shortlist) {
+        values.splice(position, 0, similarity);
         indexes.splice(position, 0, index);
-        if (top.length > P.nearestExamples) { top.pop(); indexes.pop(); }
+        if (values.length > shortlist) { values.pop(); indexes.pop(); }
       }
     }
     touched.length = 0;
+    const result: NearestEvidence = { values: [[], [], []], best: [null, null, null] };
     for (const kind of [UPVOTE, DOWNVOTE, SAVED]) {
-      const index = topIndexes[kind][0];
-      if (index !== undefined) {
-        const example = examples[index];
-        best[kind] = { articleId: example.articleId, title: example.title, similarity: values[kind][0] };
+      const counted: number[] = [];
+      topIndexes[kind].forEach((index, position) => {
+        if (counted.length >= S.nearestExamples) return;
+        if (S.distinctExamples && counted.some((other) => isDuplicate(index, other))) return;
+        counted.push(index);
+        result.values[kind].push(top[kind][position]);
+      });
+      if (counted.length) {
+        const example = examples[counted[0]];
+        result.best[kind] = { articleId: example.articleId, title: example.title, similarity: result.values[kind][0] };
       }
     }
-    return { values, best };
+    return result;
   };
 }
 
@@ -411,42 +523,95 @@ function createExampleMatcher(examples: Example[]) {
 
 interface FeedProfile {
   id: string;
+  publisher: string;
   /** Unit-length sum of the feed's recent article vectors and its metadata vector. */
   unit: Map<string, number>;
+  /** Length of that sum before normalising, for the leave-one-out similarity. */
+  rawNorm: number;
+  /** Candidates that are part of the profile. */
+  members: Set<number>;
 }
 
 /**
- * Subscription interest for each candidate, in [0, 1].
+ * Who publishes a feed, so that several feeds of one site count as one source
+ * of corroboration: the host of its site URL (`feedSiteUrl`: the feed's site
+ * link, else the origin of its feed URL) without a leading "www.", or the feed
+ * itself when it has no usable URL.
+ */
+export function feedPublisher(subscription: Pick<Subscription, 'id' | 'url' | 'htmlUrl'>): string {
+  const site = feedSiteUrl(subscription);
+  if (site) {
+    try {
+      const host = new URL(site).hostname.toLowerCase().replace(/^www\./, '');
+      if (host) return `host:${host}`;
+    } catch { /* not a URL */ }
+  }
+  return `feed:${subscription.id}`;
+}
+
+interface SubscriptionEvidence {
+  /** Corroboration by other publishers' feeds, in [0, 1]. */
+  values: number[];
+  /** Bounded prior from the article's own subscribed feed, in [0, 1]. */
+  own: number[];
+  strongestFeed: Array<string | null>;
+}
+
+/**
+ * Subscription interest for each candidate.
  *
  * Every subscribed feed acts as a weak, feed-level positive example: a profile
  * built from its most recent candidate articles plus its title and folder
  * labels (the sole profile while the feed has no articles, so a new
- * subscription counts immediately). A candidate's evidence is the noisy-OR of
- * its similarity to the closest profiles of *other* subscribed feeds — the
- * same aggregation as votes. Its own feed is left out: every candidate comes
- * from a subscribed feed, and resembling one's own feed measures how
- * repetitive the feed is (a deals or job-board feed would vouch for itself),
- * not how interested the reader is. Subscriptions vouch for an article when
- * feeds other than its publisher cover the same subject.
+ * subscription counts immediately). A candidate's corroboration is the
+ * noisy-OR of its similarity to the closest feeds of *other publishers* — each
+ * publisher counted once, by its best feed. Its own feed, and other feeds of
+ * the same site, are left out: every candidate comes from a subscribed feed,
+ * and resembling one's own feed measures how repetitive the feed is (a deals
+ * or job-board feed would vouch for itself), not how interested the reader is.
  *
  * One unit profile per feed, however prolific, and only the closest
- * `nearestExamples` feeds count, so a niche topic is not drowned out by a long
- * subscription list. Articles from feeds the reader does not follow get none.
+ * `nearestFeeds` publishers count, so a niche topic is not drowned out by a
+ * long subscription list. Articles from feeds the reader does not follow get
+ * nothing.
+ *
+ * The own-feed prior (`volume`) is separate and content-blind: each publisher
+ * has a budget of `ownFeedShare` articles' worth, shared among its candidates
+ * (each gets min(1, ownFeedShare / candidates)). A just-added niche feed
+ * therefore contributes from its first article, while a prolific feed's
+ * volume buys it nothing. It is bounded by `ownFeedWeight` in the score.
+ *
+ * Grouping by host is approximate: unrelated publishers on one shared host
+ * whose site URL differs only by path (code forges, video platforms, blog
+ * platforms) count as one and so lose corroboration from each other — the
+ * conservative direction; feeds without a usable URL count on their own.
  */
 function subscriptionEvidence(
   articles: Article[],
   vectors: Vector[],
   subscriptions: Subscription[] | undefined,
   corpus: Corpus,
-): { values: number[]; strongestFeed: Array<string | null> } {
+  publishedTimes: number[],
+  S: Settings,
+): SubscriptionEvidence {
   const values = new Array<number>(articles.length).fill(0);
+  const own = new Array<number>(articles.length).fill(0);
   const strongestFeed = new Array<string | null>(articles.length).fill(null);
-  if (!subscriptions?.length || !articles.length) return { values, strongestFeed };
+  if (!subscriptions?.length || !articles.length) return { values, own, strongestFeed };
 
+  const publisherById = new Map<string, string>();
+  for (const subscription of subscriptions) {
+    if (!subscription?.id || publisherById.has(subscription.id)) continue;
+    publisherById.set(subscription.id, S.groupFeedsByHost ? feedPublisher(subscription) : `feed:${subscription.id}`);
+  }
   const byFeed = new Map<string, number[]>();
-  for (const subscription of subscriptions) if (subscription?.id) byFeed.set(subscription.id, []);
+  for (const id of publisherById.keys()) byFeed.set(id, []);
+  const publisherCount = new Map<string, number>();
   articles.forEach((article, index) => {
-    if (vectors[index].size) byFeed.get(article.sourceId)?.push(index);
+    const publisher = publisherById.get(article.sourceId);
+    if (publisher === undefined) return;
+    publisherCount.set(publisher, (publisherCount.get(publisher) ?? 0) + 1);
+    if (vectors[index].size) byFeed.get(article.sourceId)!.push(index);
   });
 
   const feeds: FeedProfile[] = [];
@@ -454,15 +619,15 @@ function subscriptionEvidence(
   for (const subscription of subscriptions) {
     if (!subscription?.id || feedIndexById.has(subscription.id)) continue;
     const recent = (byFeed.get(subscription.id) ?? [])
-      .sort((a, b) => safeTime(articles[b].published) - safeTime(articles[a].published) || a - b)
-      .slice(0, P.feedRecentArticles);
+      .sort((a, b) => publishedTimes[b] - publishedTimes[a] || a - b)
+      .slice(0, S.feedRecentArticles);
     const raw = new Map<string, number>();
     const add = (vector: Vector, weight: number) => {
       for (const [term, value] of vector) raw.set(term, (raw.get(term) ?? 0) + value * weight);
     };
     for (const index of recent) add(vectors[index], 1);
     const categories = (subscription.categories ?? []).map((category) => category?.label ?? '').join(' ');
-    add(weightVector(documentTerms(subscription, subscription.title, categories, ''), corpus), P.feedMetadataWeight);
+    add(weightVector(documentTerms(subscription, subscription.title, categories, ''), corpus), S.feedMetadataWeight);
     let squared = 0;
     for (const value of raw.values()) squared += value * value;
     if (squared <= 0) continue;
@@ -470,9 +635,8 @@ function subscriptionEvidence(
     const unit = new Map<string, number>();
     for (const [term, value] of raw) unit.set(term, value / norm);
     feedIndexById.set(subscription.id, feeds.length);
-    feeds.push({ id: subscription.id, unit });
+    feeds.push({ id: subscription.id, publisher: publisherById.get(subscription.id)!, unit, rawNorm: norm, members: new Set(recent) });
   }
-  if (!feeds.length) return { values, strongestFeed };
 
   const postings = new Map<string, Array<[number, number]>>();
   feeds.forEach((feed, index) => {
@@ -486,8 +650,11 @@ function subscriptionEvidence(
   const touched: number[] = [];
 
   articles.forEach((article, index) => {
+    const ownPublisher = publisherById.get(article.sourceId);
+    if (ownPublisher === undefined) return;
+    if (S.ownFeedPrior === 'volume') own[index] = Math.min(1, S.ownFeedShare / publisherCount.get(ownPublisher)!);
     const vector = vectors[index];
-    if (!byFeed.has(article.sourceId) || !vector.size) return;
+    if (!vector.size) return;
     const ownIndex = feedIndexById.get(article.sourceId);
     for (const [term, weight] of vector) {
       for (const [feedIndex, value] of postings.get(term) ?? []) {
@@ -495,35 +662,59 @@ function subscriptionEvidence(
         perFeed[feedIndex] += weight * value;
       }
     }
-    const top: Array<[similarity: number, feedIndex: number]> = [];
-    const consider = (feedIndex: number, similarity: number) => {
-      if (!(similarity > 1e-9)) return;
-      let position = top.length;
-      while (position > 0 && (top[position - 1][0] < similarity
-        || (top[position - 1][0] === similarity && top[position - 1][1] > feedIndex))) position--;
-      if (position >= P.nearestExamples) return;
-      top.splice(position, 0, [similarity, feedIndex]);
-      if (top.length > P.nearestExamples) top.pop();
-    };
-    for (const feedIndex of touched) if (feedIndex !== ownIndex) consider(feedIndex, perFeed[feedIndex]);
+    if (S.ownFeedPrior === 'similarity' && ownIndex !== undefined) {
+      // Similarity to the own feed without this article in it.
+      const feed = feeds[ownIndex];
+      const rawDot = perFeed[ownIndex] * feed.rawNorm;
+      const leaveOneOut = feed.members.has(index)
+        ? (rawDot - 1) / Math.sqrt(Math.max(1e-12, feed.rawNorm ** 2 - 2 * rawDot + 1))
+        : perFeed[ownIndex];
+      own[index] = Math.min(1, Math.max(0, leaveOneOut));
+    }
+    // The best feed of each other publisher.
+    const bestOfPublisher = new Map<string, number>();
+    for (const feedIndex of touched) {
+      const feed = feeds[feedIndex];
+      if (feed.publisher === ownPublisher || !(perFeed[feedIndex] > 1e-9)) continue;
+      const current = bestOfPublisher.get(feed.publisher);
+      if (current === undefined || perFeed[feedIndex] > perFeed[current] || (perFeed[feedIndex] === perFeed[current] && feedIndex < current)) {
+        bestOfPublisher.set(feed.publisher, feedIndex);
+      }
+    }
+    const top = [...bestOfPublisher.values()]
+      .sort((a, b) => perFeed[b] - perFeed[a] || a - b)
+      .slice(0, S.nearestFeeds);
+    values[index] = noisyOr(top.map((feedIndex) => perFeed[feedIndex]));
+    if (top.length) strongestFeed[index] = feeds[top[0]].id;
     for (const feedIndex of touched) perFeed[feedIndex] = 0;
     touched.length = 0;
-    values[index] = noisyOr(top.map(([similarity]) => similarity));
-    if (top.length) strongestFeed[index] = feeds[top[0][1]].id;
   });
-  return { values, strongestFeed };
+  return { values, own, strongestFeed };
 }
 
 // ── Scoring and ordering ────────────────────────────────────────────────
 
-function safeTime(value: unknown): number {
-  return typeof value === 'number' && Number.isFinite(value) ? value : 0;
+function freshnessOf(published: number, now: number, S: Settings): number {
+  if (!Number.isFinite(published) || !Number.isFinite(now)) return 0;
+  const ageHours = Math.max(0, (now - published) / 3_600_000);
+  return 1 / (1 + ageHours / S.freshnessHalfLifeHours);
 }
 
-function freshnessOf(published: unknown, now: number): number {
-  if (typeof published !== 'number' || !Number.isFinite(published) || !Number.isFinite(now)) return 0;
-  const ageHours = Math.max(0, (now - published) / 3_600_000);
-  return 1 / (1 + ageHours / P.freshnessHalfLifeHours);
+const hasDate = (article: Article) =>
+  !article.publishedMissing && typeof article.published === 'number' && Number.isFinite(article.published);
+
+/**
+ * Publication time to rank by. An article without a date (`publishedMissing`:
+ * FriRSS then shows the time it was loaded) is treated as neither new nor old:
+ * it gets the median time of the dated candidates, so it gains no freshness
+ * bonus and suffers no penalty. NaN when no candidate has a date — freshness is
+ * then 0 for every article, which changes no order.
+ */
+function publicationTimes(articles: Article[]): number[] {
+  const dated = articles.filter(hasDate).map((article) => article.published).sort((a, b) => a - b);
+  const middle = dated.length >> 1;
+  const median = !dated.length ? NaN : dated.length % 2 ? dated[middle] : (dated[middle - 1] + dated[middle]) / 2;
+  return articles.map((article) => (hasDate(article) ? article.published : median));
 }
 
 function hasReadLater(article: Article): boolean {
@@ -531,8 +722,8 @@ function hasReadLater(article: Article): boolean {
     && (label === READ_LATER_STREAM || READ_LATER_CATEGORY_PREFIXES.some((prefix) => label.startsWith(prefix))));
 }
 
-function savedStrength(starred: boolean, readLater: boolean): number {
-  return Math.max(starred ? P.starredStrength : 0, readLater ? P.readLaterStrength : 0);
+function savedStrength(starred: boolean, readLater: boolean, S: Settings): number {
+  return Math.max(starred ? S.starredStrength : 0, readLater ? S.readLaterStrength : 0);
 }
 
 /**
@@ -544,8 +735,10 @@ export function explainIntelligenceNext(
   feedback: ArticleFeedback[],
   now = Date.now(),
   context: IntelligenceContext = {},
+  overrides?: IntelligenceNextOverrides,
 ): IntelligenceNextExplanation[] {
   if (!articles.length) return [];
+  const S: Settings = overrides ? { ...P, ...overrides } : P;
 
   const documents = articles.map((article) => documentTerms(article, article.title, article.summary, article.content));
   const corpus = corpusStatistics(documents);
@@ -563,13 +756,13 @@ export function explainIntelligenceNext(
       if (directVotes.has(articleId)) continue;
       directVotes.set(articleId, row.vote);
     }
-    if (explicitCount >= P.maxExplicitExamples) continue;
+    if (explicitCount >= S.maxExplicitExamples) continue;
     const terms = cachedDocumentTerms(row, row.title, row.summary, row.content, articleId ? voteTermCache.get(articleId) : undefined);
     if (articleId) usedVoteTerms.set(articleId, terms);
     const vector = weightVector(terms.terms, corpus);
     if (!vector.size) continue;
     explicitCount++;
-    examples.push({ kind: row.vote === 1 ? UPVOTE : DOWNVOTE, strength: 1, articleId, title: String(row.title ?? ''), vector });
+    examples.push({ kind: row.vote === 1 ? UPVOTE : DOWNVOTE, strength: 1, articleId, title: String(row.title ?? ''), titleTerms: terms.terms.title, vector });
   }
   voteTermCache = usedVoteTerms;
 
@@ -578,52 +771,60 @@ export function explainIntelligenceNext(
   const candidateIds = new Set(articles.map((article) => article.id).filter(Boolean));
   const savedSeen = new Set<string>();
   let savedCount = 0;
-  const addSaved = (source: object, id: string, title: unknown, summary: unknown, content: unknown, strength: number, vector?: Vector) => {
-    if (strength <= 0 || savedCount >= P.maxSavedExamples) return;
-    if (id && (directVotes.has(id) || savedSeen.has(id))) return;
-    const exampleVector = vector ?? weightVector(documentTerms(source, title, summary, content), corpus);
-    if (!exampleVector.size) return;
+  const addSaved = (source: object, id: string, title: unknown, summary: unknown, content: unknown, strength: number, index?: number) => {
+    if (strength <= 0 || savedCount >= S.maxSavedExamples) return false;
+    if (id && (directVotes.has(id) || savedSeen.has(id))) return false;
+    const terms = index === undefined ? documentTerms(source, title, summary, content) : documents[index];
+    const exampleVector = index === undefined ? weightVector(terms, corpus) : vectors[index];
+    if (!exampleVector.size) return false;
     if (id) savedSeen.add(id);
     savedCount++;
-    examples.push({ kind: SAVED, strength, articleId: id, title: String(title ?? ''), vector: exampleVector });
+    examples.push({ kind: SAVED, strength, articleId: id, title: String(title ?? ''), titleTerms: terms.title, vector: exampleVector });
+    return true;
   };
+  // A candidate the reader saved is direct evidence at its full strength, as a
+  // direct upvote is; it also counts as an example for the others.
+  const directSaved = new Float64Array(articles.length);
   articles.forEach((article, index) => {
-    addSaved(article, article.id, article.title, article.summary, article.content,
-      savedStrength(!!article.starred, hasReadLater(article)), vectors[index]);
+    const strength = savedStrength(!!article.starred, hasReadLater(article), S);
+    if (addSaved(article, article.id, article.title, article.summary, article.content, strength, index)) directSaved[index] = strength;
   });
   for (const item of context.savedArticles ?? []) {
     if (!item || (item.id && candidateIds.has(item.id))) continue;
-    addSaved(item, item.id, item.title, item.summary, item.content, savedStrength(!!item.starred, !!item.readLater));
+    addSaved(item, item.id, item.title, item.summary, item.content, savedStrength(!!item.starred, !!item.readLater, S));
   }
 
-  const nearest = createExampleMatcher(examples);
-  const subscriptions = subscriptionEvidence(articles, vectors, context.subscriptions, corpus);
+  const publishedTimes = publicationTimes(articles);
+  const nearest = createExampleMatcher(examples, S);
+  const subscriptions = subscriptionEvidence(articles, vectors, context.subscriptions, corpus, publishedTimes, S);
 
   const scored = articles.map((article, index) => {
     const evidence = nearest(vectors[index]);
     const directVote = (article.id && directVotes.get(article.id)) || null;
-    const upvote = directVote === 1 ? 1 : noisyOr(evidence.values[UPVOTE]);
-    const downvote = noisyOr(evidence.values[DOWNVOTE]);
-    const saved = noisyOr(evidence.values[SAVED]);
+    const upvote = directVote === 1 ? 1 : aggregateSupport(evidence.values[UPVOTE], S);
+    const downvote = aggregateSupport(evidence.values[DOWNVOTE], S);
+    const saved = Math.max(directSaved[index], aggregateSupport(evidence.values[SAVED], S));
     const subscription = subscriptions.values[index];
-    const freshness = freshnessOf(article.published, now);
+    const ownFeed = subscriptions.own[index];
+    const freshness = freshnessOf(publishedTimes[index], now, S);
     // Very short texts match by accident; their positive evidence counts less.
-    const confidence = directVote === 1 ? 1 : Math.min(1, vectors[index].size / P.confidenceTerms);
-    const positive = confidence * (P.upvoteWeight * upvote + P.savedWeight * saved + P.subscriptionWeight * subscription);
+    const confidence = directVote === 1 ? 1 : Math.min(1, vectors[index].size / S.confidenceTerms);
+    const positive = confidence * (S.upvoteWeight * upvote + S.savedWeight * saved
+      + S.subscriptionWeight * subscription + S.ownFeedWeight * ownFeed);
     // A vote on the article itself is decisive: an upvoted article is not
     // pushed down for resembling something else the reader disliked, and a
     // downvoted one goes to the bottom tier whatever else it matches.
-    const negative = directVote === 1 ? 0 : P.downvoteWeight * downvote;
-    const score = positive * (1 - P.freshnessShare + P.freshnessShare * freshness)
+    const negative = directVote === 1 ? 0 : S.downvoteWeight * downvote;
+    const score = positive * (1 - S.freshnessShare + S.freshnessShare * freshness)
       - negative
-      + P.freshnessTieBreak * freshness;
+      + S.freshnessTieBreak * freshness;
     const tier: IntelligenceNextTier = directVote === -1 ? 'downvoted' : score < 0 ? 'net-negative' : 'normal';
     const explanation: IntelligenceNextExplanation = {
       article,
       tier,
       score: Number.isFinite(score) ? score : 0,
       directVote,
-      evidence: { upvote, downvote, saved, subscription, freshness, confidence },
+      evidence: { upvote, downvote, saved, subscription, ownFeed, freshness, confidence },
       strongestUpvote: evidence.best[UPVOTE],
       strongestDownvote: evidence.best[DOWNVOTE],
       strongestSaved: evidence.best[SAVED],
@@ -635,7 +836,7 @@ export function explainIntelligenceNext(
   type Scored = (typeof scored)[number];
   const byScore = (a: Scored, b: Scored) =>
     b.explanation.score - a.explanation.score
-    || safeTime(b.explanation.article.published) - safeTime(a.explanation.article.published)
+    || (publishedTimes[b.index] || 0) - (publishedTimes[a.index] || 0)
     || a.index - b.index;
   const tier = (name: IntelligenceNextTier) => scored.filter((item) => item.explanation.tier === name).sort(byScore);
   const normal = tier('normal');
@@ -644,14 +845,14 @@ export function explainIntelligenceNext(
   // a little relevance for variety (vocabulary, publisher) and pushes near
   // duplicates out of the head. Only non-negative items take part, so
   // diversity can never lift an article the reader voted against.
-  const pool = normal.slice(0, P.diversityPool).map((item) => ({ item, maxSimilarity: 0, nearDuplicate: false }));
+  const pool = normal.slice(0, S.diversityPool).map((item) => ({ item, maxSimilarity: 0, nearDuplicate: false }));
   const topScore = pool.length ? pool[0].item.explanation.score : 0;
   // A source already in the head costs a fixed, bounded amount — not one step
   // per article shown — so readers whose interests sit in a few feeds still
   // see those feeds' best articles first; `diversifyBy` then breaks up runs.
   const shownSources = new Set<string>();
   const head: Scored[] = [];
-  const selections = Math.min(P.diversitySelections, pool.length);
+  const selections = Math.min(S.diversitySelections, pool.length);
   for (let pick = 0; pick < selections; pick++) {
     let bestIndex = 0;
     let bestValue = -Infinity;
@@ -663,9 +864,9 @@ export function explainIntelligenceNext(
       // much stronger one (`diversifyBy` below may still move one a few places
       // to break a source run). Near duplicates leave the head outright.
       const variety = 1
-        - P.similarityPenalty * entry.maxSimilarity
-        - (shownSources.has(articleSource(entry.item.explanation.article)) ? P.sourcePenalty : 0);
-      const value = relevance * variety - (entry.nearDuplicate ? P.nearDuplicatePenalty : 0);
+        - S.similarityPenalty * entry.maxSimilarity
+        - (shownSources.has(articleSource(entry.item.explanation.article)) ? S.sourcePenalty : 0);
+      const value = relevance * variety - (entry.nearDuplicate ? S.nearDuplicatePenalty : 0);
       if (value > bestValue) { bestValue = value; bestIndex = index; }
     });
     const [{ item: chosen }] = pool.splice(bestIndex, 1);
@@ -676,15 +877,15 @@ export function explainIntelligenceNext(
       const similarity = dot(vectors[entry.item.index], vectors[chosen.index]);
       entry.maxSimilarity = Math.max(entry.maxSimilarity, similarity);
       const title = documents[entry.item.index].title;
-      const sameTitle = title.size >= P.nearDuplicateMinTitleTerms && chosenTitle.size >= P.nearDuplicateMinTitleTerms
-        && jaccard(title, chosenTitle) >= P.nearDuplicateTitleJaccard;
-      if (similarity >= P.nearDuplicateCosine || sameTitle) entry.nearDuplicate = true;
+      const sameTitle = title.size >= S.nearDuplicateMinTitleTerms && chosenTitle.size >= S.nearDuplicateMinTitleTerms
+        && jaccard(title, chosenTitle) >= S.nearDuplicateTitleJaccard;
+      if (similarity >= S.nearDuplicateCosine || sameTitle) entry.nearDuplicate = true;
     }
   }
   const normalOrder = diversifyBy(
-    [...head, ...pool.map((entry) => entry.item), ...normal.slice(P.diversityPool)],
+    [...head, ...pool.map((entry) => entry.item), ...normal.slice(S.diversityPool)],
     (item) => articleSource(item.explanation.article),
-    P.maxSourceRun,
+    S.maxSourceRun,
   );
 
   return [...normalOrder, ...tier('net-negative'), ...tier('downvoted')].map((item) => item.explanation);
@@ -696,6 +897,7 @@ export function rankIntelligenceNext(
   feedback: ArticleFeedback[],
   now = Date.now(),
   context: IntelligenceContext = {},
+  overrides?: IntelligenceNextOverrides,
 ): Article[] {
-  return explainIntelligenceNext(articles, feedback, now, context).map((item) => item.article);
+  return explainIntelligenceNext(articles, feedback, now, context, overrides).map((item) => item.article);
 }
