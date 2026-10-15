@@ -244,6 +244,28 @@ describe('correctness fixes for the existing term models', () => {
     });
   }
 
+  // Regression: the synonym groups list inflected forms ("learning", "armed",
+  // "emissions", "warming"), but they were looked up only after stemming, so
+  // these articles had no topic and Topics could not rank them at all.
+  const technologyHistory = Array.from({ length: 3 }, () => feedback('Linux kernel software', '', 1));
+  it('topics: recognises the inflected words the synonym groups list', () => {
+    for (const [title, history] of [
+      ['Deep learning breakthrough', technologyHistory],
+      ['Armed forces on alert', [feedback('Navy patrol', '', 1)]],
+      ['Emissions fall as warming slows', [feedback('Physics research', '', 1)]],
+    ] as const) {
+      const items = [article('neutral', 'Garden compost tips', '', sameTime), article('match', title, '', sameTime)];
+      expect(ids(rankInterestingArticles(items, [...history], now, 'topics'))).toEqual(['match', 'neutral']);
+    }
+  });
+
+  it('topics: does not stretch a listed word to its other inflections', () => {
+    // "learning" means AI in the synonym list; "learn" and "warm" alone do not.
+    const items = [article('neutral', 'Garden compost tips', '', sameTime), article('learn', 'Learn to bake on a warm day', '', sameTime)];
+    const history = [...technologyHistory, feedback('Physics research', '', 1)];
+    expect(ids(rankInterestingArticles(items, history, now, 'topics'))).toEqual(['neutral', 'learn']);
+  });
+
   it('personal-news: bounds diversity reranking so large candidate sets stay fast', () => {
     const words = ['policy', 'chip', 'energy', 'market', 'climate', 'rocket', 'vaccine', 'battery', 'satellite', 'election'];
     const items = Array.from({ length: 600 }, (_, index) => {
