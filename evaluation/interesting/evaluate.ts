@@ -18,7 +18,7 @@ import { explainIntelligenceNext, rankIntelligenceNext, type IntelligenceNextOve
 import type { Subscription } from '../../src/types';
 import type { ArticleFeedback } from '../../src/api/intelligence';
 import {
-  DEALS_FEEDS, DISLIKED, LIKED, NEW_FEED, history, saved, setWorld, sharedHost, snapshot, splitDealsPublisher, subscriptions, withUndated,
+  DEALS_FEEDS, DISLIKED, LIKED, NEW_FEED, history, saved, setWorld, sharedHost, sharedPlatform, snapshot, splitDealsPublisher, subscriptions, withUndated,
   type Labeled, type World,
 } from './syntheticWorld';
 
@@ -92,6 +92,7 @@ function scenarios(): Scenario[] {
     { key: 'E', title: 'E. Cold start, the deals publisher runs three feeds on one host', items: split.items, votes: [], context: ctx(split.subscriptions, false), note: '0 votes; the deals articles are spread over three feeds of one host' },
     { key: 'F', title: 'F. Cold start, the two rust feeds are different publishers on one shared host', items, votes: [], context: ctx(sharedHost(), false), note: '0 votes; host grouping wrongly merges the two rust publishers' },
     { key: 'G', title: 'G. Warm start, 15 % of the candidates have no publication date', items: withUndated(items, 0.15, 5, NOW), votes: warm, context: ctx(subscriptions, true), note: 'as A; undated articles carry `published` = now and `publishedMissing`' },
+    { key: 'H', title: 'H. Cold start, the new feed is one of eight channels on one platform host', items, votes: [], context: ctx(sharedPlatform(), false), note: '0 votes; host grouping treats the eight channels as one publisher' },
   ];
 }
 
@@ -141,20 +142,21 @@ for (const world of worlds) {
   out(`## World: ${world}`);
   out();
   for (const s of scenarios()) {
-    // E and F only change the subscriptions, which only Intelligence Next reads.
-    if (s.key === 'E' || s.key === 'F') continue;
+    // E, F and H only change the subscriptions, which only Intelligence Next reads.
+    if (s.key === 'E' || s.key === 'F' || s.key === 'H') continue;
     table(s);
   }
 }
 
 // ── Intelligence Next variants ───────────────────────────────────────
 // The evidence knobs of PR #47 as first pushed (commit d844aab / d3c0750).
+// They keep this version's handling of undated articles and of saved candidates.
 const PR47: IntelligenceNextOverrides = { exampleAggregation: 'noisy-or', nearestExamples: 3, distinctExamples: false, ownFeedPrior: 'none', groupFeedsByHost: false };
 const OLD_FEEDS: IntelligenceNextOverrides = { ownFeedPrior: 'none', groupFeedsByHost: false };
 const RELEVANCE_ONLY: IntelligenceNextOverrides = { diversitySelections: 0, maxSourceRun: Number.MAX_SAFE_INTEGER };
 const VARIANT_GROUPS: Array<[string, Array<[string, IntelligenceNextOverrides]>]> = [
   ['Vote and saved-article aggregation (feed evidence as in PR #47)', [
-    ['PR #47: noisy-OR of the 3 nearest', PR47],
+    ['PR #47 settings: noisy-OR of the 3 nearest', PR47],
     ['noisy-OR of the 8 nearest distinct', { ...PR47, nearestExamples: 8, distinctExamples: true }],
     ['noisy-OR of squared cosines, 8 distinct', { ...PR47, exampleAggregation: 'squared', nearestExamples: 8, distinctExamples: true }],
     ['shrunk mean Σs²/(1+Σs), 8 distinct', { ...PR47, exampleAggregation: 'shrunk', nearestExamples: 8, distinctExamples: true }],
@@ -164,8 +166,9 @@ const VARIANT_GROUPS: Array<[string, Array<[string, IntelligenceNextOverrides]>]
     ['other feeds by id, no own-feed prior (PR #47)', OLD_FEEDS],
     ['other publishers by host, no prior', { ownFeedPrior: 'none' }],
     ['by host + own-feed prior: similarity to own feed', { ownFeedPrior: 'similarity' }],
-    ['by id + own-feed prior: shared per-publisher budget', { groupFeedsByHost: false }],
-    ['**by host + shared per-publisher budget** (final)', {}],
+    ['by id + own-feed prior: budget per feed', { groupFeedsByHost: false }],
+    ['by host + budget per publisher (host)', { ownFeedBudget: 'publisher' }],
+    ['**by host + budget per feed** (final)', {}],
   ]],
   ['Sensitivity of the final design (not tuned; one knob at a time)', [
     ['final', {}],
@@ -181,7 +184,8 @@ const VARIANT_GROUPS: Array<[string, Array<[string, IntelligenceNextOverrides]>]
 out('## Intelligence Next: variants compared');
 out();
 out('Same seeds and scenarios. "liked / disliked" = liked share @20 / disliked count @20. "A relevance only" = scenario A ranked by score without the diversity pass.');
-out('"new" = the new feed\'s mean pct (A / B / C). "E deals" = deals articles @20 when the deals publisher runs three feeds on one host. "F rust" = the rust articles\' mean pct when the two rust publishers share a host. "G undated" = undated articles @20 (≈ 3 at the base rate).');
+out('"new" = the new feed\'s mean pct (A / B / C). "E deals" = deals articles @20 when the deals publisher runs three feeds on one host. "F rust" = the rust articles\' mean pct when the two rust publishers share a host. "G undated" = undated articles @20 (≈ 3 at the base rate). "H new" = the new feed\'s mean pct when it is one of eight channels on a platform host.');
+out('The "PR #47 settings" rows reproduce its evidence knobs; they keep this version\'s neutral handling of undated articles and full strength for saved candidates.');
 out();
 for (const world of worlds) {
   setWorld(world);
@@ -196,12 +200,12 @@ for (const world of worlds) {
   for (const [group, variants] of VARIANT_GROUPS) {
     out(`**${group}**`);
     out();
-    out('| Variant | A liked / disliked | A relevance only | B liked / disliked | C liked / disliked | new (A / B / C) | E deals @20 | F rust pct | G undated @20 |');
-    out('|---|---|---|---|---|---|---|---|---|');
+    out('| Variant | A liked / disliked | A relevance only | B liked / disliked | C liked / disliked | new (A / B / C) | E deals @20 | F rust pct | G undated @20 | H new pct |');
+    out('|---|---|---|---|---|---|---|---|---|---|');
     for (const [name, overrides] of variants) {
-      const [a, b, c, e, f, g] = ['A', 'B', 'C', 'E', 'F', 'G'].map((key) => run(key, overrides));
+      const [a, b, c, e, f, g, h] = ['A', 'B', 'C', 'E', 'F', 'G', 'H'].map((key) => run(key, overrides));
       const relevance = run('A', { ...overrides, ...RELEVANCE_ONLY });
-      out(`| ${name} | ${fmt(a.likedAt20)} / ${a.dislikedAt20} | ${fmt(relevance.likedAt20)} | ${fmt(b.likedAt20)} / ${b.dislikedAt20} | ${fmt(c.likedAt20)} / ${c.dislikedAt20} | ${fmt(a.newFeedPct)} / ${fmt(b.newFeedPct)} / ${fmt(c.newFeedPct)} | ${e.dealsAt20} | ${fmt(f.rustPct)} | ${g.undatedAt20} |`);
+      out(`| ${name} | ${fmt(a.likedAt20)} / ${a.dislikedAt20} | ${fmt(relevance.likedAt20)} | ${fmt(b.likedAt20)} / ${b.dislikedAt20} | ${fmt(c.likedAt20)} / ${c.dislikedAt20} | ${fmt(a.newFeedPct)} / ${fmt(b.newFeedPct)} / ${fmt(c.newFeedPct)} | ${e.dealsAt20} | ${fmt(f.rustPct)} | ${g.undatedAt20} | ${fmt(h.newFeedPct)} |`);
     }
     out();
   }

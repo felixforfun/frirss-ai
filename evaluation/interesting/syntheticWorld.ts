@@ -92,6 +92,18 @@ export function sharedHost(): Subscription[] {
 }
 
 /**
+ * Scenario H: the just-added niche feed is one channel among several on a
+ * platform host (as on a video site or code forge): it and seven other
+ * channels' site URLs differ only by path.
+ */
+export const PLATFORM_FEEDS = [NEW_FEED, 'feed/cycle', 'feed/velo', 'feed/kitchen', 'feed/bake', 'feed/garden', 'feed/football', 'feed/sec'];
+export function sharedPlatform(): Subscription[] {
+  return subscriptions.map((s) => (PLATFORM_FEEDS.includes(s.id)
+    ? { ...s, url: `https://video.example/feeds/${s.id.slice(5)}.xml`, htmlUrl: `https://video.example/channel/${s.id.slice(5)}` }
+    : s));
+}
+
+/**
  * Scenario G: a share of the candidates had no publication date. FriRSS then
  * shows the time they were loaded (`published` = now) and flags them.
  */

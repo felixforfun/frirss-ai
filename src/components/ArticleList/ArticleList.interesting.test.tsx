@@ -133,6 +133,24 @@ describe('ArticleList — Interesting algorithm choice', () => {
     expect(contextOfCall(2).savedArticles?.map((saved) => saved.id)).toEqual(['x', 'y']);
   });
 
+  it('a background reload that only renews an undated article\'s placeholder time does not re-rank', () => {
+    localStorage.setItem(INTERESTING_ALGORITHM_STORAGE_KEY, 'intelligence-next');
+    useUiStore.setState({ layoutMode: 'desktop' });
+    const undated = (published: number): Article => ({ ...article('u', 'Undated note', 'feed/b'), published, publishedMissing: true });
+    useFeedStore.setState({
+      filter: 'interesting', loading: false, selectedFeed: null, searchQuery: '', savedArticleSignals: [], subscriptions: feeds,
+      articles: [article('1', 'Rust compiler'), undated(1_000)],
+    });
+    render(<ArticleList />);
+    expect(ranker).toHaveBeenCalledTimes(1);
+    // silentRefresh re-normalises the page: new objects, and \`published\` = load time again.
+    act(() => { useFeedStore.setState({ articles: [{ ...useFeedStore.getState().articles[0] }, undated(2_000)] }); });
+    expect(ranker).toHaveBeenCalledTimes(1);
+    // A dated article whose date changes is still a change.
+    act(() => { useFeedStore.setState({ articles: [{ ...useFeedStore.getState().articles[0], published: 3_000 }, undated(3_000)] }); });
+    expect(ranker).toHaveBeenCalledTimes(2);
+  });
+
   it('Intelligence Next applies a first star at the next vote, not as soon as it is polled', async () => {
     localStorage.setItem(INTERESTING_ALGORITHM_STORAGE_KEY, 'intelligence-next');
     show('interesting', 'desktop', []); // loaded: the reader has no favourites yet

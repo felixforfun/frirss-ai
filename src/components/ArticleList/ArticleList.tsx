@@ -762,12 +762,14 @@ export default function ArticleList() {
       article.title,
       article.summary,
       article.content,
-      article.published,
+      // An undated article's \`published\` is the time it was loaded, which a
+      // background reload renews; it must not count as a change of the list.
+      article.publishedMissing ? '' : article.published,
     ].join('\\u001f')).join('\\u001e') : ''),
     [articles, isInterestingView],
   );
-  // Intelligence Next also reads the subscriptions (id, title, folder labels)
-  // and the starred / read-later snapshot. A refresh rebuilds the subscription
+  // Intelligence Next also reads the subscriptions (id, title, folder labels,
+  // feed and site URL) and the starred / read-later snapshot. A refresh rebuilds the subscription
   // array even when nothing changed, so the context is keyed by those fields
   // only. Changes to either are not a reason to reshuffle the list the reader
   // is looking at (the favourites are re-fetched on every poll), so they are
