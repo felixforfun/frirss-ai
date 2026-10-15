@@ -53,9 +53,12 @@ votes on its topic).
 | E | as C, with the deals publisher split over three feeds on one host |
 | F | as C, with the two rust publishers sharing one host (`blogs.example/<name>/`) |
 | G | as A, with ~15 % of the candidates undated (`publishedMissing`) |
+| H | as C, with the new feed one of eight channels on one platform host (`video.example/channel/<name>`) |
 
-E and F only change subscriptions, so they appear only in the Intelligence
-Next variant tables.
+E, F and H only change subscriptions, so they appear only in the Intelligence
+Next variant tables. The "PR #47 settings" rows there reproduce that version's
+evidence settings, but keep this version's neutral handling of undated
+articles and full strength for saved candidates.
 
 ## Metrics
 
@@ -66,7 +69,7 @@ Next variant tables.
 * **max/source @20**, **longest run**: source concentration in the top 20.
 * **dup pairs @20**: pairs of copies of one story in the top 20.
 * **E deals @20**, **F rust pct**, **G undated @20** (about 3 expected at
-  the base rate).
+  the base rate), **H new pct** (the new feed's mean pct on the platform host).
 
 ## Caveats
 

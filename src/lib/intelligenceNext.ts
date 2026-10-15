@@ -13,16 +13,17 @@
  *   many articles it has, a just-added feed counts from its title and folders
  *   alone, and a repetitive feed — or its sibling feeds on the same site —
  *   cannot vouch for itself,
- * - a small own-feed prior: every subscribed publisher has the same fixed
- *   budget, shared among its unread candidates, so a niche feed's few
- *   articles each get a little and a prolific feed's many get almost nothing,
+ * - a small own-feed prior: every subscribed feed has the same fixed budget,
+ *   shared among its candidates, so a niche feed's few articles each get a
+ *   little and a prolific feed's many get almost nothing,
  * - freshness, which scales relevance instead of replacing it. An undated
  *   article counts as neither new nor old.
  *
  * Example evidence is support-aware: it is the similarity of the best
  * matching example, discounted when few *distinct* examples back it up (one
  * example gives half its similarity, two give three quarters, …). Near
- * duplicates — the same story voted or saved twice — count once. So one vote
+ * duplicates — the same story voted or saved twice, or syndicated to another
+ * feed — count once; issues of a series in one feed do not. So one vote
  * on a topic whose articles all look alike no longer counts almost as much as
  * twenty.
  *
@@ -92,7 +93,9 @@ export const INTELLIGENCE_NEXT_PARAMETERS = Object.freeze({
   /** Feeds of one site host are one publisher: they do not corroborate each other. */
   groupFeedsByHost: true,
   ownFeedPrior: 'volume' as OwnFeedPrior,
-  /** `volume`: candidates per publisher that each get the full prior; more share it. */
+  /** `volume`: whose candidates share the budget, the feed's or the whole publisher's. */
+  ownFeedBudget: 'feed' as OwnFeedBudget,
+  /** `volume`: candidates per budget that each get the full prior; more share it. */
   ownFeedShare: 5,
   confidenceTerms: 5,
   // Score
@@ -125,12 +128,18 @@ export const INTELLIGENCE_NEXT_PARAMETERS = Object.freeze({
  */
 export type ExampleAggregation = 'noisy-or' | 'squared' | 'shrunk' | 'best-support';
 /**
- * Own-feed prior: `volume` (default) shares a fixed budget among a publisher's
+ * Own-feed prior: `volume` (default) shares a fixed budget among a feed's
  * candidates; `similarity` (evaluation only; not chosen: it rewards repetitive
  * feeds) is the similarity to the article's own feed profile; `none` is the
  * first version of this ranker.
  */
 export type OwnFeedPrior = 'none' | 'volume' | 'similarity';
+/**
+ * Who shares a `volume` budget: each subscribed `feed` (default), or every
+ * feed of one `publisher` (evaluation only; not chosen: on a platform host
+ * such as a video site or code forge every channel would share one budget).
+ */
+export type OwnFeedBudget = 'feed' | 'publisher';
 type Widen<T> = T extends number ? number : T extends boolean ? boolean : T;
 /** The parameters as values (the frozen object's literal types widened). */
 type Settings = { readonly [K in keyof typeof INTELLIGENCE_NEXT_PARAMETERS]: Widen<(typeof INTELLIGENCE_NEXT_PARAMETERS)[K]> };
@@ -427,6 +436,8 @@ interface Example {
   articleId: string;
   title: string;
   titleTerms: Map<string, number>;
+  /** The feed the example came from ('' when unknown). */
+  sourceId: string;
   vector: Vector;
 }
 
@@ -436,10 +447,18 @@ interface NearestEvidence {
   best: [EvidenceMatch | null, EvidenceMatch | null, EvidenceMatch | null];
 }
 
-function nearDuplicate(aVector: Vector, aTitle: Map<string, number>, bVector: Vector, bTitle: Map<string, number>): boolean {
-  if (dot(aVector, bVector) >= P.nearDuplicateCosine) return true;
-  return aTitle.size >= P.nearDuplicateMinTitleTerms && bTitle.size >= P.nearDuplicateMinTitleTerms
-    && jaccard(aTitle, bTitle) >= P.nearDuplicateTitleJaccard;
+/**
+ * Whether two examples are one story: nearly the same text, or (as when a
+ * story is syndicated) nearly the same title in two different feeds. Within
+ * one feed a shared title alone is a recurring series or a template ("Weekly
+ * roundup …", "Daily deals: …"), whose issues the reader voted on one by one,
+ * so there only the text decides.
+ */
+function sameStory(a: Example, b: Example, S: Settings): boolean {
+  if (dot(a.vector, b.vector) >= S.nearDuplicateCosine) return true;
+  if (a.sourceId && a.sourceId === b.sourceId) return false;
+  return a.titleTerms.size >= S.nearDuplicateMinTitleTerms && b.titleTerms.size >= S.nearDuplicateMinTitleTerms
+    && jaccard(a.titleTerms, b.titleTerms) >= S.nearDuplicateTitleJaccard;
 }
 
 /**
@@ -467,7 +486,7 @@ function createExampleMatcher(examples: Example[], S: Settings) {
     const key = a < b ? a * examples.length + b : b * examples.length + a;
     let result = duplicates.get(key);
     if (result === undefined) {
-      result = nearDuplicate(examples[a].vector, examples[a].titleTerms, examples[b].vector, examples[b].titleTerms);
+      result = sameStory(examples[a], examples[b], S);
       duplicates.set(key, result);
     }
     return result;
@@ -575,16 +594,21 @@ interface SubscriptionEvidence {
  * long subscription list. Articles from feeds the reader does not follow get
  * nothing.
  *
- * The own-feed prior (`volume`) is separate and content-blind: each publisher
- * has a budget of `ownFeedShare` articles' worth, shared among its candidates
- * (each gets min(1, ownFeedShare / candidates)). A just-added niche feed
- * therefore contributes from its first article, while a prolific feed's
- * volume buys it nothing. It is bounded by `ownFeedWeight` in the score.
+ * The own-feed prior (`volume`) is separate and does not depend on what the
+ * article says (like every positive signal it is scaled by the article's
+ * confidence): each subscribed feed has a budget of `ownFeedShare` articles'
+ * worth, shared among its candidates (each gets min(1, ownFeedShare /
+ * candidates)). A just-added niche feed therefore contributes from its first
+ * article, while a prolific feed's volume buys it nothing. The budget is per
+ * feed, not per publisher, so a channel on a platform host keeps its own; a
+ * publisher that splits into several feeds gets one per feed, each still
+ * bounded by `ownFeedWeight` in the score.
  *
  * Grouping by host is approximate: unrelated publishers on one shared host
  * whose site URL differs only by path (code forges, video platforms, blog
- * platforms) count as one and so lose corroboration from each other — the
- * conservative direction; feeds without a usable URL count on their own.
+ * platforms) count as one for corroboration and so lose corroboration from
+ * each other — the conservative direction; feeds without a usable URL count
+ * on their own.
  */
 function subscriptionEvidence(
   articles: Article[],
@@ -606,11 +630,14 @@ function subscriptionEvidence(
   }
   const byFeed = new Map<string, number[]>();
   for (const id of publisherById.keys()) byFeed.set(id, []);
-  const publisherCount = new Map<string, number>();
+  // Candidates per budget holder (a feed, or a publisher), for the prior.
+  const budgetOf = (sourceId: string, publisher: string) => (S.ownFeedBudget === 'publisher' ? publisher : `feed:${sourceId}`);
+  const budgetCount = new Map<string, number>();
   articles.forEach((article, index) => {
     const publisher = publisherById.get(article.sourceId);
     if (publisher === undefined) return;
-    publisherCount.set(publisher, (publisherCount.get(publisher) ?? 0) + 1);
+    const budget = budgetOf(article.sourceId, publisher);
+    budgetCount.set(budget, (budgetCount.get(budget) ?? 0) + 1);
     if (vectors[index].size) byFeed.get(article.sourceId)!.push(index);
   });
 
@@ -652,7 +679,7 @@ function subscriptionEvidence(
   articles.forEach((article, index) => {
     const ownPublisher = publisherById.get(article.sourceId);
     if (ownPublisher === undefined) return;
-    if (S.ownFeedPrior === 'volume') own[index] = Math.min(1, S.ownFeedShare / publisherCount.get(ownPublisher)!);
+    if (S.ownFeedPrior === 'volume') own[index] = Math.min(1, S.ownFeedShare / budgetCount.get(budgetOf(article.sourceId, ownPublisher))!);
     const vector = vectors[index];
     if (!vector.size) return;
     const ownIndex = feedIndexById.get(article.sourceId);
@@ -762,7 +789,10 @@ export function explainIntelligenceNext(
     const vector = weightVector(terms.terms, corpus);
     if (!vector.size) continue;
     explicitCount++;
-    examples.push({ kind: row.vote === 1 ? UPVOTE : DOWNVOTE, strength: 1, articleId, title: String(row.title ?? ''), titleTerms: terms.terms.title, vector });
+    examples.push({
+      kind: row.vote === 1 ? UPVOTE : DOWNVOTE, strength: 1, articleId, title: String(row.title ?? ''), titleTerms: terms.terms.title,
+      sourceId: typeof row.sourceId === 'string' ? row.sourceId : '', vector,
+    });
   }
   voteTermCache = usedVoteTerms;
 
@@ -771,7 +801,7 @@ export function explainIntelligenceNext(
   const candidateIds = new Set(articles.map((article) => article.id).filter(Boolean));
   const savedSeen = new Set<string>();
   let savedCount = 0;
-  const addSaved = (source: object, id: string, title: unknown, summary: unknown, content: unknown, strength: number, index?: number) => {
+  const addSaved = (source: object, id: string, sourceId: unknown, title: unknown, summary: unknown, content: unknown, strength: number, index?: number) => {
     if (strength <= 0 || savedCount >= S.maxSavedExamples) return false;
     if (id && (directVotes.has(id) || savedSeen.has(id))) return false;
     const terms = index === undefined ? documentTerms(source, title, summary, content) : documents[index];
@@ -779,7 +809,10 @@ export function explainIntelligenceNext(
     if (!exampleVector.size) return false;
     if (id) savedSeen.add(id);
     savedCount++;
-    examples.push({ kind: SAVED, strength, articleId: id, title: String(title ?? ''), titleTerms: terms.title, vector: exampleVector });
+    examples.push({
+      kind: SAVED, strength, articleId: id, title: String(title ?? ''), titleTerms: terms.title,
+      sourceId: typeof sourceId === 'string' ? sourceId : '', vector: exampleVector,
+    });
     return true;
   };
   // A candidate the reader saved is direct evidence at its full strength, as a
@@ -787,11 +820,11 @@ export function explainIntelligenceNext(
   const directSaved = new Float64Array(articles.length);
   articles.forEach((article, index) => {
     const strength = savedStrength(!!article.starred, hasReadLater(article), S);
-    if (addSaved(article, article.id, article.title, article.summary, article.content, strength, index)) directSaved[index] = strength;
+    if (addSaved(article, article.id, article.sourceId, article.title, article.summary, article.content, strength, index)) directSaved[index] = strength;
   });
   for (const item of context.savedArticles ?? []) {
     if (!item || (item.id && candidateIds.has(item.id))) continue;
-    addSaved(item, item.id, item.title, item.summary, item.content, savedStrength(!!item.starred, !!item.readLater, S));
+    addSaved(item, item.id, item.sourceId, item.title, item.summary, item.content, savedStrength(!!item.starred, !!item.readLater, S));
   }
 
   const publishedTimes = publicationTimes(articles);

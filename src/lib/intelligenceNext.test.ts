@@ -764,6 +764,8 @@ describe('Intelligence Next — support-aware example evidence', () => {
     expect(explainWith(items, rustVotes(4), 'rust-0').evidence.upvote).toBeGreaterThan(1.5 * once);
     // Counting the copies as independent would raise the evidence.
     expect(explainWith(items, copies, 'rust-0', { distinctExamples: false }).evidence.upvote).toBeGreaterThan(1.5 * once);
+    // The thresholds are the ones the overrides set.
+    expect(explainWith(items, copies, 'rust-0', { nearDuplicateCosine: 2, nearDuplicateTitleJaccard: 2 }).evidence.upvote).toBeGreaterThan(1.5 * once);
   });
 
   it('counts copies of one saved story as one', () => {
@@ -773,6 +775,28 @@ describe('Intelligence Next — support-aware example evidence', () => {
     const twenty = explainWith(items, [], 'rust-0', undefined, { savedArticles: Array.from({ length: 20 }, (_, index) => copy(index)) }).evidence.saved;
     expect(once).toBeGreaterThan(0);
     expect(twenty).toBeCloseTo(once, 12);
+  });
+
+  it('counts issues of a series in one feed separately, a story syndicated to other feeds once', () => {
+    const items = [
+      article('issue', 'Weekly roundup October 2026', 'Compiler releases, telescope mirrors and sourdough bread', { sourceId: 'feed/s' }),
+      ...fillerArticles(),
+    ];
+    const topics = [
+      'Compiler releases with faster incremental builds and better borrow checking diagnostics',
+      'Telescope mirrors polished by amateurs, comet sightings and a meteor shower calendar',
+      'Sourdough bread with a rye starter, long fermentation and a hot cast iron pot',
+    ];
+    // Three different issues: the titles match, the texts do not.
+    const issues = (feedOf: (index: number) => string) => topics.map((text, index) =>
+      vote(`issue-${index}`, `Weekly roundup ${14 + index} October 2026`, text, -1, feedOf(index)));
+    const sameFeed = explainWith(items, issues(() => 'feed/s'), 'issue');
+    const otherFeeds = explainWith(items, issues((index) => `feed/x${index}`), 'issue');
+    // In one feed every issue is its own vote, as if nothing were collapsed…
+    expect(sameFeed.evidence.downvote).toBeCloseTo(explainWith(items, issues(() => 'feed/s'), 'issue', { distinctExamples: false }).evidence.downvote, 12);
+    // …while the same title in different feeds reads as one syndicated story.
+    expect(otherFeeds.evidence.downvote).toBeCloseTo(INTELLIGENCE_NEXT_PARAMETERS.supportHalf * otherFeeds.strongestDownvote!.similarity, 12);
+    expect(sameFeed.evidence.downvote).toBeGreaterThan(1.2 * otherFeeds.evidence.downvote);
   });
 
   it('resolves equally close conflicting votes towards the downvote', () => {
@@ -871,7 +895,8 @@ describe('Intelligence Next — publishers and the own-feed prior', () => {
     expect(explanationOf(items, [], 'p0', after).evidence.ownFeed).toBeCloseTo(INTELLIGENCE_NEXT_PARAMETERS.ownFeedShare / 20, 12);
     expect(rank(items, [], before).slice(0, 2)).not.toContain('w1');
     expect(rank(items, [], after).slice(0, 2).sort()).toEqual(['w1', 'w2']);
-    // The prior is small: one upvote on another subject outranks it, and it never outweighs a downvote.
+    // The prior is small: one upvote on another subject outranks it, and a downvote on the same story
+    // outweighs it (a single, only faintly similar downvote — similarity below ≈ 0.13 — does not).
     const upvoted = [vote('v', 'Market update alpha', 'Daily roundup item 0', 1)];
     expect(rank(items, upvoted, after)[0]).toBe('p0');
     const downvoted = [vote('d', 'Hand cut dovetail joints in walnut', 'Chisel and saw basics for joinery', -1)];
@@ -879,11 +904,21 @@ describe('Intelligence Next — publishers and the own-feed prior', () => {
     expect(w1.score).toBeLessThanOrEqual(INTELLIGENCE_NEXT_PARAMETERS.ownFeedWeight + INTELLIGENCE_NEXT_PARAMETERS.freshnessTieBreak);
   });
 
-  it('shares the prior across the feeds of one publisher', () => {
-    const items = [0, 1, 2, 3, 4, 5].map((index) => article(`d${index}`, `Deal number ${index}`, 'Coupon', { sourceId: `feed/deals-${index % 3}` }));
-    const subscriptions = [0, 1, 2].map((index) => feed(`feed/deals-${index}`, 'Deals', [], `https://deals.example/section-${index}/`));
-    // Six candidates of one publisher in three feeds share one budget of five.
-    expect(explanationOf(items, [], 'd0', { subscriptions }).evidence.ownFeed).toBeCloseTo(INTELLIGENCE_NEXT_PARAMETERS.ownFeedShare / 6, 12);
+  it('gives every feed its own prior budget, also on a shared platform host', () => {
+    const daily = Array.from({ length: 20 }, (_, index) => article(`p${index}`, `Daily vlog ${index}`, 'Daily roundup', { sourceId: 'feed/daily' }));
+    const items = [...daily, article('w1', 'Hand cut dovetail joints', 'Chisel basics', { sourceId: 'feed/wood' })];
+    // Two channels of one video platform: one publisher for corroboration…
+    const subscriptions = [
+      feed('feed/daily', 'Daily vlog', [], 'https://video.example/channel/daily/'),
+      feed('feed/wood', 'Woodworking', [], 'https://video.example/channel/wood/'),
+    ];
+    expect(new Set(subscriptions.map(feedPublisher)).size).toBe(1);
+    // …but the just-added channel keeps its full prior, and the prolific one shares its own budget.
+    expect(explanationOf(items, [], 'w1', { subscriptions }).evidence.ownFeed).toBe(1);
+    expect(explanationOf(items, [], 'p0', { subscriptions }).evidence.ownFeed).toBeCloseTo(INTELLIGENCE_NEXT_PARAMETERS.ownFeedShare / 20, 12);
+    // A budget per publisher (measured, not chosen) would leave the new channel almost nothing.
+    expect(explainWith(items, [], 'w1', { ownFeedBudget: 'publisher' }, { subscriptions }).evidence.ownFeed)
+      .toBeCloseTo(INTELLIGENCE_NEXT_PARAMETERS.ownFeedShare / 21, 12);
   });
 });
 
