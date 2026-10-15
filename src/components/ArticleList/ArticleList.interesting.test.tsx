@@ -29,7 +29,10 @@ const article = (id: string, title: string, sourceId = 'feed/a'): Article => ({
   id, title, summary: title, content: `<p>${title}</p>`, author: '', url: `https://example.com/${id}`,
   source: sourceId, sourceId, published: Date.now(), read: false, starred: false, labels: [], tags: [],
 });
-const feeds = [{ id: 'feed/a', title: 'Alpha' }, { id: 'feed/b', title: 'Beta' }] as Subscription[];
+const feeds = [
+  { id: 'feed/a', title: 'Alpha', url: 'https://alpha.example/feed.xml', htmlUrl: 'https://alpha.example/' },
+  { id: 'feed/b', title: 'Beta' },
+] as Subscription[];
 const ranker = vi.mocked(rankInterestingArticles);
 const initial = { feed: useFeedStore.getState(), ui: useUiStore.getState() };
 const signal = (id: string): SavedArticleSignal => ({ id, title: `Saved ${id}`, summary: '', content: '', sourceId: 'feed/a', starred: true, readLater: false });
@@ -72,7 +75,8 @@ describe('ArticleList — Interesting algorithm choice', () => {
       expect.any(Array), expect.any(Array), expect.any(Number), 'intelligence-next',
       expect.objectContaining({
         subscriptions: [
-          { id: 'feed/a', title: 'Alpha', categories: [] },
+          // The URLs let it group feeds by publisher.
+          { id: 'feed/a', title: 'Alpha', categories: [], url: 'https://alpha.example/feed.xml', htmlUrl: 'https://alpha.example/' },
           { id: 'feed/b', title: 'Beta', categories: [] },
         ],
         savedArticles: [],

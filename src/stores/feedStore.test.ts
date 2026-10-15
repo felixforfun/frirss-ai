@@ -2181,3 +2181,24 @@ describe('feedStore.loadSpecialCounts — saved-article snapshot for Intelligenc
     useAuthStore.setState({ activeServerId: original });
   });
 });
+
+describe('feedStore — articles without a publication date', () => {
+  it('flags an item the server sent without a date, and only that one', async () => {
+    vi.mocked(api.getUnreadCounts).mockResolvedValue([]);
+    vi.mocked(api.getStreamContents).mockResolvedValue({
+      items: [
+        { id: 'dated', published: 1_700_000_000, categories: [] },
+        { id: 'undated', categories: [] },
+      ],
+      continuation: null,
+    } as never);
+    useFeedStore.setState({ selectedFeed: { id: 'feed/1', title: 'F' } as unknown as Subscription, filter: 'all', articles: [] });
+    await useFeedStore.getState().loadArticles();
+    const byId = new Map(useFeedStore.getState().articles.map((article) => [article.id, article]));
+    expect(byId.get('dated')!.published).toBe(1_700_000_000_000);
+    expect(byId.get('dated')!.publishedMissing).toBeUndefined();
+    // Still shown at its load time, as before, but marked as undated.
+    expect(Number.isFinite(byId.get('undated')!.published)).toBe(true);
+    expect(byId.get('undated')!.publishedMissing).toBe(true);
+  });
+});

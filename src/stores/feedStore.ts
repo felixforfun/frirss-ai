@@ -2880,6 +2880,7 @@ function normalizeArticle(item: GReaderItem): Article {
     source: item.origin?.title || '',
     sourceId: item.origin?.streamId || '',
     published: item.published ? item.published * 1000 : Date.now(),
+    ...(item.published ? {} : { publishedMissing: true }),
     read: item.categories?.some((c) =>
       c.endsWith('/state/com.google/read')
     ) ?? false,

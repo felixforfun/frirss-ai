@@ -3,8 +3,10 @@ import type { Article, Subscription } from '../types';
 import type { ArticleFeedback } from '../api/intelligence';
 import {
   explainIntelligenceNext,
+  feedPublisher,
   rankIntelligenceNext,
   INTELLIGENCE_NEXT_PARAMETERS,
+  type IntelligenceNextOverrides,
   type IntelligenceContext,
   type SavedArticleSignal,
 } from './intelligenceNext';
@@ -42,8 +44,13 @@ function saved(id: string, title: string, summary: string, flags: { starred?: bo
   return { id, title, summary, content: summary, sourceId: 'feed/saved', starred: !!flags.starred, readLater: !!flags.readLater };
 }
 
-function feed(id: string, title: string, categories: string[] = []): Subscription {
-  return { id, title, categories: categories.map((label) => ({ id: `user/-/label/${label}`, label })) };
+function feed(id: string, title: string, categories: string[] = [], site?: string): Subscription {
+  return {
+    id,
+    title,
+    categories: categories.map((label) => ({ id: `user/-/label/${label}`, label })),
+    ...(site ? { url: `${site}feed.xml`, htmlUrl: site } : {}),
+  };
 }
 
 const ids = (articles: Article[]) => articles.map((item) => item.id);
@@ -161,7 +168,8 @@ describe('Intelligence Next — explicit feedback', () => {
       vote('a', 'Crypto token exchange collapse', 'Token holders lose deposits', 1),
     ];
     const explanation = explanationOf(items, revoted, 'topic');
-    expect(explanation.evidence.downvote).toBeGreaterThan(0.5);
+    // One example with the same text: its full similarity, times the single-example share.
+    expect(explanation.evidence.downvote).toBeCloseTo(INTELLIGENCE_NEXT_PARAMETERS.supportHalf, 9);
     expect(explanation.evidence.upvote).toBe(0);
     expect(rank(items, revoted).at(-1)).toBe('topic');
   });
@@ -293,7 +301,7 @@ describe('Intelligence Next — text representation', () => {
     expect(rank(items, [vote('v', 'Economy outlook', 'growth forecast', 1)])[0]).toBe('markets');
     const explained = explainIntelligenceNext(items, [vote('v', 'Artificial intelligence', 'machine learning', 1)], NOW);
     // "machine learning" is one mention of the group, not two, so it matches "learning" alone fully.
-    expect(explained.find((item) => item.article.id === 'ml')!.evidence.upvote).toBeGreaterThan(0.3);
+    expect(explained.find((item) => item.article.id === 'ml')!.strongestUpvote!.similarity).toBeGreaterThan(0.3);
   });
 
   it('treats the pronoun "us" differently from the country "US"', () => {
@@ -433,11 +441,20 @@ describe('Intelligence Next — subscriptions', () => {
     // Thirty-nine more posts from the same feed vouch for nothing; the subject only becomes less distinctive.
     expect(flooded.evidence.subscription).toBeLessThan(single.evidence.subscription);
     expect(flooded.strongestFeedId).toBe('feed/bargains');
-    // In the list the feed alternates with the others instead of filling the head.
+    // The own-feed prior is one budget per feed, shared: 40 posts split what 1 post gets alone.
+    expect(single.evidence.ownFeed).toBe(1);
+    expect(flooded.evidence.ownFeed).toBeCloseTo(INTELLIGENCE_NEXT_PARAMETERS.ownFeedShare / deals.length, 9);
+    const smallFeed = explanationOf([...deals, ...others], [], 'o0-0', { subscriptions });
+    expect(smallFeed.evidence.ownFeed).toBe(1);
+    // In the list the feed alternates with the others instead of filling the head…
     const ranked = rankIntelligenceNext([...deals, ...others], [], NOW, { subscriptions });
-    expect(ranked[0].sourceId).toBe('feed/deals');
     expect(ranked.slice(0, 12).filter((item) => item.sourceId === 'feed/deals').length).toBeLessThanOrEqual(8);
     expectNoAvoidableSourceRuns(ranked);
+    // …also where it is the most relevant feed (without the prior, which here ranks the small feeds first).
+    const withoutPrior = rankIntelligenceNext([...deals, ...others], [], NOW, { subscriptions }, { ownFeedPrior: 'none' });
+    expect(withoutPrior[0].sourceId).toBe('feed/deals');
+    expect(withoutPrior.slice(0, 12).filter((item) => item.sourceId === 'feed/deals').length).toBeLessThanOrEqual(8);
+    expectNoAvoidableSourceRuns(withoutPrior);
   });
 
   it('still applies a downvote when its topic makes up most of the unread list', () => {
@@ -541,10 +558,12 @@ describe('Intelligence Next — freshness, duplicates and diversity', () => {
     expect(rank(items, [vote('v', 'Telescope galaxies', 'astronomers capture clusters', 1)])[0]).toBe('newer');
   });
 
-  it('survives invalid dates and clocks', () => {
+  it('survives invalid dates and clocks, treating an invalid date as missing', () => {
     const items = [article('nan', 'Telescope galaxies', 'astronomy', { published: Number.NaN }), ...fillerArticles()];
     expect(() => rankIntelligenceNext(items, [], Number.NaN)).not.toThrow();
-    expect(explanationOf(items, [], 'nan').evidence.freshness).toBe(0);
+    expect(explainIntelligenceNext(items, [], Number.NaN).every((item) => item.evidence.freshness === 0)).toBe(true);
+    // Neither new nor old: the median date of the dated candidates (all an hour old here).
+    expect(explanationOf(items, [], 'nan').evidence.freshness).toBeCloseTo(explanationOf(items, [], 'garden').evidence.freshness, 12);
   });
 
   it('moves a near-duplicate of an article already shown out of the head', () => {
@@ -674,6 +693,235 @@ describe('Intelligence Next — freshness, duplicates and diversity', () => {
     expect(explained.at(-1)!.article.id).toBe('bad');
     const firstNegative = explained.findIndex((item) => item.tier !== 'normal');
     expect(explained.slice(firstNegative).every((item) => item.tier !== 'normal')).toBe(true);
+  });
+});
+
+// Templated same-topic articles: they share most of their wording, so every
+// vote on the topic is about equally close to every article — the case where
+// a noisy-OR of the nearest votes saturates. Titles have fewer than three
+// terms and texts differ in one word, so none are near duplicates.
+const RUST_TEXT = 'Borrow checker cargo crates lifetimes traits macros release notes';
+const CYCLING_TEXT = 'Peloton tour stage sprint climb breakaway riders jersey report';
+const moreFiller = [
+  ['opera', 'Opera house stages Verdi revival', 'Soprano and tenor praised by critics'],
+  ['chess', 'Chess olympiad opening round', 'Grandmasters trade pawns in the Sicilian defence'],
+  ['bees', 'Beekeepers report honey harvest', 'Hives thrive after a warm spring'],
+] as const;
+function homogeneousWorld() {
+  const rust = ['alpha', 'bravo', 'charlie', 'delta'].map((word, index) => article(`rust-${index}`, 'Rust compiler', `${RUST_TEXT} ${word}`, { sourceId: `feed/rust-${index % 2}` }));
+  const cycling = ['echo', 'foxtrot', 'golf', 'hotel'].map((word, index) => article(`cycling-${index}`, 'Cycling race', `${CYCLING_TEXT} ${word}`, { sourceId: `feed/cycling-${index % 2}` }));
+  const others = [...fillerArticles(), ...moreFiller.map(([id, title, summary], index) => article(id, title, summary, { sourceId: `feed/more-${index}` }))];
+  return [...cycling, ...rust, ...others];
+}
+const rustVotes = (count: number, value: 1 | -1 = 1, from = 0) =>
+  ['india', 'juliet', 'kilo', 'lima', 'mike', 'november', 'oscar', 'papa'].slice(from, from + count)
+    .map((word) => vote(`rust-vote-${word}`, 'Rust compiler', `${RUST_TEXT} ${word}`, value));
+const cyclingVote = (value: 1 | -1 = 1) => vote('cycling-vote', 'Cycling race', `${CYCLING_TEXT} quebec`, value);
+const PR47_EVIDENCE: IntelligenceNextOverrides = { exampleAggregation: 'noisy-or', nearestExamples: 3, distinctExamples: false };
+const explainWith = (articles: Article[], feedback: ArticleFeedback[], id: string, overrides?: IntelligenceNextOverrides, context: IntelligenceContext = {}) =>
+  explainIntelligenceNext(articles, feedback, NOW, context, overrides).find((item) => item.article.id === id)!;
+
+describe('Intelligence Next — support-aware example evidence', () => {
+  it('gives one matching vote half its similarity, and more as distinct votes add support', () => {
+    const items = homogeneousWorld();
+    const one = explainWith(items, rustVotes(1), 'rust-0');
+    expect(one.evidence.upvote).toBeCloseTo(INTELLIGENCE_NEXT_PARAMETERS.supportHalf * one.strongestUpvote!.similarity, 12);
+    let previous = one.evidence.upvote;
+    for (let count = 2; count <= 8; count++) {
+      const evidence = explainWith(items, rustVotes(count), 'rust-0').evidence.upvote;
+      expect(evidence).toBeGreaterThan(previous);
+      expect(evidence).toBeLessThanOrEqual(explainWith(items, rustVotes(count), 'rust-0').strongestUpvote!.similarity);
+      previous = evidence;
+    }
+    // Six about equally close votes are close to saturation: about twice one vote.
+    expect(explainWith(items, rustVotes(6), 'rust-0').evidence.upvote).toBeGreaterThan(1.9 * one.evidence.upvote);
+  });
+
+  it('distinguishes one vote from many on homogeneous topics', () => {
+    const items = homogeneousWorld();
+    const feedback = [...rustVotes(6), cyclingVote()];
+    const ratio = (overrides?: IntelligenceNextOverrides) =>
+      explainWith(items, feedback, 'cycling-0', overrides).evidence.upvote / explainWith(items, feedback, 'rust-0', overrides).evidence.upvote;
+    // The single cycling vote is as close to its articles as each rust vote is to theirs…
+    expect(explainWith(items, feedback, 'cycling-0').strongestUpvote!.similarity)
+      .toBeCloseTo(explainWith(items, feedback, 'rust-0').strongestUpvote!.similarity, 1);
+    // …but it is one vote against six. (A noisy-OR of the nearest three rates it ≈ 3/4 of them.)
+    expect(ratio()).toBeLessThan(0.55);
+    expect(ratio(PR47_EVIDENCE)).toBeGreaterThan(0.7);
+    // So the rust articles hold the head even after the diversity pass, which
+    // reorders articles within about a third of each other's relevance.
+    expect(rank(items, feedback).slice(0, 4).every((id) => id.startsWith('rust'))).toBe(true);
+    expect(ids(rankIntelligenceNext(items, feedback, NOW, {}, PR47_EVIDENCE)).slice(0, 4).every((id) => id.startsWith('rust'))).toBe(false);
+  });
+
+  it('counts near-duplicate votes as one', () => {
+    const items = homogeneousWorld();
+    const story = vote('copy-0', 'Rust compiler', `${RUST_TEXT} india`, 1);
+    // The same story voted under four ids (syndicated copies).
+    const copies = [0, 1, 2, 3].map((index) => ({ ...story, articleId: `copy-${index}` }));
+    const once = explainWith(items, [story], 'rust-0').evidence.upvote;
+    expect(explainWith(items, copies, 'rust-0').evidence.upvote).toBeCloseTo(once, 12);
+    expect(explainWith(items, rustVotes(4), 'rust-0').evidence.upvote).toBeGreaterThan(1.5 * once);
+    // Counting the copies as independent would raise the evidence.
+    expect(explainWith(items, copies, 'rust-0', { distinctExamples: false }).evidence.upvote).toBeGreaterThan(1.5 * once);
+  });
+
+  it('counts copies of one saved story as one', () => {
+    const items = homogeneousWorld();
+    const copy = (index: number) => saved(`saved-${index}`, 'Rust compiler', `${RUST_TEXT} india`, { starred: true });
+    const once = explainWith(items, [], 'rust-0', undefined, { savedArticles: [copy(0)] }).evidence.saved;
+    const twenty = explainWith(items, [], 'rust-0', undefined, { savedArticles: Array.from({ length: 20 }, (_, index) => copy(index)) }).evidence.saved;
+    expect(once).toBeGreaterThan(0);
+    expect(twenty).toBeCloseTo(once, 12);
+  });
+
+  it('resolves equally close conflicting votes towards the downvote', () => {
+    const items = homogeneousWorld();
+    const explanation = explainWith(items, [...rustVotes(1), ...rustVotes(1, -1, 1)], 'rust-0');
+    expect(explanation.evidence.upvote).toBeCloseTo(explanation.evidence.downvote, 1);
+    expect(explanation.tier).toBe('net-negative');
+  });
+
+  it('lets several distinct upvotes outweigh one equally close downvote', () => {
+    const items = homogeneousWorld();
+    const feedback = [...rustVotes(6), ...rustVotes(1, -1, 6)];
+    const explanation = explainWith(items, feedback, 'rust-0');
+    expect(explanation.tier).toBe('normal');
+    expect(explanation.score).toBeGreaterThan(0);
+    expect(rank(items, feedback)[0]).toMatch(/^rust/);
+    // A saturating noisy-OR lets a single close downvote outweigh any number of upvotes.
+    expect(explainWith(items, feedback, 'rust-0', PR47_EVIDENCE).tier).toBe('net-negative');
+  });
+
+  it('makes an upvoted topic more negative the more distinct downvotes oppose it', () => {
+    const items = homogeneousWorld();
+    const score = (downvotes: number) => explainWith(items, [...rustVotes(1), ...rustVotes(downvotes, -1, 1)], 'rust-0').score;
+    expect(score(3)).toBeLessThan(score(1));
+    expect(score(1)).toBeLessThan(0);
+    expect(rank(items, [...rustVotes(1), ...rustVotes(3, -1, 1)]).slice(-4).every((id) => id.startsWith('rust'))).toBe(true);
+  });
+
+  it('still lets the weak signals together lose to two close downvotes or a nearly identical one', () => {
+    const items = homogeneousWorld().map((item) => (item.id === 'rust-0' ? { ...item, starred: true, labels: ['user/-/label/read-later'] } : item));
+    const context: IntelligenceContext = {
+      subscriptions: [feed('feed/rust-0', 'Rust compiler'), feed('feed/rust-1', 'Rust compiler'), feed('feed/rust-weekly', 'Rust compiler borrow checker cargo')],
+      savedArticles: rustVotes(8).map((row, index) => saved(`s${index}`, row.title, row.summary, { starred: true })),
+    };
+    const twoDown = explainWith(items, rustVotes(2, -1), 'rust-0', undefined, context);
+    expect(twoDown.evidence.saved).toBe(1);
+    expect(twoDown.tier).toBe('net-negative');
+    const identical = [vote('same', 'Rust compiler', `${RUST_TEXT} alpha`, -1)];
+    expect(explainWith(items, identical, 'rust-0', undefined, context).tier).toBe('net-negative');
+  });
+});
+
+describe('Intelligence Next — publishers and the own-feed prior', () => {
+  it('identifies a feed’s publisher by its site host', () => {
+    expect(feedPublisher({ id: 'f', htmlUrl: 'https://www.Example.com/tech/', url: 'https://example.com/tech/feed' })).toBe('host:example.com');
+    expect(feedPublisher({ id: 'f', url: 'https://blog.example.com/rss.xml' })).toBe('host:blog.example.com');
+    // A site link that is itself a feed falls back to the origin.
+    expect(feedPublisher({ id: 'f', htmlUrl: 'https://news.example.org/feed/', url: 'https://news.example.org/feed/' })).toBe('host:news.example.org');
+    expect(feedPublisher({ id: 'feed/42' })).toBe('feed:feed/42');
+    expect(feedPublisher({ id: 'feed/43', htmlUrl: 'not a url', url: '' })).toBe('feed:feed/43');
+  });
+
+  it('does not let feeds of one site corroborate each other', () => {
+    const items = [
+      article('rust', 'Rust compiler release notes', 'Borrow checker improvements', { sourceId: 'feed/a' }),
+      ...fillerArticles(),
+    ];
+    const fillerFeeds = filler.map((_, index) => feed(`feed/filler-${index}`, `Filler ${index}`, [], `https://filler${index}.example/`));
+    const own = feed('feed/a', 'Rust news', [], 'https://news.example/rust/');
+    const sameSite = { subscriptions: [own, feed('feed/b', 'Rust compiler borrow checker', [], 'https://www.news.example/compilers/'), ...fillerFeeds] };
+    const otherSite = { subscriptions: [own, feed('feed/b', 'Rust compiler borrow checker', [], 'https://weekly.example/'), ...fillerFeeds] };
+    expect(explanationOf(items, [], 'rust', sameSite).evidence.subscription).toBe(0);
+    expect(explanationOf(items, [], 'rust', otherSite).evidence.subscription).toBeGreaterThan(0.2);
+    // Feeds without URLs count on their own, as before.
+    const noUrls = { subscriptions: [feed('feed/a', 'Rust news'), feed('feed/b', 'Rust compiler borrow checker'), ...fillerFeeds] };
+    expect(explanationOf(items, [], 'rust', noUrls).evidence.subscription).toBeGreaterThan(0.2);
+  });
+
+  it('counts each other publisher once, by its best feed', () => {
+    const items = [article('rust', 'Rust compiler release notes', 'Borrow checker improvements', { sourceId: 'feed/own' }), ...fillerArticles()];
+    const base = [feed('feed/own', 'Own feed', [], 'https://own.example/'), ...filler.map((_, index) => feed(`feed/filler-${index}`, `Filler ${index}`))];
+    const sectionFeeds = ['Rust compiler borrow checker', 'Rust compiler news', 'Borrow checker notes'];
+    const onePublisher = sectionFeeds.map((title, index) => feed(`feed/s${index}`, title, [], `https://big.example/section-${index}/`));
+    const threePublishers = sectionFeeds.map((title, index) => feed(`feed/s${index}`, title, [], `https://site${index}.example/`));
+    const best = explanationOf(items, [], 'rust', { subscriptions: [...base, onePublisher[0]] }).evidence.subscription;
+    expect(explanationOf(items, [], 'rust', { subscriptions: [...base, ...onePublisher] }).evidence.subscription).toBeCloseTo(best, 12);
+    expect(explanationOf(items, [], 'rust', { subscriptions: [...base, ...threePublishers] }).evidence.subscription).toBeGreaterThan(best);
+  });
+
+  it('lets a just-added niche feed contribute at once, within a small bound', () => {
+    const prolific = Array.from({ length: 20 }, (_, index) =>
+      article(`p${index}`, `${['Market', 'Weather', 'Traffic', 'Council', 'Sport'][index % 5]} update ${['alpha', 'bravo', 'charlie', 'delta'][index % 4]}`, `Daily roundup item ${index}`, { sourceId: 'feed/daily', published: NOW - HOUR }));
+    const wood = [
+      article('w1', 'Hand cut dovetail joints in walnut', 'Chisel and saw basics for joinery', { sourceId: 'feed/wood', published: NOW - HOUR }),
+      article('w2', 'Sharpening a plane iron', 'Honing guides and whetstones', { sourceId: 'feed/wood', published: NOW - HOUR }),
+    ];
+    const items = [...prolific, ...wood];
+    const before = { subscriptions: [feed('feed/daily', 'Daily news')] };
+    const after = { subscriptions: [...before.subscriptions, feed('feed/wood', 'Woodworking')] };
+    // Unsubscribed, the woodworking articles get nothing; subscribed, each gets the full prior…
+    expect(explanationOf(items, [], 'w1', before).evidence.ownFeed).toBe(0);
+    const w1 = explanationOf(items, [], 'w1', after);
+    expect(w1.evidence.ownFeed).toBe(1);
+    expect(w1.evidence.subscription).toBe(0);
+    // …while the prolific feed's twenty share one budget.
+    expect(explanationOf(items, [], 'p0', after).evidence.ownFeed).toBeCloseTo(INTELLIGENCE_NEXT_PARAMETERS.ownFeedShare / 20, 12);
+    expect(rank(items, [], before).slice(0, 2)).not.toContain('w1');
+    expect(rank(items, [], after).slice(0, 2).sort()).toEqual(['w1', 'w2']);
+    // The prior is small: one upvote on another subject outranks it, and it never outweighs a downvote.
+    const upvoted = [vote('v', 'Market update alpha', 'Daily roundup item 0', 1)];
+    expect(rank(items, upvoted, after)[0]).toBe('p0');
+    const downvoted = [vote('d', 'Hand cut dovetail joints in walnut', 'Chisel and saw basics for joinery', -1)];
+    expect(explanationOf(items, downvoted, 'w1', after).tier).toBe('net-negative');
+    expect(w1.score).toBeLessThanOrEqual(INTELLIGENCE_NEXT_PARAMETERS.ownFeedWeight + INTELLIGENCE_NEXT_PARAMETERS.freshnessTieBreak);
+  });
+
+  it('shares the prior across the feeds of one publisher', () => {
+    const items = [0, 1, 2, 3, 4, 5].map((index) => article(`d${index}`, `Deal number ${index}`, 'Coupon', { sourceId: `feed/deals-${index % 3}` }));
+    const subscriptions = [0, 1, 2].map((index) => feed(`feed/deals-${index}`, 'Deals', [], `https://deals.example/section-${index}/`));
+    // Six candidates of one publisher in three feeds share one budget of five.
+    expect(explanationOf(items, [], 'd0', { subscriptions }).evidence.ownFeed).toBeCloseTo(INTELLIGENCE_NEXT_PARAMETERS.ownFeedShare / 6, 12);
+  });
+});
+
+describe('Intelligence Next — missing publication dates', () => {
+  // FriRSS shows an undated item at the time it was loaded and flags it.
+  const undated = (item: Article): Article => ({ ...item, published: NOW, publishedMissing: true });
+
+  it('treats an undated article as neither new nor old', () => {
+    const ages = [1, 24, 24, 72];
+    const dated = fillerArticles().slice(0, 4).map((item, index) => ({ ...item, published: NOW - ages[index] * HOUR }));
+    const items = [undated(article('undated', 'Violin maker restores antique instrument', 'Luthier repairs varnish', { sourceId: 'feed/u' })), ...dated];
+    const explained = explainIntelligenceNext(items, [], NOW);
+    const freshness = (id: string) => explained.find((item) => item.article.id === id)!.evidence.freshness;
+    // The median date of the dated candidates, not the load time.
+    expect(freshness('undated')).toBeCloseTo(freshness(dated[1].id), 12);
+    expect(freshness('undated')).toBeLessThan(freshness(dated[0].id));
+    expect(rank(items)[0]).toBe(dated[0].id);
+    // A relevant undated article still ranks by its relevance.
+    expect(rank(items, [vote('v', 'Antique violin', 'luthier varnish', 1)])[0]).toBe('undated');
+  });
+
+  it('ranks without a freshness signal when no candidate has a date', () => {
+    const items = fillerArticles().map(undated);
+    const explained = explainIntelligenceNext(items, [], NOW);
+    expect(explained.every((item) => item.evidence.freshness === 0 && Number.isFinite(item.score))).toBe(true);
+    expect(rank(items)).toEqual(ids(items));
+  });
+
+  it('leaves the other algorithms unchanged', () => {
+    const items = [
+      ...fillerArticles().map((item, index) => ({ ...item, published: NOW - (index + 2) * 7 * HOUR })),
+      article('chip', 'AI accelerator chip design', 'Machine learning accelerators', { sourceId: 'feed/chip', published: NOW }),
+    ];
+    const flagged = items.map((item, index) => (index % 2 ? { ...item, publishedMissing: true } : item));
+    const feedback = [vote('v', 'AI accelerator chips', 'chip design', 1), vote('d', 'Tennis final', 'championship match', -1)];
+    for (const algorithm of ['current', 'weighted-idf', 'synonyms', 'topics', 'combined', 'microsoft-news', 'personal-news'] as const) {
+      expect(ids(rankInterestingArticles(flagged, feedback, NOW, algorithm))).toEqual(ids(rankInterestingArticles(items, feedback, NOW, algorithm)));
+    }
   });
 });
 
