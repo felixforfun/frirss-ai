@@ -60,8 +60,15 @@ export function getCloudflareAccessLoginUrl(
 
 let accessRedirectStarted = false;
 
-function redirectToCloudflareAccess(errorOrResponse: any): boolean {
+type ResponseUrlCarrier = {
+  request?: { responseURL?: string };
+  response?: { request?: { responseURL?: string } };
+  config?: { url?: string };
+};
+
+function redirectToCloudflareAccess(value: unknown): boolean {
   if (typeof window === 'undefined' || accessRedirectStarted) return false;
+  const errorOrResponse = value as ResponseUrlCarrier;
   const responseUrl =
     errorOrResponse?.request?.responseURL ??
     errorOrResponse?.response?.request?.responseURL ??
