@@ -59,6 +59,17 @@ router.post('/open', (req, res) => {
     VALUES (?, ?, ?, ?, ?, ?)
   `).run(req.user.id, serverId, body.articleId.trim(), body.title, body.text, body.wordCount);
 
+  // Bound disk growth while retaining a useful all-time history.
+  db.prepare(`
+    DELETE FROM reading_open_events
+    WHERE user_id = ? AND server_id = ?
+      AND id NOT IN (
+        SELECT id FROM reading_open_events
+        WHERE user_id = ? AND server_id = ?
+        ORDER BY id DESC LIMIT 5000
+      )
+  `).run(req.user.id, serverId, req.user.id, serverId);
+
   res.status(201).json({ ok: true });
 });
 
