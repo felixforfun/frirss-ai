@@ -507,7 +507,8 @@
       "archiveDomainsPlaceholder": "wsj.com\nft.com\nbloomberg.com",
       "archiveDomainsSave": "Domains speichern",
       "archiveDomainsSaved": "Archiv-Domainliste gespeichert.",
-      "archiveDomainsInvalid": "Gültige Hostnamen ohne Protokoll oder Pfad eingeben, einen pro Zeile."
+      "archiveDomainsInvalid": "Gültige Hostnamen ohne Protokoll oder Pfad eingeben, einen pro Zeile.",
+      "archiveDomainsError": "Die Archive.is-Domainliste konnte nicht gespeichert werden."
     },
     "fontFamilies": {
       "sidebar": "Schriftart der Seitenleiste",
