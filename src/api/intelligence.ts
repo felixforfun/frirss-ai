@@ -56,7 +56,7 @@ export async function getExternalSignals(
   sources: ExternalSignalSource[],
 ): Promise<ExternalSignalsByUrl> {
   const { data } = await backend.post<{ signals: ExternalSignalsByUrl }>('/external-signals', {
-    articles: articles.slice(0, 80).map((article) => ({
+    articles: articles.filter((article) => /^https?:\/\//i.test(article.url)).slice(0, 80).map((article) => ({
       url: article.url,
       title: article.title.slice(0, 2000),
       summary: article.summary.slice(0, 10000),
