@@ -156,6 +156,40 @@ async function fetchArchive(
   return null;
 }
 
+async function readPrefixText(response: Response, maxBytes: number, timeoutMs: number): Promise<string | null> {
+  if (!response.body) return '';
+  const reader = response.body.getReader();
+  let size = 0;
+  let text = '';
+  let timedOut = false;
+  const timer = setTimeout(() => {
+    timedOut = true;
+    void reader.cancel().catch(() => {});
+  }, timeoutMs);
+  const decoder = new TextDecoder();
+  try {
+    while (size < maxBytes) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      const remaining = maxBytes - size;
+      const slice = value.byteLength > remaining ? value.subarray(0, remaining) : value;
+      size += slice.byteLength;
+      text += decoder.decode(slice, { stream: true });
+      if (slice.byteLength < value.byteLength) {
+        await reader.cancel().catch(() => {});
+        break;
+      }
+    }
+    text += decoder.decode();
+    return timedOut ? null : text;
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timer);
+    reader.releaseLock();
+  }
+}
+
 async function readLimitedText(response: Response, maxBytes: number, timeoutMs: number): Promise<string | null> {
   if (!response.body) return '';
   const reader = response.body.getReader();
@@ -217,6 +251,7 @@ export function looksLikeChallengePage(html: string, publisherHostname: string):
     || /^(?:please wait|just a moment|loading|access denied|error)$/i.test(title)) return true;
   // Do not use a generic short-body threshold: the first 32 KB of a legitimate
   // archived page can mostly contain scripts/styles or an article shell.
+  return false;
 }
 
 async function snapshotLooksUsable(snapshotUrl: string, publisherHostname: string): Promise<boolean> {
@@ -237,7 +272,7 @@ async function snapshotLooksUsable(snapshotUrl: string, publisherHostname: strin
       await cancelBody(response);
       return false;
     }
-    const html = await readLimitedText(response, MAX_PROBE_BYTES, PROBE_BODY_TIMEOUT_MS);
+    const html = await readPrefixText(response, MAX_PROBE_BYTES, PROBE_BODY_TIMEOUT_MS);
     return html !== null && !looksLikeChallengePage(html, publisherHostname);
   } catch {
     return false;
@@ -252,6 +287,12 @@ function resultTtlSeconds(result: ArchiveResolveResult): number {
   if (result.status === 'soft_block') return 20;
   return 10;
 }
+function memoryCacheSet(key: string, value: ArchiveResolveResult, ttlSeconds: number): void {
+  memoryCache.delete(key);
+  memoryCache.set(key, { value, expiresAt: Date.now() + ttlSeconds * 1000 });
+  while (memoryCache.size > 500) memoryCache.delete(memoryCache.keys().next().value as string);
+}
+
 function memoryCacheGet(key: string): ArchiveResolveResult | null {
   const entry = memoryCache.get(key);
   if (!entry) return null;
@@ -269,7 +310,7 @@ async function readCache(userId: number, key: string): Promise<ArchiveResolveRes
     if (!raw) return null;
     const value = JSON.parse(raw) as ArchiveResolveResult;
     if (value && typeof value.status === 'string') {
-      memoryCache.set(key, { value, expiresAt: Date.now() + resultTtlSeconds(value) * 1000 });
+      memoryCacheSet(key, value, resultTtlSeconds(value));
       return value;
     }
   } catch { /* cache failure → fresh lookup */ }
@@ -277,8 +318,7 @@ async function readCache(userId: number, key: string): Promise<ArchiveResolveRes
 }
 async function writeCache(userId: number, key: string, value: ArchiveResolveResult): Promise<void> {
   const ttl = resultTtlSeconds(value);
-  memoryCache.set(key, { value, expiresAt: Date.now() + ttl * 1000 });
-  while (memoryCache.size > 500) memoryCache.delete(memoryCache.keys().next().value as string);
+  memoryCacheSet(key, value, ttl);
   if (cacheEnabled) {
     try { await cacheSet(cacheKey(userId, key), JSON.stringify(value), ttl); } catch { /* memory cache still works */ }
   }
