@@ -519,7 +519,8 @@
       "archiveDomainsPlaceholder": "wsj.com\nft.com\nbloomberg.com",
       "archiveDomainsSave": "Зберегти домени",
       "archiveDomainsSaved": "Список архівних доменів збережено.",
-      "archiveDomainsInvalid": "Введіть коректні імена хостів, по одному на рядок, без протоколу чи шляху."
+      "archiveDomainsInvalid": "Введіть коректні імена хостів, по одному на рядок, без протоколу чи шляху.",
+      "archiveDomainsError": "Не вдалося зберегти список доменів Archive.is."
     },
     "fontFamilies": {
       "sidebar": "Шрифт бічної панелі",
