@@ -774,7 +774,8 @@ export default function ArticleList() {
   // External-signal variants fetch scores only when selected. The server caches
   // each article/source lookup; failures leave the current Intelligence Next
   // ordering intact rather than blocking the Interesting view.
-  const externalSignalSources = externalSourcesForAlgorithm(interestingAlgorithm);
+  const externalSignalSources = useMemo(() => externalSourcesForAlgorithm(interestingAlgorithm), [interestingAlgorithm]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
     if (!isInterestingView || externalSignalSources.length === 0) {
       setExternalSignals({});
@@ -791,8 +792,7 @@ export default function ArticleList() {
     return () => { cancelled = true; };
   // The ranking key captures meaningful article changes without reacting to
   // unrelated feed-store object identity changes.
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isInterestingView, interestingAlgorithm, interestingRankingKey]);
+  }, [isInterestingView, interestingAlgorithm, interestingRankingKey, externalSignalSources]);
   // Intelligence Next also reads the subscriptions (id, title, folder labels,
   // feed and site URL) and the starred / read-later snapshot. A refresh rebuilds the subscription
   // array even when nothing changed, so the context is keyed by those fields
