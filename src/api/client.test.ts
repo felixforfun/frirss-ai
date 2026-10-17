@@ -75,7 +75,9 @@ describe('Cloudflare Access 401 handling', () => {
     });
     fulfilled({ status: 200, data: {} });
     expect(values.has('frirss:cloudflare-access-reload-at')).toBe(false);
-  });  it('reloads once for an Access fingerprint and not for ordinary backend 401s', async () => {
+  });
+
+  it('reloads once for an Access fingerprint and not for ordinary backend 401s', async () => {
     const reload = vi.fn();
     const values = new Map<string, string>();
     const fakeWindow = {
@@ -102,8 +104,6 @@ describe('Cloudflare Access 401 handling', () => {
     }));
     expect(reload).toHaveBeenCalledTimes(1);
   });
-
-
 });
 
 describe('request interceptor', () => {
