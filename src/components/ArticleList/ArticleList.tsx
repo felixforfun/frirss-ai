@@ -40,7 +40,8 @@ import { prefersReducedMotion } from '../../lib/reducedMotion';
 import { staggerIndexes, rememberStagger } from '../../lib/rowStagger';
 import type { Article, Filter } from '../../types';
 import { useIntelligenceFeedback } from '../../hooks/useIntelligenceFeedback';
-import { rankInterestingArticles, type IntelligenceContext } from '../../lib/intelligenceRanking';
+import { externalSourcesForAlgorithm, rankInterestingArticles, type IntelligenceContext } from '../../lib/intelligenceRanking';
+import { getExternalSignals, type ExternalSignalsByUrl } from '../../api/intelligence';
 import { useInterestingAlgorithm } from '../../hooks/useInterestingAlgorithm';
 import InterestingAlgorithmSelect from './InterestingAlgorithmSelect';
 
@@ -78,6 +79,7 @@ export default function ArticleList() {
 
   const intelligenceFeedback = useIntelligenceFeedback();
   const [interestingAlgorithm, setInterestingAlgorithm] = useInterestingAlgorithm();
+  const [externalSignals, setExternalSignals] = useState<ExternalSignalsByUrl>({});
 
   const {
     articles,
@@ -759,6 +761,7 @@ export default function ArticleList() {
   const interestingRankingKey = useMemo(
     () => (isInterestingView ? articles.map((article) => [
       article.id,
+      article.url,
       article.title,
       article.summary,
       article.content,
@@ -768,6 +771,28 @@ export default function ArticleList() {
     ].join('\\u001f')).join('\\u001e') : ''),
     [articles, isInterestingView],
   );
+  // External-signal variants fetch scores only when selected. The server caches
+  // each article/source lookup; failures leave the current Intelligence Next
+  // ordering intact rather than blocking the Interesting view.
+  const externalSignalSources = externalSourcesForAlgorithm(interestingAlgorithm);
+  useEffect(() => {
+    if (!isInterestingView || externalSignalSources.length === 0) {
+      setExternalSignals({});
+      return;
+    }
+    let cancelled = false;
+    setExternalSignals({});
+    const candidates = articles.slice(0, 80).map(({ url, title, summary, content }) => ({ url, title, summary, content }));
+    void getExternalSignals(candidates, externalSignalSources).then((signals) => {
+      if (!cancelled) setExternalSignals(signals);
+    }).catch(() => {
+      if (!cancelled) setExternalSignals({});
+    });
+    return () => { cancelled = true; };
+  // The ranking key captures meaningful article changes without reacting to
+  // unrelated feed-store object identity changes.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isInterestingView, interestingAlgorithm, interestingRankingKey]);
   // Intelligence Next also reads the subscriptions (id, title, folder labels,
   // feed and site URL) and the starred / read-later snapshot. A refresh rebuilds the subscription
   // array even when nothing changed, so the context is keyed by those fields
@@ -813,10 +838,10 @@ export default function ArticleList() {
   );
   const rankedArticleKeys = useMemo(
     () => (isInterestingView
-      ? rankInterestingArticles(articles, intelligenceFeedback, Date.now(), interestingAlgorithm, intelligenceContext)
+      ? rankInterestingArticles(articles, intelligenceFeedback, Date.now(), interestingAlgorithm, intelligenceContext, externalSignals)
         .map(rankingIdentity)
       : NO_RANKED_KEYS),
-    [interestingRankingKey, intelligenceFeedback, interestingAlgorithm, intelligenceContext, rankingIdentity, isInterestingView],
+    [interestingRankingKey, intelligenceFeedback, interestingAlgorithm, intelligenceContext, externalSignals, rankingIdentity, isInterestingView],
   );
   const rankedArticles = useMemo(() => {
     if (!isInterestingView) return articles;
