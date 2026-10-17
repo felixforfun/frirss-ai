@@ -43,6 +43,8 @@ export function recordArticleOpen(
     const key = storageKey(serverId);
     const raw = window.localStorage.getItem(key);
     const events: ArticleOpenEvent[] = raw ? JSON.parse(raw) : [];
+    const today = new Date().toDateString();
+    if (events.some((event) => event.articleId === String(article.id) && new Date(event.openedAt).toDateString() === today)) return;
     const title = plainText(article.title || '').slice(0, 300);
     const body = plainText(article.content || article.summary || '');
     const topicText = [title, plainText(article.summary || ''), body.slice(0, 900)].filter(Boolean).join(' ').slice(0, 1500);
