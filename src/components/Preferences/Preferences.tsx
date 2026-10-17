@@ -94,7 +94,7 @@ export default function Preferences() {
 
   const isAdmin = useAuthStore((s) => s.backendUser?.role === 'admin');
   const SECTIONS = ['general', 'appearance', 'layout', 'labels', 'feeds', 'offline', 'aiSummaries', 'readingStats'] as const;
-  const sections = SECTIONS.map((id) => ({ id, label: t(`preferences.sections.${id}`) }));
+  const sections = SECTIONS.map((id) => ({ id, label: id === 'readingStats' ? t('preferences.sections.readingStats', 'Reading Stats') : t(`preferences.sections.${id}`) }));
 
   return (
     <div
