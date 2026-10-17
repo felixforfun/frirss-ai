@@ -90,12 +90,12 @@ describe('Cloudflare Access 401 handling', () => {
     };
     vi.stubGlobal('window', fakeWindow);
 
-    await reject(proxyError(401, 'Unauthorized', {
+    await expect(rejected(proxyError(401, 'Unauthorized', {
       'www-authenticate': 'Cloudflare-Access',
-    }));
-    await reject(proxyError(401, 'Unauthorized', {
+    }))).rejects.toThrow('Cloudflare Access authentication required');
+    await expect(rejected(proxyError(401, 'Unauthorized', {
       'www-authenticate': 'Cloudflare-Access realm="example"',
-    }));
+    }))).rejects.toThrow('Cloudflare Access authentication required');
     expect(reload).toHaveBeenCalledTimes(1);
 
     // An ordinary application/backend 401 must not trigger another reload.
