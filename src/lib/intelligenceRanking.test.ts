@@ -291,7 +291,7 @@ describe('correctness fixes for the existing term models', () => {
 });
 
 describe('algorithm registry and selection contract', () => {
-  it('keeps the default and every existing algorithm, adding Intelligence Next last', () => {
+  it('keeps the default and all legacy algorithms, then lists external experiments', () => {
     expect(DEFAULT_INTERESTING_ALGORITHM).toBe('current');
     expect(INTERESTING_ALGORITHMS.map((a) => a.value)).toEqual([
       'current', 'weighted-idf', 'synonyms', 'topics', 'combined', 'microsoft-news', 'personal-news', 'intelligence-next',
@@ -306,15 +306,16 @@ describe('algorithm registry and selection contract', () => {
     const items = Array.from({ length: 10 }, (_, index) =>
       article(String(index), `Article ${index}`, `Distinct topic ${index}`, now));
     const baseline = rankInterestingArticles(items, [], now, 'intelligence-next').map((item) => item.id);
+    const boostedId = baseline[5];
+    const neighborId = baseline[4];
     const signals = Object.fromEntries(items.map((item) => [item.url, {
-      gdelt: item.id === '5' ? 1 : 0,
+      gdelt: item.id === boostedId ? 1 : 0,
       github: null,
       hackerNews: null,
       lobsters: null,
     }]));
     const ranked = rankInterestingArticles(items, [], now, 'gdelt', {}, signals).map((item) => item.id);
-    expect(baseline.indexOf('5')).toBeGreaterThan(baseline.indexOf('4'));
-    expect(ranked.indexOf('5')).toBeLessThan(ranked.indexOf('4'));
+    expect(ranked.indexOf(boostedId)).toBeLessThan(ranked.indexOf(neighborId));
   });
 
   it('treats unavailable external providers as neutral', () => {
