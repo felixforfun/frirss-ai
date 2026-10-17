@@ -971,7 +971,12 @@ export default function ReadingPane({ showBack }: ReadingPaneProps) {
     let url: URL;
     try { url = new URL(rawHref, linkedPage?.url || selectedArticle?.url || window.location.href); } catch { return; }
     if (url.protocol !== 'http:' && url.protocol !== 'https:') return;
-    if (url.href === (linkedPage?.url || selectedArticle?.url)) return;
+    const sameCurrentUrl = url.href === (linkedPage?.url || selectedArticle?.url);
+    const modifiedClick = event.metaKey || event.ctrlKey || event.shiftKey || event.altKey;
+    if (sameCurrentUrl && !modifiedClick) {
+      event.preventDefault();
+      return;
+    }
 
     // Allowlisted publishers go straight to their newest usable Archive.is snapshot,
     // without passing through FriRSS's full-text extraction pipeline.
@@ -982,8 +987,9 @@ export default function ReadingPane({ showBack }: ReadingPaneProps) {
     }
 
     // Keep modified clicks and explicit new-window links behaving like normal browser links.
-    if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+    if (modifiedClick) return;
     event.preventDefault();
+    if (sameCurrentUrl) return;
 
     // PDFs, media files, social networks and video platforms are not useful reader-mode targets.
     // Open synchronously from the click so browser popup blockers allow the new tab.
