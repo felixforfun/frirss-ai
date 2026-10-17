@@ -69,8 +69,7 @@ function hostMatches(hostname: string, domains: readonly string[]): boolean {
 }
 
 function isArchiveHost(hostname: string): boolean {
-  const host = hostname.toLowerCase().replace(/\.$/, '');
-  return [...ARCHIVE_HOSTS].some((domain) => host === domain || host.endsWith('.' + domain));
+  return ARCHIVE_HOSTS.has(hostname.toLowerCase().replace(/\.$/, ''));
 }
 
 export function normalizeArticleUrl(raw: string): string | null {
@@ -213,8 +212,10 @@ export function looksLikeChallengePage(html: string, publisherHostname: string):
     || body.includes('please enable javascript and disable any ad blocker')
     || body.includes('are you a robot?')
     || body.includes('security verification')
-    || body.includes('access denied')) return true;
-  return body.length < 180;
+    || body.includes('access denied')
+    || /^(?:please wait|just a moment|loading|access denied|error)$/i.test(title)) return true;
+  // Do not use a generic short-body threshold: the first 32 KB of a legitimate
+  // archived page can mostly contain scripts/styles or an article shell.
 }
 
 async function snapshotLooksUsable(snapshotUrl: string, publisherHostname: string): Promise<boolean> {
