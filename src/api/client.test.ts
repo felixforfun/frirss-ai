@@ -63,7 +63,19 @@ describe('client response interceptor: independent authentication layers', () =>
 });
 
 describe('Cloudflare Access 401 handling', () => {
-  it('reloads once for an Access fingerprint and not for ordinary backend 401s', async () => {
+  it('clears the persisted cooldown after successful API traffic', () => {
+    const values = new Map<string, string>([['frirss:cloudflare-access-reload-at', '123']]);
+    vi.stubGlobal('window', {
+      location: { reload: vi.fn() },
+      sessionStorage: {
+        getItem: (key: string) => values.get(key) ?? null,
+        setItem: (key: string, value: string) => { values.set(key, value); },
+        removeItem: (key: string) => { values.delete(key); },
+      },
+    });
+    fulfilled({ status: 200, data: {} });
+    expect(values.has('frirss:cloudflare-access-reload-at')).toBe(false);
+  });  it('reloads once for an Access fingerprint and not for ordinary backend 401s', async () => {
     const reload = vi.fn();
     const values = new Map<string, string>();
     const fakeWindow = {
@@ -91,19 +103,7 @@ describe('Cloudflare Access 401 handling', () => {
     expect(reload).toHaveBeenCalledTimes(1);
   });
 
-  it('clears the persisted cooldown after successful API traffic', () => {
-    const values = new Map<string, string>([['frirss:cloudflare-access-reload-at', '123']]);
-    vi.stubGlobal('window', {
-      location: { reload: vi.fn() },
-      sessionStorage: {
-        getItem: (key: string) => values.get(key) ?? null,
-        setItem: (key: string, value: string) => { values.set(key, value); },
-        removeItem: (key: string) => { values.delete(key); },
-      },
-    });
-    fulfilled({ status: 200, data: {} });
-    expect(values.has('frirss:cloudflare-access-reload-at')).toBe(false);
-  });
+
 });
 
 describe('request interceptor', () => {
