@@ -507,7 +507,8 @@
       "archiveDomainsPlaceholder": "wsj.com\nft.com\nbloomberg.com",
       "archiveDomainsSave": "Enregistrer les domaines",
       "archiveDomainsSaved": "Liste des domaines d’archives enregistrée.",
-      "archiveDomainsInvalid": "Saisissez un nom d’hôte valide par ligne, sans protocole ni chemin."
+      "archiveDomainsInvalid": "Saisissez un nom d’hôte valide par ligne, sans protocole ni chemin.",
+      "archiveDomainsError": "Impossible d’enregistrer la liste des domaines Archive.is."
     },
     "fontFamilies": {
       "sidebar": "Police de la barre latérale",
