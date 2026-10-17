@@ -20,7 +20,7 @@ import { planHeroWarm, runHeroWarm } from '../../lib/heroWarm';
 import { rememberImageSize } from '../../lib/imageAspect';
 import { formatArticleDate } from '../../utils/dates';
 import { IMAGE_CACHE_NAME } from '../../lib/storageEstimate';
-import { recordArticleOpen } from '../../lib/readingStats';
+import { recordArticleOpen } from '../../api/readingStats';
 import { useAuthStore } from '../../stores/authStore';
 import { getAiSummaryConfig, getCachedAiSummary, summarizeArticle, type AiSummaryConfig } from '../../api/backend';
 import { findTextRanges } from '../../lib/articleFind';
