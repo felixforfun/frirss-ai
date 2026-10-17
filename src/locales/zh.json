@@ -507,7 +507,8 @@
       "archiveDomainsPlaceholder": "wsj.com\nft.com\nbloomberg.com",
       "archiveDomainsSave": "保存域名",
       "archiveDomainsSaved": "已保存归档域名列表。",
-      "archiveDomainsInvalid": "请每行输入一个有效主机名，不要包含协议或路径。"
+      "archiveDomainsInvalid": "请每行输入一个有效主机名，不要包含协议或路径。",
+      "archiveDomainsError": "无法保存 Archive.is 域名列表。"
     },
     "fontFamilies": {
       "sidebar": "侧边栏字体",
