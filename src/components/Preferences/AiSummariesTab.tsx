@@ -71,7 +71,7 @@ export default function AiSummariesTab({ active = true }: { active?: boolean }) 
       setArchiveDomainsText(parsed.domains.join('\n'));
       setArchiveStatus({ text: t('preferences.aiSummaries.archiveDomainsSaved') });
     } catch {
-      setArchiveStatus({ text: t('preferences.aiSummaries.error'), error: true });
+      setArchiveStatus({ text: t('preferences.aiSummaries.archiveDomainsError'), error: true });
     } finally {
       setArchiveSaving(false);
     }
