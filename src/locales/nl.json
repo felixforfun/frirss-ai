@@ -507,7 +507,8 @@
       "archiveDomainsPlaceholder": "wsj.com\nft.com\nbloomberg.com",
       "archiveDomainsSave": "Domeinen opslaan",
       "archiveDomainsSaved": "Archiefdomeinenlijst opgeslagen.",
-      "archiveDomainsInvalid": "Voer geldige hostnamen in, één per regel, zonder protocol of pad."
+      "archiveDomainsInvalid": "Voer geldige hostnamen in, één per regel, zonder protocol of pad.",
+      "archiveDomainsError": "De lijst met Archive.is-domeinen kon niet worden opgeslagen."
     },
     "fontFamilies": {
       "sidebar": "Lettertype van zijbalk",
