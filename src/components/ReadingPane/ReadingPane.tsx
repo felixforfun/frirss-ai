@@ -1732,7 +1732,7 @@ export default function ReadingPane({ showBack }: ReadingPaneProps) {
             <div
               className="article-content"
               onClick={(event) => { handleVideoClick(event); void handleReadingBodyClick(event); }}
-              onAuxClick={(event) => handleReadingBodyAuxClick(event)
+              onAuxClick={(event) => handleReadingBodyAuxClick(event)}
               dangerouslySetInnerHTML={headFacadeProp}
             />
           )}
@@ -1754,7 +1754,7 @@ export default function ReadingPane({ showBack }: ReadingPaneProps) {
               data-theme="reading-text"
               style={{ color: 'var(--reading-text)', fontSize: 'var(--fs-reading-body)' }}
               onClick={(event) => { handleVideoClick(event); void handleReadingBodyClick(event); }}
-              onAuxClick={(event) => handleReadingBodyAuxClick(event)
+              onAuxClick={(event) => handleReadingBodyAuxClick(event)}
               dangerouslySetInnerHTML={bodyProp}
             />
           )}
