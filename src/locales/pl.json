@@ -519,7 +519,8 @@
       "archiveDomainsPlaceholder": "wsj.com\nft.com\nbloomberg.com",
       "archiveDomainsSave": "Zapisz domeny",
       "archiveDomainsSaved": "Zapisano listę domen archiwalnych.",
-      "archiveDomainsInvalid": "Wpisz prawidłowe nazwy hostów, po jednej w wierszu, bez protokołu i ścieżki."
+      "archiveDomainsInvalid": "Wpisz prawidłowe nazwy hostów, po jednej w wierszu, bez protokołu i ścieżki.",
+      "archiveDomainsError": "Nie udało się zapisać listy domen Archive.is."
     },
     "fontFamilies": {
       "sidebar": "Czcionka paska bocznego",
