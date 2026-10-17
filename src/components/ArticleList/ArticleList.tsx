@@ -787,7 +787,7 @@ export default function ArticleList() {
     void getExternalSignals(candidates, externalSignalSources).then((signals) => {
       if (!cancelled) setExternalSignals(signals);
     }).catch(() => {
-      if (!cancelled) setExternalSignals({});
+      if (!cancelled) setExternalSignals((current) => Object.keys(current).length ? {} : current);
     });
     return () => { cancelled = true; };
   // The ranking key captures meaningful article changes without reacting to
