@@ -778,11 +778,11 @@ export default function ArticleList() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
     if (!isInterestingView || externalSignalSources.length === 0) {
-      setExternalSignals({});
+      setExternalSignals((current) => Object.keys(current).length ? {} : current);
       return;
     }
     let cancelled = false;
-    setExternalSignals({});
+    setExternalSignals((current) => Object.keys(current).length ? {} : current);
     const candidates = articles.slice(0, 80).map(({ url, title, summary, content }) => ({ url, title, summary, content }));
     void getExternalSignals(candidates, externalSignalSources).then((signals) => {
       if (!cancelled) setExternalSignals(signals);
@@ -838,10 +838,12 @@ export default function ArticleList() {
   );
   const rankedArticleKeys = useMemo(
     () => (isInterestingView
-      ? rankInterestingArticles(articles, intelligenceFeedback, Date.now(), interestingAlgorithm, intelligenceContext, externalSignals)
+      ? (externalSignalSources.length > 0
+        ? rankInterestingArticles(articles, intelligenceFeedback, Date.now(), interestingAlgorithm, intelligenceContext, externalSignals)
+        : rankInterestingArticles(articles, intelligenceFeedback, Date.now(), interestingAlgorithm, intelligenceContext))
         .map(rankingIdentity)
       : NO_RANKED_KEYS),
-    [interestingRankingKey, intelligenceFeedback, interestingAlgorithm, intelligenceContext, externalSignals, rankingIdentity, isInterestingView],
+    [interestingRankingKey, intelligenceFeedback, interestingAlgorithm, intelligenceContext, externalSignals, externalSignalSources, rankingIdentity, isInterestingView],
   );
   const rankedArticles = useMemo(() => {
     if (!isInterestingView) return articles;
