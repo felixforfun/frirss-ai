@@ -3117,4 +3117,5 @@ An **Interesting** view ranks articles using per-user feedback while leaving Fre
   - GET `/api/intelligence/feedback`
   - PUT `/api/intelligence/feedback`
   - DELETE `/api/intelligence/feedback/:articleId`
+  - POST `/api/intelligence/external-signals`
 - **Limite connue** : lexical matching is a first implementation, not semantic understanding. Local embeddings and bounded background processing remain follow-up work; do not describe this version as embedding-based.
