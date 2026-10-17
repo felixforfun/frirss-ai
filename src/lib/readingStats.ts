@@ -7,7 +7,7 @@ export interface ArticleOpenEvent {
 }
 
 const STORAGE_PREFIX = 'frirss_reading_stats_v1:';
-const MAX_EVENTS = 5000;
+const MAX_EVENTS = 1000;
 const SKIM_FACTOR = 0.6;
 const WORDS_PER_MINUTE = 230;
 
@@ -20,13 +20,18 @@ function countWords(text: string): number {
 }
 
 function plainText(value: string): string {
-  if (!value) return '';
-  if (typeof document !== 'undefined') {
-    const el = document.createElement('div');
-    el.innerHTML = value;
-    return (el.textContent || el.innerText || '').replace(/\s+/g, ' ').trim();
-  }
-  return value.replace(/<[^>]*>/g, ' ').replace(/&nbsp;/g, ' ').replace(/\s+/g, ' ').trim();
+  return (value || '')
+    .replace(/<script\\b[^>]*>[\\s\\S]*?<\\/script>/gi, ' ')
+    .replace(/<style\\b[^>]*>[\\s\\S]*?<\\/style>/gi, ' ')
+    .replace(/<[^>]*>/g, ' ')
+    .replace(/&nbsp;|&#160;/gi, ' ')
+    .replace(/&amp;/gi, '&')
+    .replace(/&quot;/gi, '"')
+    .replace(/&#39;|&apos;/gi, "'")
+    .replace(/&lt;/gi, '<')
+    .replace(/&gt;/gi, '>')
+    .replace(/\\s+/g, ' ')
+    .trim();
 }
 
 export function recordArticleOpen(
@@ -38,13 +43,15 @@ export function recordArticleOpen(
     const key = storageKey(serverId);
     const raw = window.localStorage.getItem(key);
     const events: ArticleOpenEvent[] = raw ? JSON.parse(raw) : [];
-    const text = plainText([article.title || '', article.content || '', article.summary || ''].join(' ')).slice(0, 12000);
+    const title = plainText(article.title || '').slice(0, 300);
+    const body = plainText(article.content || article.summary || '');
+    const topicText = [title, plainText(article.summary || ''), body.slice(0, 900)].filter(Boolean).join(' ').slice(0, 1500);
     const event: ArticleOpenEvent = {
       articleId: String(article.id),
       openedAt: Date.now(),
-      title: plainText(article.title || '').slice(0, 300),
-      text,
-      wordCount: countWords(text),
+      title,
+      text: topicText,
+      wordCount: countWords(body || title),
     };
     events.push(event);
     window.localStorage.setItem(key, JSON.stringify(events.slice(-MAX_EVENTS)));
