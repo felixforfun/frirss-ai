@@ -57,6 +57,7 @@
   "admin.userCount",
   "admin.users",
   "admin.you",
+  "preferences.aiSummaries.archiveDomainsError",
   "preferences.aiSummaries.archiveDomainsHint",
   "preferences.aiSummaries.archiveDomainsInvalid",
   "preferences.aiSummaries.archiveDomainsPlaceholder",
