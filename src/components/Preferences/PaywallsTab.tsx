@@ -48,7 +48,7 @@ export default function PaywallsTab() {
         autoCapitalize="off"
         spellCheck={false}
         rows={8}
-        aria-label={t('preferences.sections.paywalls', 'Paywalls')}
+        aria-label={t('preferences.aiSummaries.archiveDomainsTitle')}
       />
       {status && <p role="status" className="text-xs" style={{ color: status.error ? 'var(--danger)' : 'var(--accent)' }}>{status.text}</p>}
       <button type="button" onClick={saveDomains} disabled={saving} className="px-4 py-2 rounded-lg text-sm font-semibold disabled:opacity-50" style={{ color: '#fff', background: 'var(--accent)' }}>{saving ? t('preferences.aiSummaries.saving') : t('preferences.aiSummaries.archiveDomainsSave')}</button>
