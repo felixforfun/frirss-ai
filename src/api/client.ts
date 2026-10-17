@@ -72,7 +72,9 @@ function reloadForCloudflareAccess(value: unknown): boolean {
   try {
     const previous = Number(window.sessionStorage.getItem(ACCESS_RELOAD_STORAGE_KEY));
     if (Number.isFinite(previous) && previous > 0 && now - previous < ACCESS_RELOAD_COOLDOWN_MS) {
-      return false;
+      // This is still an Access failure: suppress another reload, but do not
+      // let it fall through into FriRSS backend-authentication handling.
+      return true;
     }
     window.sessionStorage.setItem(ACCESS_RELOAD_STORAGE_KEY, String(now));
   } catch {
