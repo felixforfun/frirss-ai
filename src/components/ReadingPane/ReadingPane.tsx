@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useMemo, useCallback, type ReactNode, type CSSProperties, type FormEvent, type MouseEvent as ReactMouseEvent } from 'react';
+import { useState, useRef, useEffect, useLayoutEffect, useMemo, useCallback, type ReactNode, type CSSProperties, type FormEvent, type MouseEvent as ReactMouseEvent } from 'react';
 import { useTranslation } from 'react-i18next';
 import { createPortal, flushSync } from 'react-dom';
 import { useFeedStore, READ_LATER_LABEL } from '../../stores/feedStore';
