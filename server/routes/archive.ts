@@ -180,6 +180,7 @@ async function readPrefixText(response: Response, maxBytes: number, timeoutMs: n
         break;
       }
     }
+    if (size >= maxBytes) await reader.cancel().catch(() => {});
     text += decoder.decode();
     return timedOut ? null : text;
   } catch {
