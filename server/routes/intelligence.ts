@@ -110,6 +110,7 @@ function canonicalUrl(raw: string): string {
   try {
     const url = new URL(raw);
     url.hash = '';
+    url.protocol = 'https:';
     for (const key of [...url.searchParams.keys()]) {
       if (/^(utm_|fbclid$|gclid$|ref$|source$)/i.test(key)) url.searchParams.delete(key);
     }
@@ -233,7 +234,7 @@ let lobstersStoriesCache: Array<{ url?: string; score?: number; comments_count?:
 let lobstersStoriesExpires = 0;
 async function getLobstersStories(): Promise<Array<{ url?: string; score?: number; comments_count?: number; created_at?: string }>> {
   if (lobstersStoriesCache && Date.now() < lobstersStoriesExpires) return lobstersStoriesCache;
-  lobstersStoriesCache = await fetchJson('https://lobste.rs/hottest.json');
+  lobstersStoriesCache = await fetchJson<Array<{ url?: string; score?: number; comments_count?: number; created_at?: string }>>('https://lobste.rs/hottest.json');
   lobstersStoriesExpires = Date.now() + 10 * 60 * 1000;
   return lobstersStoriesCache;
 }
