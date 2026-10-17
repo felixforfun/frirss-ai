@@ -23,7 +23,7 @@ function isDirectArchiveSnapshot(rawUrl: string | undefined): rawUrl is string {
   try {
     const url = new URL(rawUrl);
     return url.protocol === 'https:'
-      && ARCHIVE_HOSTS.some((host) => url.hostname === host || url.hostname.endsWith('.' + host))
+      && ARCHIVE_HOSTS.includes(url.hostname as typeof ARCHIVE_HOSTS[number])
       && /^\/\d{14}\//.test(url.pathname);
   } catch {
     return false;
@@ -44,9 +44,8 @@ export function openArchiveAware(rawUrl: string | null | undefined): void {
     return;
   }
 
-  let source: URL;
   try {
-    source = new URL(original);
+    const source = new URL(original);
     if (source.protocol !== 'http:' && source.protocol !== 'https:') {
       openExternal(original);
       return;
