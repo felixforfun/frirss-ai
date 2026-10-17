@@ -63,6 +63,6 @@ export async function getExternalSignals(
       content: article.content.slice(0, 12000),
     })),
     sources,
-  }, { timeout: 30000 });
+  }, { timeout: 120000 });
   return data.signals ?? {};
 }
