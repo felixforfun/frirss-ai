@@ -29,7 +29,7 @@ vi.mock('../cache.js', () => ({
   cacheKey: (_userId: number, key: string) => key,
 }));
 
-const archiveRoutes = (await import('../routes/archive.js')).default;
+const { default: archiveRoutes, parseTimeMap, looksLikeChallengePage } = await import('../routes/archive.js');
 const app = express();
 app.use('/api/archive', archiveRoutes);
 
@@ -88,17 +88,19 @@ describe('Archive.is snapshot resolver', () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
-  it('parses relation tokens and orders multiple mementos newest first', async () => {
+  it('parses relation tokens and orders multiple mementos newest first', () => {
     const original = 'https://www.wsj.com/world/article-a';
     const body = [
       `<${original}>; rel="original"`,
       `<http://archive.md/20261016021348/${original}>; rel="first memento"; datetime="Fri, 16 Oct 2026 02:13:48 GMT"`,
       `<http://archive.li/20261017140859/${original}>; rel="last memento alternate"; datetime="Sat, 17 Oct 2026 14:08:59 GMT"`,
     ].join('\n');
-    fetchMock.mockResolvedValue(response(body, 'application/link-format'));
-    // Both snapshots are challenge pages; no usable direct snapshot is returned.
-    const result = await request(app).get('/api/archive/resolve').query({ url: original });
-    expect(result.status).toBe(200);
-    expect(result.body).toEqual({ status: 'no_good_snapshot' });
+    expect(parseTimeMap(body).map((item) => item.timestamp)).toEqual(['20261017140859', '20261016021348']);
+    expect(parseTimeMap(body)[0].url).toBe('https://archive.is/20261017140859/https://www.wsj.com/world/article-a');
+  });
+
+  it('does not reject a snapshot merely because HTML contains a captcha attribute', () => {
+    const html = '<html><head><title>A genuine article headline</title></head><body><article data-captcha-site-key="abc"><p>A short but real article excerpt.</p></article></body></html>';
+    expect(looksLikeChallengePage(html, 'www.wsj.com')).toBe(false);
   });
 });
