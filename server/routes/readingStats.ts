@@ -37,7 +37,7 @@ router.post('/open', (req, res) => {
     || !validText(body.articleId, 512) || !body.articleId.trim()
     || !validText(body.title, 1000)
     || !validText(body.text, 4000)
-    || !Number.isSafeInteger(body.wordCount) || Number(body.wordCount) < 0 || Number(body.wordCount) > 1000000) {
+    || typeof body.wordCount !== 'number' || !Number.isSafeInteger(body.wordCount) || body.wordCount < 0 || body.wordCount > 1000000) {
     return res.status(400).json({ error: 'Invalid reading event' });
   }
 
