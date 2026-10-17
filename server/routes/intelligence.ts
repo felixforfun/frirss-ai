@@ -105,6 +105,7 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_interesting_external_signal_cache_checked
     ON interesting_external_signal_cache(checked_at);
 `);
+db.prepare('DELETE FROM interesting_external_signal_cache WHERE checked_at < ?').run(Date.now() - 30 * 86400000);
 
 function canonicalUrl(raw: string): string {
   try {
@@ -198,7 +199,11 @@ async function githubSignal(article: ExternalArticleInput): Promise<number | nul
   return clamp01(popularity * 0.65 + activity * 0.35);
 }
 async function gdeltSignal(article: ExternalArticleInput): Promise<number> {
-  const stop = new Set(['the','and','for','with','from','that','this','into','about','after','before','over','under','how','why','what','when','where','who','are','was','were','has','have','will','its','new','says','said']);
+  const stop = new Set([
+    'the','and','for','with','from','that','this','into','about','after','before','over','under','how','why','what','when','where','who','are','was','were','has','have','will','its','new','says','said',
+    'der','die','das','und','mit','fur','von','den','dem','des','ein','eine','einer','eines','einem','einen','ist','sind','nicht','auch','nach','vor','uber','unter','bei','aus','wie','was','wer','wird','werden','wurden','neue','neuen','laut','sagte',
+    'les','des','une','pour','avec','dans','est','sont','aux','sur','par','qui','que','cette','ces','leur','leurs','mais','pas',
+  ]);
   const terms = article.title.toLowerCase().normalize('NFKD').replace(/[\u0300-\u036f]/g, '')
     .match(/[a-z0-9]{3,}/g)?.filter((term) => !stop.has(term)) ?? [];
   const queryTerms = [...new Set(terms)].slice(0, 6);
