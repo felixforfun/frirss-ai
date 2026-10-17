@@ -3,7 +3,8 @@ import { useTranslation } from 'react-i18next';
 import { getArticleFeedback, type ArticleFeedback } from '../../api/intelligence';
 import { useAuthStore } from '../../stores/authStore';
 import { useFeedStore } from '../../stores/feedStore';
-import { getArticleOpenEvents, estimatedSkimMinutes, type ArticleOpenEvent } from '../../lib/readingStats';
+import { getArticleOpenEvents, type ArticleOpenEvent } from '../../api/readingStats';
+import { estimatedSkimMinutes } from '../../lib/readingStats';
 
 type Period = '7d' | '30d' | 'year' | 'all';
 const PERIODS: Array<{ value: Period; label: string; ms: number | null }> = [
@@ -78,14 +79,21 @@ export default function ReadingStatsTab({ active = true }: { active?: boolean })
   const [feedbackLoading, setFeedbackLoading] = useState(false);
 
   useEffect(() => {
-    if (!active) return;
-    const refresh = () => setEvents(getArticleOpenEvents(serverId));
-    refresh();
+    if (!active || !serverId) return;
+    let cancelled = false;
+    const refresh = async () => {
+      try {
+        const rows = await getArticleOpenEvents(serverId);
+        if (!cancelled) setEvents(rows);
+      } catch {
+        if (!cancelled) setEvents([]);
+      }
+    };
+    void refresh();
     window.addEventListener('frirss:reading-stats-updated', refresh);
-    window.addEventListener('storage', refresh);
     return () => {
+      cancelled = true;
       window.removeEventListener('frirss:reading-stats-updated', refresh);
-      window.removeEventListener('storage', refresh);
     };
   }, [active, serverId]);
 
@@ -168,7 +176,7 @@ export default function ReadingStatsTab({ active = true }: { active?: boolean })
         {card('◷', formatHours(totalMinutes), 'Estimated skim-adjusted reading time', '#3979e8')}
       </div>
       <p className="text-xs" style={{ color: 'var(--list-summary)' }}>
-        Estimated time uses opened articles only, at 230 words/minute with a 60% skim factor. Opening history is collected from now on and stored in this browser for this FreshRSS server.
+        Estimated time uses opened articles only, at 230 words/minute with a 60% skim factor. Opening history is collected from now on and stored on the FriRSS server for this FreshRSS account.
         {feedbackLoading ? ' Loading feedback…' : ''}
       </p>
       <section className="border-t pt-5" style={{ borderColor: 'var(--panel-border)' }}>
