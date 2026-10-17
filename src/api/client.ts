@@ -86,8 +86,9 @@ function reloadForCloudflareAccess(value: unknown): boolean {
 }
 
 function clearAccessReloadGuard(): void {
-  accessReloadStarted = false;
-  if (typeof window === 'undefined') return;
+  // Do not unlock the current page after it has started navigating. A fresh
+  // document gets a fresh module flag and can clear the cooldown on success.
+  if (accessReloadStarted || typeof window === 'undefined') return;
   try {
     window.sessionStorage.removeItem(ACCESS_RELOAD_STORAGE_KEY);
   } catch {
