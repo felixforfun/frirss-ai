@@ -151,6 +151,7 @@ export default function ReadingPane({ showBack }: ReadingPaneProps) {
   const { t } = useTranslation();
   const { selectedArticle, selectArticle, toggleRead, toggleStar, toggleReadLater, categoryIds, selectNextArticle, selectPrevArticle } = useFeedStore();
   const activeServerId = useAuthStore((s) => s.activeServerId);
+  const lastTrackedArticleKey = useRef<string | null>(null);
   const theme = useThemeStore((s) => s.theme);
   const getLabelColor = useThemeStore((s) => s.getLabelColor);
   const setFontSize = useThemeStore((s) => s.setFontSize);
@@ -242,8 +243,15 @@ export default function ReadingPane({ showBack }: ReadingPaneProps) {
 
   // Record genuine reader opens locally. This is best-effort and never blocks rendering.
   useEffect(() => {
-    if (selectedArticle) recordArticleOpen(activeServerId, selectedArticle);
-  }, [selectedArticle?.id, activeServerId]);
+    if (!selectedArticle) {
+      lastTrackedArticleKey.current = null;
+      return;
+    }
+    const key = `${activeServerId ?? 'default'}:${selectedArticle.id}`;
+    if (lastTrackedArticleKey.current === key) return;
+    lastTrackedArticleKey.current = key;
+    recordArticleOpen(activeServerId, selectedArticle);
+  }, [selectedArticle, activeServerId]);
 
   // Reset extraction state when article changes. If we already have the
   // extracted content cached (e.g. returning to a previously-read article),
