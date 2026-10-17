@@ -283,7 +283,7 @@ async function snapshotLooksUsable(snapshotUrl: string, publisherHostname: strin
 const memoryCache = new Map<string, { expiresAt: number; value: ArchiveResolveResult }>();
 const inFlight = new Map<string, Promise<ArchiveResolveResult>>();
 function resultTtlSeconds(result: ArchiveResolveResult): number {
-  if (result.status === 'ok') return 300;
+  if (result.status === 'ok') return 60;
   if (result.status === 'no_snapshot' || result.status === 'no_good_snapshot') return 60;
   if (result.status === 'soft_block') return 20;
   return 10;
@@ -363,7 +363,11 @@ async function resolveForUser(userId: number, rawUrl: string, domains: string[])
   const work = (async (): Promise<ArchiveResolveResult> => {
     const publisherUrl = await resolvePublisherUrl(normalisedUrl, domains);
     if (!publisherUrl) return { status: 'not_allowed' };
-    try { await assertTargetSafe(publisherUrl); } catch { return { status: 'error' }; }
+    // The original target was already DNS-checked before this cache lookup.
+    // Re-check only when a wrapper resolved to a different publisher URL.
+    if (publisherUrl !== normalisedUrl) {
+      try { await assertTargetSafe(publisherUrl); } catch { return { status: 'error' }; }
+    }
     const publisher = new URL(publisherUrl);
 
     const lookup = await fetchArchive(timeMapUrl(publisherUrl), {
