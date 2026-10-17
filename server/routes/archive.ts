@@ -22,6 +22,7 @@ const MAX_TIMEMAP_BYTES = 64 * 1024;
 const MAX_PROBE_BYTES = 32 * 1024;
 const MAX_SNAPSHOT_CHECKS = 5;
 const TIMEMAP_TIMEOUT_MS = 7_000;
+const TIMEMAP_BODY_TIMEOUT_MS = 2_000;
 const SNAPSHOT_TIMEOUT_MS = 4_000;
 const PROBE_BODY_TIMEOUT_MS = 2_000;
 
@@ -222,6 +223,7 @@ async function snapshotLooksUsable(snapshotUrl: string, publisherHostname: strin
   try {
     const result = await fetchArchive(snapshotUrl, {
       Accept: 'text/html',
+      'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36',
       Range: `bytes=0-${MAX_PROBE_BYTES - 1}`,
     }, SNAPSHOT_TIMEOUT_MS);
     if (!result) return false;
@@ -323,7 +325,10 @@ async function resolveForUser(userId: number, rawUrl: string, domains: string[])
     try { await assertTargetSafe(publisherUrl); } catch { return { status: 'error' }; }
     const publisher = new URL(publisherUrl);
 
-    const lookup = await fetchArchive(timeMapUrl(publisherUrl), { Accept: 'application/link-format' }, TIMEMAP_TIMEOUT_MS);
+    const lookup = await fetchArchive(timeMapUrl(publisherUrl), {
+      Accept: 'application/link-format',
+      'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36',
+    }, TIMEMAP_TIMEOUT_MS);
     if (!lookup) return { status: 'soft_block' };
     const { response } = lookup;
     if (!response.ok) { await cancelBody(response); return { status: 'error' }; }
@@ -332,17 +337,21 @@ async function resolveForUser(userId: number, rawUrl: string, domains: string[])
       await cancelBody(response);
       return { status: 'soft_block' };
     }
-    const timeMap = await readLimitedText(response, MAX_TIMEMAP_BYTES, TIMEMAP_TIMEOUT_MS);
+    const timeMap = await readLimitedText(response, MAX_TIMEMAP_BYTES, TIMEMAP_BODY_TIMEOUT_MS);
     if (timeMap === null) return { status: 'soft_block' };
     const snapshots = parseTimeMap(timeMap).slice(0, 100);
     if (!snapshots.length) return { status: 'no_snapshot' };
 
-    for (const candidate of snapshots.slice(0, MAX_SNAPSHOT_CHECKS)) {
-      if (await snapshotLooksUsable(candidate.url, publisher.hostname)) {
-        return { status: 'ok', url: candidate.url, timestamp: candidate.timestamp };
-      }
-    }
-    return { status: 'no_good_snapshot' };
+    // Probe a small fixed number concurrently so one broken snapshot does not
+    // leave the new tab blank for a long serial chain of timeouts. Preserve the
+    // TimeMap's newest-first order when selecting the winner.
+    const candidates = snapshots.slice(0, MAX_SNAPSHOT_CHECKS);
+    const usable = await Promise.all(candidates.map((candidate) =>
+      snapshotLooksUsable(candidate.url, publisher.hostname)));
+    const winner = candidates.find((candidate, index) => usable[index]);
+    return winner
+      ? { status: 'ok', url: winner.url, timestamp: winner.timestamp }
+      : { status: 'no_good_snapshot' };
   })();
 
   inFlight.set(key, work);
