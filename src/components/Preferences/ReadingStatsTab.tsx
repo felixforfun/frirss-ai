@@ -36,7 +36,7 @@ function formatHours(minutes: number): string {
   return `${hours.toFixed(hours < 10 ? 1 : 0)} h`;
 }
 
-function buildTopics(events: ArticleOpenEvent[], feedback: ArticleFeedback[], start: number | null) {
+function buildTopics(events: ArticleOpenEvent[], feedback: ArticleFeedback[], savedSignals: Array<{ title: string; summary: string; starred: boolean; readLater: boolean }> | null, start: number | null) {
   const weights = new Map<string, number>();
   const addText = (text: string, weight: number) => {
     const words = text.toLocaleLowerCase().match(/[\p{L}\p{N}][\p{L}\p{N}-]{2,}/gu) || [];
@@ -50,6 +50,10 @@ function buildTopics(events: ArticleOpenEvent[], feedback: ArticleFeedback[], st
     }
   };
   for (const event of uniqueInPeriod(events, start)) addText(event.text || event.title, 0.35);
+  for (const item of savedSignals || []) {
+    const weight = (item.starred ? 1.3 : 0) + (item.readLater ? 1.0 : 0);
+    if (weight > 0) addText([item.title, item.summary].filter(Boolean).join(' '), weight);
+  }
   for (const item of feedback) {
     const when = Date.parse(item.updatedAt || item.createdAt || '');
     if (start !== null && Number.isFinite(when) && when < start) continue;
@@ -67,6 +71,7 @@ export default function ReadingStatsTab({ active = true }: { active?: boolean })
   const serverId = useAuthStore((s) => s.activeServerId);
   const starredCount = useFeedStore((s) => s.starredCount);
   const readLaterCount = useFeedStore((s) => s.readLaterCount);
+  const savedArticleSignals = useFeedStore((s) => s.savedArticleSignals);
   const [period, setPeriod] = useState<Period>('30d');
   const [events, setEvents] = useState<ArticleOpenEvent[]>([]);
   const [feedback, setFeedback] = useState<ArticleFeedback[]>([]);
@@ -106,7 +111,7 @@ export default function ReadingStatsTab({ active = true }: { active?: boolean })
   const downvotes = votes.filter((item) => item.vote === -1).length;
   const totalMinutes = opened.reduce((sum, item) => sum + estimatedSkimMinutes(item.wordCount), 0);
   const averageMinutes = opened.length ? Math.round(totalMinutes / opened.length) : 0;
-  const topics = useMemo(() => buildTopics(events, feedback, start), [events, feedback, start]);
+  const topics = useMemo(() => buildTopics(events, feedback, savedArticleSignals, start), [events, feedback, savedArticleSignals, start]);
   const maxTopicWeight = topics[0]?.weight || 1;
   const activity = useMemo(() => {
     const now = new Date();
