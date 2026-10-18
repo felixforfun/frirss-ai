@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { clearAiSummaryApiKey, getAiSummaryConfig, saveAiSummaryConfig, savePreferences, testAiSummaryConnection, type AiSummaryConfig } from '../../api/backend';
+import { clearAiSummaryApiKey, getAiSummaryConfig, saveAiSummaryConfig, testAiSummaryConnection, type AiSummaryConfig } from '../../api/backend';
 
 const DEFAULT_PROMPT = "Summarize this article in 3–5 concise bullet points. Focus on facts, important numbers and implications. Do not add information not present in the article.";
 
@@ -96,7 +96,6 @@ export default function AiSummariesTab({ active = true }: { active?: boolean }) 
         <button type="button" onClick={test} disabled={testing || !config.model.trim()} className="px-4 py-2 rounded-lg text-sm font-semibold disabled:opacity-50" style={{ color: 'var(--list-title)', border: '1px solid var(--panel-border)' }}>{testing ? t('preferences.aiSummaries.testing') : t('preferences.aiSummaries.test')}</button>
         {config.hasApiKey && <button type="button" onClick={clearKey} className="px-4 py-2 rounded-lg text-sm" style={{ color: 'var(--danger)', border: '1px solid var(--panel-border)' }}>{t('preferences.aiSummaries.clear')}</button>}
       </div>
-
 
     </div>
   );
