@@ -323,7 +323,7 @@ describe('algorithm registry and selection contract', () => {
     expect(DEFAULT_INTERESTING_ALGORITHM).toBe('current');
     expect(INTERESTING_ALGORITHMS.map((a) => a.value)).toEqual([
       'current', 'weighted-idf', 'synonyms', 'topics', 'combined', 'microsoft-news', 'personal-news', 'intelligence-next',
-      'gdelt', 'gdelt-github', 'gdelt-hn', 'hn-lob', 'all-four',
+      'gdelt', 'gdelt-github', 'gdelt-hn', 'hn-lob', 'all-four', 'custom',
     ]);
     expect(INTERESTING_ALGORITHMS.every((a) => isInterestingAlgorithm(a.value))).toBe(true);
     for (const value of ['', 'Current', 'intelligence', null, undefined, 3]) expect(isInterestingAlgorithm(value)).toBe(false);
@@ -372,7 +372,7 @@ describe('algorithm registry and selection contract', () => {
       savedArticles: [{ id: 's', title: 'Tomato garden tips', summary: '', content: '', sourceId: 'feed/2', starred: true, readLater: true }],
     };
     for (const { value } of INTERESTING_ALGORITHMS) {
-      if (value === 'intelligence-next' || ['gdelt', 'gdelt-github', 'gdelt-hn', 'hn-lob', 'all-four'].includes(value)) continue;
+      if (value === 'intelligence-next' || ['gdelt', 'gdelt-github', 'gdelt-hn', 'hn-lob', 'all-four', 'custom'].includes(value)) continue;
       const without = rankInterestingArticles(items, votes, now, value).map((x) => x.id);
       expect(rankInterestingArticles(items, votes, now, value, context).map((x) => x.id), value).toEqual(without);
     }
