@@ -16,7 +16,8 @@ export const DEFAULT_CUSTOM_INTERESTING_WEIGHTS: CustomInterestingWeights = {
 };
 export function normalizeCustomInterestingWeights(value: unknown): CustomInterestingWeights {
   const input = value && typeof value === 'object' ? value as Partial<CustomInterestingWeights> : {};
-  const sources = input.sources && typeof input.sources === 'object' ? input.sources : {};
+  const sources: Partial<Record<ExternalSignalSource, unknown>> = input.sources && typeof input.sources === 'object'
+    ? input.sources as Partial<Record<ExternalSignalSource, unknown>> : {};
   const clamp = (v: unknown, fallback: number) => typeof v === 'number' && Number.isFinite(v)
     ? Math.max(0, Math.min(100, Math.round(v))) : fallback;
   return {
