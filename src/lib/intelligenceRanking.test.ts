@@ -15,6 +15,34 @@ const feedback = (title: string, summary: string, vote: 1 | -1): ArticleFeedback
 });
 
 describe('rankInterestingArticles', () => {
+  it('recognizes the Custom algorithm', () => {
+    expect(isInterestingAlgorithm('custom')).toBe(true);
+    expect(INTERESTING_ALGORITHMS.some((item) => item.value === 'custom')).toBe(true);
+  });
+
+  it('keeps the Intelligence Next order when custom external influence is zero', () => {
+    const first = article('first', 'AI systems', 'Research on AI');
+    const second = article('second', 'Gardening', 'Growing vegetables');
+    const weights = { externalInfluence: 0, sources: { gdelt: 100, github: 0, hackerNews: 0, lobsters: 0 } };
+    const base = rankInterestingArticles([first, second], [], Date.now(), 'intelligence-next');
+    const custom = rankInterestingArticles([first, second], [], Date.now(), 'custom', {}, {
+      [first.url]: { gdelt: 0, github: null, hackerNews: null, lobsters: null },
+      [second.url]: { gdelt: 1, github: null, hackerNews: null, lobsters: null },
+    }, weights);
+    expect(custom.map((item) => item.id)).toEqual(base.map((item) => item.id));
+  });
+
+  it('allows external signals to fully determine the custom ranking at 100 percent', () => {
+    const first = article('first', 'AI systems', 'Research on AI');
+    const second = article('second', 'Gardening', 'Growing vegetables');
+    const weights = { externalInfluence: 100, sources: { gdelt: 100, github: 0, hackerNews: 0, lobsters: 0 } };
+    const custom = rankInterestingArticles([first, second], [], Date.now(), 'custom', {}, {
+      [first.url]: { gdelt: 0, github: null, hackerNews: null, lobsters: null },
+      [second.url]: { gdelt: 1, github: null, hackerNews: null, lobsters: null },
+    }, weights);
+    expect(custom[0].id).toBe('second');
+  });
+
   it('ranks content related to a positive vote above unrelated content', () => {
     const liked = article('liked', 'New chip design', 'Researchers improve AI accelerator efficiency');
     const unrelated = article('other', 'Gardening tips', 'How to grow tomatoes at home');
