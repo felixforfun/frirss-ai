@@ -253,7 +253,7 @@ async function fetchInfrequentArticles(
   subscriptions: Subscription[],
   shouldContinue: () => boolean,
   signal: AbortSignal,
-  onArticles?: (articles: Article[]) => void,
+  onArticles?: (articles: Article[], refreshedFeedId: string) => void,
 ): Promise<Article[]> {
   const cutoff = Date.now() - INFREQUENT_WINDOW_MS;
   const eligible: string[] = [];
@@ -266,6 +266,7 @@ async function fetchInfrequentArticles(
   // keeps classification and article loading from becoming one blocking batch.
   const publishFeedArticles = async (feedId: string): Promise<void> => {
     try {
+      const feedArticles: Article[] = [];
       let continuation: string | null = null;
       for (let page = 0; page < 3 && shouldContinue(); page++) {
         const result = await getStreamContents(
@@ -276,21 +277,27 @@ async function fetchInfrequentArticles(
         if (!result || !result.items.length) break;
         for (const item of result.items) {
           const article = normalizeArticle(item);
-          if (!article.read && article.published >= cutoff && article.sourceId === feedId &&
-              !seenArticleIds.has(article.id)) {
-            seenArticleIds.add(article.id);
-            articles.push(article);
-          } else if (!article.read && article.published >= cutoff && article.sourceId === feedId) {
-            // A later page can carry a fresher read/star/label state for an
-            // article already seen. Replace it instead of duplicating it.
-            const index = articles.findIndex((existing) => existing.id === article.id);
-            if (index >= 0) articles[index] = article;
+          if (!article.read && article.published >= cutoff && article.sourceId === feedId) {
+            const index = feedArticles.findIndex((existing) => existing.id === article.id);
+            if (index >= 0) feedArticles[index] = article;
+            else feedArticles.push(article);
           }
         }
         continuation = result.continuation;
         if (!continuation || result.items.some((item) => item.published && item.published * 1000 < cutoff)) break;
       }
-      if (shouldContinue()) onArticles?.([...articles].sort((a, b) => b.published - a.published));
+      if (shouldContinue()) {
+        for (const article of feedArticles) {
+          if (!seenArticleIds.has(article.id)) {
+            seenArticleIds.add(article.id);
+            articles.push(article);
+          } else {
+            const index = articles.findIndex((existing) => existing.id === article.id);
+            if (index >= 0) articles[index] = article;
+          }
+        }
+        onArticles?.([...feedArticles].sort((a, b) => b.published - a.published), feedId);
+      }
     } catch (error) {
       if (!shouldContinue() || signal.aborted) return;
       console.warn('[FriRSS] infrequent-sites: unread fetch failed:', feedId, error);
@@ -1403,9 +1410,14 @@ export const useFeedStore = create<FeedState>()((set, get) => ({
         articles: cachedArticles,
         selectedArticle: null,
       });
-      const mergeArticles = (fresh: Article[]): Article[] => {
+      const mergeArticles = (fresh: Article[], refreshedFeedId: string): Article[] => {
         const merged = new Map<string, Article>();
-        for (const article of get().articles) merged.set(article.id, article);
+        // Reconcile only the feed just refreshed. This removes stale/read/deleted
+        // items from that feed without losing cached articles for feeds still
+        // waiting to be scanned or temporarily unavailable.
+        for (const article of get().articles) {
+          if (article.sourceId !== refreshedFeedId) merged.set(article.id, article);
+        }
         for (const article of fresh) merged.set(article.id, article);
         return [...merged.values()].sort((a, b) => b.published - a.published);
       };
@@ -1428,17 +1440,20 @@ export const useFeedStore = create<FeedState>()((set, get) => ({
           get().subscriptions,
           shouldContinue,
           controller.signal,
-          (fresh) => {
+          (fresh, refreshedFeedId) => {
             if (!shouldContinue()) return;
-            const merged = mergeArticles(fresh);
+            const merged = mergeArticles(fresh, refreshedFeedId);
             persistArticles(merged);
             set({ articles: merged, loading: false, revalidating: true, continuation: null });
           },
         );
         if (shouldContinue()) {
-          const merged = mergeArticles(articles);
-          persistArticles(merged);
-          set({ articles: merged, loading: false, revalidating: false, continuation: null });
+          // Every completed feed has already been merged and persisted by the
+          // progress callback. Do not replace that reconciled view with a
+          // whole-scan merge that would resurrect stale cached items.
+          const currentArticles = get().articles;
+          persistArticles(currentArticles);
+          set({ articles: currentArticles, loading: false, revalidating: false, continuation: null });
         }
       } catch (error) {
         if (shouldContinue()) {
