@@ -261,6 +261,7 @@ async function fetchInfrequentArticles(
   const seenArticleIds = new Set<string>();
   const subscriptionIds = subscriptions.map((feed) => feed.id).sort();
   let cacheHit = false;
+  let classificationConclusive = false;
 
   // Fetch and publish each qualifying feed as soon as it is classified. This
   // keeps classification and article loading from becoming one blocking batch.
@@ -313,6 +314,7 @@ async function fetchInfrequentArticles(
     if (cached.cached) {
       eligible.push(...cached.feedIds.filter((id) => subscriptionIds.includes(id)));
       cacheHit = true;
+      classificationConclusive = true;
     }
   } catch (error) {
     console.warn('[FriRSS] infrequent-sites: cache lookup failed; rescanning', error);
@@ -383,6 +385,7 @@ async function fetchInfrequentArticles(
     });
     await Promise.all(workers);
     if (!shouldContinue()) return [];
+    classificationConclusive = !scanHadErrors;
     // Keep the existing complete-classification cache contract for now; the
     // article snapshot below is persisted incrementally on the client.
     if (!scanHadErrors) {
@@ -405,6 +408,9 @@ async function fetchInfrequentArticles(
   }
 
   if (!shouldContinue()) return [];
+  // A definitive empty classification means the previous article snapshot is
+  // no longer relevant. Do not retain it indefinitely when no feed qualifies.
+  if (eligible.length === 0 && classificationConclusive) onArticles?.([], '__clear__');
   return articles.sort((a, b) => b.published - a.published);
 }
 
@@ -1394,10 +1400,14 @@ export const useFeedStore = create<FeedState>()((set, get) => ({
         const raw = localStorage.getItem(articleCacheKey);
         if (raw) {
           const parsed: unknown = JSON.parse(raw);
-          if (Array.isArray(parsed)) cachedArticles = parsed.filter((item): item is Article =>
-            !!item && typeof item.id === 'string' && typeof item.sourceId === 'string' &&
-            typeof item.published === 'number' && typeof item.title === 'string'
-          );
+          if (Array.isArray(parsed)) {
+            const subscriptionIds = new Set(get().subscriptions.map((feed) => feed.id));
+            cachedArticles = parsed.filter((item): item is Article =>
+              !!item && typeof item.id === 'string' && typeof item.sourceId === 'string' &&
+              subscriptionIds.has(item.sourceId) &&
+              typeof item.published === 'number' && typeof item.title === 'string'
+            );
+          }
         }
       } catch (error) {
         console.warn('[FriRSS] infrequent-sites: local article cache unavailable', error);
@@ -1411,6 +1421,7 @@ export const useFeedStore = create<FeedState>()((set, get) => ({
         selectedArticle: null,
       });
       const mergeArticles = (fresh: Article[], refreshedFeedId: string): Article[] => {
+        if (refreshedFeedId === '__clear__') return [];
         const merged = new Map<string, Article>();
         // Reconcile only the feed just refreshed. This removes stale/read/deleted
         // items from that feed without losing cached articles for feeds still
