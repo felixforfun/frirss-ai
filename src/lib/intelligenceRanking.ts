@@ -450,7 +450,7 @@ const EXTERNAL_SIGNAL_WEIGHTS: Partial<Record<InterestingAlgorithm, Partial<Reco
   'all-four': { gdelt: 0.4, github: 0.2, hackerNews: 0.24, lobsters: 0.16 },
 };
 export function externalSourcesForAlgorithm(algorithm: InterestingAlgorithm, customWeights: CustomInterestingWeights = DEFAULT_CUSTOM_INTERESTING_WEIGHTS): ExternalSignalSource[] {
-  if (algorithm === 'custom') return (Object.keys(customWeights.sources) as ExternalSignalSource[]).filter((source) => customWeights.sources[source] > 0);
+  if (algorithm === 'custom') return customWeights.externalInfluence === 0 ? [] : (Object.keys(customWeights.sources) as ExternalSignalSource[]).filter((source) => customWeights.sources[source] > 0);
   return Object.keys(EXTERNAL_SIGNAL_WEIGHTS[algorithm] ?? {}) as ExternalSignalSource[];
 }
 function rankWithExternalSignals(
