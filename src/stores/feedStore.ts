@@ -1436,7 +1436,7 @@ export const useFeedStore = create<FeedState>()((set, get) => ({
         }
       };
       try {
-        const articles = await fetchInfrequentArticles(
+        await fetchInfrequentArticles(
           get().subscriptions,
           shouldContinue,
           controller.signal,
