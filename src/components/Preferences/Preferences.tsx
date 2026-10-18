@@ -7,6 +7,7 @@ import FeedsTab from './FeedsTab';
 import AdminTab from './AdminTab';
 import OfflineTab from './OfflineTab';
 import AiSummariesTab from './AiSummariesTab';
+import RankingWeightsTab from './RankingWeightsTab';
 import ReadingStatsTab from './ReadingStatsTab';
 import LabelsTab from './LabelsTab';
 import GeneralTab from './GeneralTab';
@@ -337,6 +338,7 @@ export default function Preferences() {
           )}
 
           {visited.has('aiSummaries') && <Pane id="aiSummaries" tab={tab}><AiSummariesTab active={tab === 'aiSummaries'} /></Pane>}
+          {visited.has('rankingWeights') && <Pane id="rankingWeights" tab={tab}><RankingWeightsTab /></Pane>}
           {visited.has('readingStats') && <Pane id="readingStats" tab={tab}><ReadingStatsTab active={tab === 'readingStats'} /></Pane>}
 
           {isAdmin && visited.has('admin') && (
