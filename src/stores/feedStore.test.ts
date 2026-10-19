@@ -2002,7 +2002,7 @@ describe('feedStore.loadArticles — Infrequent sites classification cache', () 
     await useFeedStore.getState().loadArticles();
 
     expect(api.getStreamContents).toHaveBeenCalledWith(
-      'feed/one', 25, null, null, { signal: expect.any(AbortSignal) },
+      'feed/one', 8, null, null, { signal: expect.any(AbortSignal) },
     );
     expect(backendApi.saveInfrequentFeedCache).toHaveBeenCalledWith(['feed/one'], []);
     expect(useFeedStore.getState().loading).toBe(false);
@@ -2022,7 +2022,7 @@ describe('feedStore.loadArticles — Infrequent sites classification cache', () 
     // The scan ran, but an empty stream cannot establish a 30-day observation
     // span — the classification is unknown, so nothing may be cached.
     expect(api.getStreamContents).toHaveBeenCalledWith(
-      'feed/one', 25, null, null, { signal: expect.any(AbortSignal) },
+      'feed/one', 8, null, null, { signal: expect.any(AbortSignal) },
     );
     expect(backendApi.saveInfrequentFeedCache).not.toHaveBeenCalled();
     expect(useFeedStore.getState().loading).toBe(false);
