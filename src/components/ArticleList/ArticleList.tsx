@@ -146,7 +146,7 @@ export default function ArticleList() {
   // feed's override when the user explicitly chooses a layout here.
   const changeLayout = (mode: '2' | '3' | 'grid') => {
     if (selectedFeed && feedSettings[selectedFeed.id]?.layout) {
-      setFeedLayout(selectedFeed.id, undefined);
+      setFeedLayout(selectedFeed.id, '');
     }
     setDeviceDisplaySetting(isMobile ? 'mobile' : 'desktop', 'layout', mode);
   };
