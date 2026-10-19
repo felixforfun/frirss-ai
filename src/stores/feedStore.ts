@@ -246,6 +246,7 @@ function medianInterval(times: number[]): number {
 // Keep classification requests small: FreshRSS includes full article bodies
 // in stream/contents responses, so large scan pages waste bandwidth and delay first paint.
 const INFREQUENT_SCAN_PAGE_SIZE = 8;
+const INFREQUENT_ARTICLE_PAGE_SIZE = 12;
 // Bound deep scans, but reject clearly frequent feeds early based on a sustained
 // recent publishing cadence instead of paging through their entire history.
 const INFREQUENT_SCAN_MAX_PAGES = 12;
@@ -273,7 +274,7 @@ async function fetchInfrequentArticles(
       let continuation: string | null = null;
       for (let page = 0; page < 3 && shouldContinue(); page++) {
         const result = await getStreamContents(
-          feedId, PAGE_SIZE, continuation,
+          feedId, INFREQUENT_ARTICLE_PAGE_SIZE, continuation,
           'user/-/state/com.google/read', { signal },
         );
         if (!shouldContinue() || signal.aborted) return;
@@ -285,6 +286,11 @@ async function fetchInfrequentArticles(
             if (index >= 0) feedArticles[index] = article;
             else feedArticles.push(article);
           }
+        }
+        // First paint after the first page, not after up to three content-heavy
+        // requests. A later callback reconciles the complete feed snapshot.
+        if (page === 0 && feedArticles.length && shouldContinue()) {
+          onArticles?.([...feedArticles].sort((a, b) => b.published - a.published), feedId);
         }
         continuation = result.continuation;
         if (!continuation || result.items.some((item) => item.published && item.published * 1000 < cutoff)) break;
