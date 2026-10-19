@@ -2028,6 +2028,36 @@ describe('feedStore.loadArticles — Infrequent sites classification cache', () 
     expect(useFeedStore.getState().loading).toBe(false);
   });
 
+  it('quickly excludes high-volume feeds without scanning their full history', async () => {
+    vi.mocked(backendApi.getInfrequentFeedCache).mockResolvedValueOnce({ cached: false, feedIds: [] });
+    const nowSeconds = Math.floor(Date.now() / 1000);
+    const DAY_SECONDS = 24 * 60 * 60;
+    // Eight articles spanning 21 days at 3-day intervals are enough to prove
+    // this feed is too frequent; continuation exists to verify early exit.
+    vi.mocked(api.getStreamContents).mockResolvedValueOnce({
+      items: [0, 3, 6, 9, 12, 15, 18, 21].map((daysAgo) => ({
+        id: `frequent-${daysAgo}`,
+        title: `Article ${daysAgo}`,
+        published: nowSeconds - daysAgo * DAY_SECONDS,
+        origin: { streamId: 'feed/frequent', title: 'Frequent' },
+        categories: [],
+      })),
+      continuation: 'more-history',
+    } as never);
+    useFeedStore.setState({
+      filter: 'infrequent',
+      selectedFeed: null,
+      subscriptions: [{ id: 'feed/frequent', title: 'Frequent' }] as Subscription[],
+      articles: [],
+    });
+
+    await useFeedStore.getState().loadArticles();
+
+    expect(api.getStreamContents).toHaveBeenCalledTimes(1);
+    expect(backendApi.saveInfrequentFeedCache).toHaveBeenCalledWith(['feed/frequent'], []);
+    expect(useFeedStore.getState().articles).toEqual([]);
+  });
+
   it('fetches articles directly from eligible feeds only', async () => {
     vi.mocked(backendApi.getInfrequentFeedCache).mockResolvedValueOnce({ cached: true, feedIds: ['feed/one'] });
     const nowSeconds = Math.floor(Date.now() / 1000);
