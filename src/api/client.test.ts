@@ -81,7 +81,7 @@ describe('Cloudflare Access 401 handling', () => {
     const reload = vi.fn();
     const values = new Map<string, string>();
     const fakeWindow = {
-      location: { reload },
+      location: { reload, assign: vi.fn(), origin: 'https://rss.example.test', host: 'rss.example.test', pathname: '/?view=all', search: '', hash: '' },
       sessionStorage: {
         getItem: (key: string) => values.get(key) ?? null,
         setItem: (key: string, value: string) => { values.set(key, value); },
@@ -97,6 +97,34 @@ describe('Cloudflare Access 401 handling', () => {
       'www-authenticate': 'Cloudflare-Access realm="example"',
     }))).rejects.toThrow('Cloudflare Access authentication required');
     expect(reload).toHaveBeenCalledTimes(1);
+
+    // If a reload already happened but Access still rejects API traffic,
+    // navigate through the Access login endpoint instead of silently stalling.
+    const loginValues = new Map<string, string>([['frirss:cloudflare-access-reload-at', String(Date.now())]]);
+    const assign = vi.fn();
+    vi.stubGlobal('window', {
+      location: {
+        reload: vi.fn(),
+        assign,
+        origin: 'https://rss.example.test',
+        host: 'rss.example.test',
+        pathname: '/',
+        search: '?view=all',
+        hash: '#article-123',
+      },
+      sessionStorage: {
+        getItem: (key: string) => loginValues.get(key) ?? null,
+        setItem: (key: string, value: string) => { loginValues.set(key, value); },
+        removeItem: (key: string) => { loginValues.delete(key); },
+      },
+    });
+    await expect(rejected(proxyError(401, 'Unauthorized', {
+      'www-authenticate': 'Cloudflare-Access',
+    }))).rejects.toThrow('Cloudflare Access authentication required');
+    expect(assign).toHaveBeenCalledTimes(1);
+    const loginUrl = new URL(assign.mock.calls[0][0]);
+    expect(loginUrl.pathname).toBe('/cdn-cgi/access/login/rss.example.test');
+    expect(loginUrl.searchParams.get('redirect_url')).toBe('/?view=all#article-123');
 
     // An ordinary application/backend 401 must not trigger another reload.
     await reject(proxyError(401, { error: 'Unauthorized' }, {
