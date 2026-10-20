@@ -72,8 +72,16 @@ export function reloadForCloudflareAccess(value: unknown): boolean {
   try {
     const previous = Number(window.sessionStorage.getItem(ACCESS_RELOAD_STORAGE_KEY));
     if (Number.isFinite(previous) && previous > 0 && now - previous < ACCESS_RELOAD_COOLDOWN_MS) {
-      // This is still an Access failure: suppress another reload, but do not
-      // let it fall through into FriRSS backend-authentication handling.
+      // A prior reload did not restore API access. Do not silently leave the
+      // SPA stranded: navigate through Access' login endpoint at this app host,
+      // then return to the exact page the user was viewing.
+      const returnTo = window.location.pathname + window.location.search + window.location.hash;
+      const loginUrl = new URL(
+        `/cdn-cgi/access/login/${window.location.host}`,
+        window.location.origin,
+      );
+      loginUrl.searchParams.set('redirect_url', returnTo || '/');
+      window.location.assign(loginUrl.toString());
       return true;
     }
     window.sessionStorage.setItem(ACCESS_RELOAD_STORAGE_KEY, String(now));
