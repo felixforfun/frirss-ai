@@ -118,7 +118,13 @@ describe('Cloudflare Access 401 handling', () => {
         removeItem: (key: string) => { loginValues.delete(key); },
       },
     });
-    await expect(rejected(proxyError(401, 'Unauthorized', {
+    // Load a fresh module to model the document after the first reload.
+    vi.resetModules();
+    const freshClient = (await import('./client')).default;
+    const freshRejected = (freshClient.interceptors.response as unknown as {
+      handlers: { rejected: (error: unknown) => Promise<unknown> }[];
+    }).handlers[0].rejected;
+    await expect(freshRejected(proxyError(401, 'Unauthorized', {
       'www-authenticate': 'Cloudflare-Access',
     }))).rejects.toThrow('Cloudflare Access authentication required');
     expect(assign).toHaveBeenCalledTimes(1);
