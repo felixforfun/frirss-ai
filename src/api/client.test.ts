@@ -10,7 +10,7 @@ vi.mock('../stores/authStore', () => ({
 }));
 
 import { BACKEND_AUTH_MARKERS } from '../lib/loginErrors';
-import client from './client';
+import client, { getCloudflareAccessLoginUrl } from './client';
 
 const handlers = (client.interceptors.response as unknown as {
   handlers: {
@@ -59,6 +59,33 @@ describe('client response interceptor: independent authentication layers', () =>
     }
     await reject(new Error('Network Error'));
     expect(logout).not.toHaveBeenCalled();
+  });
+});
+
+describe('Cloudflare Access redirect URL detection', () => {
+  it('returns to the current FriRSS route after an Access redirect', () => {
+    const login = getCloudflareAccessLoginUrl(
+      'https://example-team.cloudflareaccess.com/cdn-cgi/access/login/rss.example.com?redirect_url=%2Fapi%2Fproxy',
+      '/?view=interesting#article-123',
+    );
+    expect(login).not.toBeNull();
+    const url = new URL(login!);
+    expect(url.hostname).toBe('example-team.cloudflareaccess.com');
+    expect(url.pathname).toBe('/cdn-cgi/access/login/rss.example.com');
+    expect(url.searchParams.get('redirect_url')).toBe('/?view=interesting#article-123');
+  });
+
+  it('rejects unrelated or untrusted redirect URLs', () => {
+    expect(getCloudflareAccessLoginUrl('https://evil.example/login', '/')).toBeNull();
+    expect(getCloudflareAccessLoginUrl(
+      'https://example-team.cloudflareaccess.com.evil.example/cdn-cgi/access/login/rss.example.com',
+      '/',
+    )).toBeNull();
+    expect(getCloudflareAccessLoginUrl(
+      'https://example-team.cloudflareaccess.com/anything-else',
+      '/',
+    )).toBeNull();
+    expect(getCloudflareAccessLoginUrl(undefined, '/')).toBeNull();
   });
 });
 
