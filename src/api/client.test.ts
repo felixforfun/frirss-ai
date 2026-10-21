@@ -159,6 +159,14 @@ describe('Cloudflare Access 401 handling', () => {
     expect(loginUrl.pathname).toBe('/cdn-cgi/access/login/rss.example.test');
     expect(loginUrl.searchParams.get('redirect_url')).toBe('/?view=all#article-123');
 
+    // If the login URL returns to FriRSS without restoring Access, the next
+    // 401 must not navigate again and create an infinite document loop.
+    const repeatedAccess401 = proxyError(401, 'Unauthorized', {
+      'www-authenticate': 'Cloudflare-Access',
+    });
+    await expect(freshRejected(repeatedAccess401)).rejects.toBe(repeatedAccess401);
+    expect(assign).toHaveBeenCalledTimes(1);
+
     // An ordinary application/backend 401 must not trigger another reload.
     await reject(proxyError(401, { error: 'Unauthorized' }, {
       'www-authenticate': 'Bearer',
