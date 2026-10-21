@@ -83,6 +83,7 @@ function redirectToCloudflareAccess(value: unknown): boolean {
 }
 
 const ACCESS_RELOAD_STORAGE_KEY = 'frirss:cloudflare-access-reload-at';
+const ACCESS_LOGIN_REDIRECT_STORAGE_KEY = 'frirss:cloudflare-access-login-redirect-at';
 const ACCESS_RELOAD_COOLDOWN_MS = 60_000;
 let accessReloadStarted = false;
 
@@ -118,12 +119,29 @@ export function reloadForCloudflareAccess(value: unknown): boolean {
       // A prior reload did not restore API access. Do not silently leave the
       // SPA stranded: navigate through Access' login endpoint at this app host,
       // then return to the exact page the user was viewing.
+      // The login endpoint may return to the app without establishing a
+      // session (for example, if the endpoint identifier is invalid). Only
+      // attempt this top-level navigation once per cooldown window; otherwise
+      // a fresh document can bounce between the app and this URL indefinitely.
+      const loginRedirectAt = Number(
+        window.sessionStorage.getItem(ACCESS_LOGIN_REDIRECT_STORAGE_KEY),
+      );
+      if (
+        Number.isFinite(loginRedirectAt) &&
+        loginRedirectAt > 0 &&
+        now - loginRedirectAt < ACCESS_RELOAD_COOLDOWN_MS
+      ) {
+        // Circuit breaker: do not reload or navigate again. Keep the original
+        // API error so the UI can fail normally rather than flashing forever.
+        return false;
+      }
       const returnTo = window.location.pathname + window.location.search + window.location.hash;
       const loginUrl = new URL(
         `/cdn-cgi/access/login/${window.location.host}`,
         window.location.origin,
       );
       loginUrl.searchParams.set('redirect_url', returnTo || '/');
+      window.sessionStorage.setItem(ACCESS_LOGIN_REDIRECT_STORAGE_KEY, String(now));
       window.location.assign(loginUrl.toString());
       return true;
     }
