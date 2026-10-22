@@ -146,7 +146,7 @@ describe('Cloudflare Access 401 handling', () => {
     const repeatedAccess401 = proxyError(401, 'Unauthorized', {
       'www-authenticate': 'Cloudflare-Access resource_metadata="https://rss.example.test/.well-known/cloudflare-access-protected-resource/api/proxy"',
     });
-    await expect(freshRejected(repeatedAccess401)).rejects.toBe(repeatedAccess401);
+    await expect(freshRejected(repeatedAccess401)).rejects.toThrow('Cloudflare Access authentication required');
     expect(secondReload).not.toHaveBeenCalled();
     expect(secondAssign).not.toHaveBeenCalled();
 
