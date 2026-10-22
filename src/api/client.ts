@@ -127,7 +127,10 @@ export async function reloadForCloudflareAccess(value: unknown): Promise<boolean
   try {
     const previous = Number(window.sessionStorage.getItem(ACCESS_RELOAD_STORAGE_KEY));
     if (Number.isFinite(previous) && previous > 0 && now - previous < ACCESS_RELOAD_COOLDOWN_MS) {
-      return false;
+      // This is still an Access failure. Suppress another reload during the
+      // cooldown, but do not let the 401 fall through as a FriRSS credential
+      // failure or trigger logoutBackend().
+      return true;
     }
     window.sessionStorage.setItem(ACCESS_RELOAD_STORAGE_KEY, String(now));
   } catch {
