@@ -82,6 +82,30 @@ describe('backend response interceptor: Access vs FriRSS auth', () => {
     expect(logoutBackend).not.toHaveBeenCalled();
   });
 
+  it('does not misclassify an Access 401 during cooldown as a FriRSS login failure', async () => {
+    const reload = vi.fn();
+    const now = Date.now();
+    vi.stubGlobal('window', {
+      location: { reload, assign: vi.fn(), origin: 'https://rss.example.test', host: 'rss.example.test', pathname: '/', search: '', hash: '' },
+      sessionStorage: {
+        getItem: (key: string) => key === 'frirss:cloudflare-access-reload-at' ? String(now - 1000) : null,
+        setItem: vi.fn(),
+        removeItem: vi.fn(),
+      },
+    });
+    vi.resetModules();
+    const freshBackend = (await import('./backend')).default;
+    const freshRejected = (freshBackend.interceptors.response as unknown as {
+      handlers: { rejected: (error: unknown) => Promise<unknown> }[];
+    }).handlers[0].rejected;
+
+    await expect(freshRejected(error401({
+      'www-authenticate': 'Cloudflare-Access resource_metadata="https://rss.example.test/.well-known/cloudflare-access-protected-resource/api/auth/login"',
+    }))).rejects.toThrow('Cloudflare Access authentication required');
+    expect(reload).not.toHaveBeenCalled();
+    expect(logoutBackend).not.toHaveBeenCalled();
+  });
+
   it('still ends the FriRSS session on a genuine backend 401', async () => {
     stubWindow();
     await reject(error401({ 'www-authenticate': 'Bearer' }));
