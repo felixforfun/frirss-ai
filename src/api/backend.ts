@@ -1,6 +1,7 @@
 import axios from 'axios';
 import { useAuthStore } from '../stores/authStore';
 import { reloadForCloudflareAccess } from './client';
+import { CloudflareAccessError } from '../lib/loginErrors';
 import type {
   User,
   ServerConnection,
@@ -36,9 +37,12 @@ backend.interceptors.response.use(
   async (error) => {
     // Two unrelated authentication layers pass through this client: the FriRSS
     // JWT (/api/*) and Cloudflare Access in front of the whole origin. Access
-    // failures recover through a reload and must never end the FriRSS session.
+    // failures recover through a navigation to the Access recovery landing
+    // and must never end the FriRSS session.
     if (await reloadForCloudflareAccess(error)) {
-      return Promise.reject(new Error('Cloudflare Access authentication required'));
+      // Typed so the login screen can say "Cloudflare session expired"
+      // instead of blaming the credentials (`loginErrors.ts`).
+      return Promise.reject(new CloudflareAccessError());
     }
     if (error.response?.status === 401) {
       useAuthStore.getState().logoutBackend();

@@ -1,13 +1,32 @@
 import { describe, it, expect } from 'vitest';
 import fs from 'fs';
 import path from 'path';
-import { loginErrorKey, serverConnectErrorKey, isBackendAuthFailure, BLOCKED_TARGET_MARKER, UNRESOLVED_TARGET_MARKER, BACKEND_AUTH_MARKERS } from './loginErrors';
+import { loginErrorKey, serverConnectErrorKey, isBackendAuthFailure, CloudflareAccessError, BLOCKED_TARGET_MARKER, UNRESOLVED_TARGET_MARKER, BACKEND_AUTH_MARKERS } from './loginErrors';
 
 const httpError = (status: number) => ({ response: { status } });
 
 describe('loginErrorKey', () => {
   it('n’accuse les identifiants que sur un 401', () => {
     expect(loginErrorKey(httpError(401))).toBe('login.errorLogin');
+  });
+
+  it('nomme la session Cloudflare Access fondue au lieu d’accuser les identifiants', () => {
+    // Un 401 revêtu de l’empreinte Access est rejeté SANS corps FriRSS. Sans
+    // ce marqueur, l’écran affichait « identifiants incorrects » — envoyant
+    // l’utilisateur retaper un mot de passe pourtant juste — pendant que la
+    // vraie cause, une session Access expirée, continuait de s’afficher
+    // nulle part.
+    expect(loginErrorKey(new CloudflareAccessError())).toBe('login.errorAccessSession');
+    // Même vue depuis un autre univers de modules (double chargement) : le
+    // `name` traverse ce que `instanceof` ne traverse pas.
+    const foreign = Object.assign(new Error('Cloudflare Access authentication required'), {
+      name: 'CloudflareAccessError',
+    });
+    expect(loginErrorKey(foreign)).toBe('login.errorAccessSession');
+    // Un vrai 401 FriRSS garde son message : le marqueur ne capture rien
+    // d’autre.
+    expect(loginErrorKey(httpError(401))).toBe('login.errorLogin');
+    expect(loginErrorKey(httpError(429))).toBe('login.errorTooMany');
   });
 
   it('traite un compte désactivé (403) comme un refus d’identifiants', () => {
@@ -31,7 +50,7 @@ describe('loginErrorKey', () => {
   it('rend des clés qui existent réellement dans les traductions', () => {
     const fr = JSON.parse(fs.readFileSync(path.join(process.cwd(), 'src/locales/fr.json'), 'utf8'));
     const resolves = (key: string) => key.split('.').reduce<unknown>((d, p) => (d as Record<string, unknown>)?.[p], fr);
-    for (const k of ['login.errorLogin', 'login.errorTooMany', 'login.errorUnavailable']) {
+    for (const k of ['login.errorLogin', 'login.errorTooMany', 'login.errorUnavailable', 'login.errorAccessSession']) {
       expect(typeof resolves(k), k).toBe('string');
     }
   });

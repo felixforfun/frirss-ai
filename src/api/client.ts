@@ -1,6 +1,6 @@
 import axios, { type InternalAxiosRequestConfig } from 'axios';
 import { useAuthStore } from '../stores/authStore';
-import { isBackendAuthFailure } from '../lib/loginErrors';
+import { isBackendAuthFailure, CloudflareAccessError } from '../lib/loginErrors';
 
 const client = axios.create();
 
@@ -77,6 +77,23 @@ const ACCESS_RELOAD_STORAGE_KEY = 'frirss:cloudflare-access-reload-at';
 const ACCESS_RELOAD_COOLDOWN_MS = 60_000;
 let accessReloadStarted = false;
 
+/**
+ * Point d'atterrissage de la récupération Access — une route backend,
+ * obligatoirement sous `/api/`.
+ *
+ * `vite.config.js` pose `navigateFallback: '/index.html'` avec un service
+ * worker qui répond à TOUTE navigation (recharges comprises) depuis son
+ * pré-cache : `location.reload()` ne quitte donc jamais le navigateur tant
+ * que le SW contrôle la page, et Cloudflare n'est jamais invité à émettre son
+ * défi — la récupération était structurellement silencieuse dans le PWA
+ * déployé. Le déni de `navigateFallbackDenylist: [/^\/api\//]` fait de
+ * `/api/auth/access-recovery` la seule navigation qui parte toujours sur le
+ * réseau : Cloudflare y voit un document non authentifié, mint son propre défi
+ * (signé `kid`+`meta`), puis redirige vers `/`. Un test relie les deux bouts —
+ * si l'un dérive sans l'autre, la récupération redevient un no-op.
+ */
+export const ACCESS_RECOVERY_LANDING = '/api/auth/access-recovery';
+
 type HeaderCarrier = {
   response?: {
     status?: number;
@@ -107,15 +124,23 @@ function isCloudflareAccessFailure(value: unknown): boolean {
  * Single recovery entry point, shared by every FriRSS axios instance (the
  * proxy client here and the backend client in src/api/backend.ts).
  *
- * Reloading the page is the ONLY safe recovery action: an unauthenticated
- * document request is redirected by Cloudflare itself into its own login
- * flow — carrying the signed `kid`+`meta` parameters that make wildcard
- * Access applications resolve — and then back to the exact route the user
- * was on. FriRSS must never navigate to a hand-built login URL: without
- * those parameters every login endpoint answers 404 "Unable to find your
- * Access application!" (verified live on both the team-domain and the
- * app origin for *.lindau.li). If a reload did not restore Access, stop:
- * any other navigation would mean minting a login URL ourselves.
+ * An unauthenticated DOCUMENT request is the only thing Cloudflare answers
+ * with its own login flow — carrying the signed `kid`+`meta` parameters that
+ * make wildcard Access applications resolve — and FriRSS must never navigate
+ * to a hand-built login URL: without those parameters every login endpoint
+ * answers 404 "Unable to find your Access application!" (verified live on
+ * both the team-domain and the app origin for *.lindau.li).
+ *
+ * The document request cannot be `location.reload()`: the PWA service worker
+ * (vite.config.js `navigateFallback` + precache) answers navigations —
+ * reloads included — from its cache, so the request never reaches the
+ * network and recovery is a silent no-op. Navigating to the `/api/` landing
+ * (excluded from `navigateFallback` by `navigateFallbackDenylist`) is
+ * therefore the only reload-equivalent that always hits Cloudflare, which
+ * mints the challenge and redirects back to the app. Despite the historical
+ * name, this function navigates; it never reloads and never builds a login
+ * URL. If the landing did not restore Access, stop: any other navigation
+ * would mean minting a login URL ourselves.
  */
 export async function reloadForCloudflareAccess(value: unknown): Promise<boolean> {
   if (typeof window === 'undefined' || !isCloudflareAccessFailure(value)) {
@@ -139,8 +164,28 @@ export async function reloadForCloudflareAccess(value: unknown): Promise<boolean
   }
 
   accessReloadStarted = true;
-  window.location.reload();
+  window.location.assign(ACCESS_RECOVERY_LANDING);
   return true;
+}
+
+/**
+ * Oublie toute récupération déjà tentée : une relance EXPLICITE de
+ * l'utilisateur (le bouton « Se connecter ») peut déclencher une nouvelle
+ * récupération immédiatement, sans attendre le délai de grâce.
+ *
+ * Ce délai protège contre les tempêtes de requêtes en fond — des échecs qui
+ * déclencheraient navigation sur navigation sans que personne ne demande rien.
+ * Un clic de l'utilisateur n'est pas une tempête : il dit « réessaie
+ * maintenant ». `accessReloadStarted`, resté vrai depuis la navigation
+ * précédente, bloquerait sinon toute nouvelle tentative tant que la page vit.
+ */
+export function resetCloudflareAccessRecovery(): void {
+  accessReloadStarted = false;
+  try {
+    window.sessionStorage.removeItem(ACCESS_RELOAD_STORAGE_KEY);
+  } catch {
+    // Storage can be unavailable in privacy modes.
+  }
 }
 
 // Ne fermer la session FriRSS que sur NOTRE propre 401.
@@ -161,7 +206,9 @@ client.interceptors.response.use(
   (response) => response,
   async (error) => {
     if (await reloadForCloudflareAccess(error)) {
-      return Promise.reject(new Error('Cloudflare Access authentication required'));
+      // Typed so the login screen can say "Cloudflare session expired"
+      // instead of blaming the credentials (`loginErrors.ts`).
+      return Promise.reject(new CloudflareAccessError());
     }
     if (isBackendAuthFailure(error)) {
       useAuthStore.getState().logout();

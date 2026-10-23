@@ -3027,6 +3027,7 @@ qu'un terme n'est pas déjà pris avant de le réutiliser.
 | GET | `/api/auth/me` | Utilisateur courant |
 | POST | `/api/auth/change-password` | Changer son mot de passe |
 | GET | `/api/auth/status` | Inscriptions ouvertes, existence d'un compte |
+| GET | `/api/auth/access-recovery` | Atterrissage publique de la récupération Cloudflare Access (redirige vers l'app) |
 | GET | `/api/auth/oidc/config` | Configuration SSO exposée au client |
 | GET | `/api/auth/oidc/login` | Démarrer le flux OIDC |
 | GET | `/api/auth/oidc/callback` | Retour du fournisseur OIDC |

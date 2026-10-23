@@ -2,6 +2,7 @@ import { Readability } from '@mozilla/readability';
 import DOMPurify from 'dompurify';
 import { useAuthStore } from '../stores/authStore';
 import { reloadForCloudflareAccess } from '../api/client';
+import { CloudflareAccessError } from '../lib/loginErrors';
 import { dropNonVideoIframes } from '../lib/youtube';
 import { absolutizeUrls } from './absolutizeUrls';
 
@@ -153,18 +154,11 @@ export class RateLimitedError extends Error {
 }
 
 /** A raw fetch bypasses the Axios interceptor, so handle Access 401s explicitly. */
-class CloudflareAccessAuthenticationError extends Error {
-  constructor() {
-    super('Cloudflare Access authentication required');
-    this.name = 'CloudflareAccessAuthenticationError';
-  }
-}
-
 async function checkCloudflareAccessResponse(response: Response): Promise<void> {
   const accessFailure = await reloadForCloudflareAccess({
     response: { status: response.status, headers: response.headers },
   });
-  if (accessFailure) throw new CloudflareAccessAuthenticationError();
+  if (accessFailure) throw new CloudflareAccessError();
 }
 
 /** Exécute `run` sous un signal d'abandon armé pour `timeoutMs`. */
@@ -282,7 +276,7 @@ export async function extractFullContent(url: string): Promise<ExtractedContent>
   } catch (error) {
     // An Access 401 requires a top-level re-authentication, not a second
     // request to the same protected backend route.
-    if (error instanceof CloudflareAccessAuthenticationError) throw error;
+    if (error instanceof CloudflareAccessError) throw error;
     /* repli */
   }
 

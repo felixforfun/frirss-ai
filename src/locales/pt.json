@@ -562,6 +562,7 @@
     "backToLogin": "Iniciar sessão",
     "registrationDisabled": "Os registos estão desativados.",
     "errorLogin": "Credenciais incorretas.",
+    "errorAccessSession": "A sua sessão do Cloudflare expirou. Inicie sessão novamente para continuar.",
     "errorRegister": "Erro ao criar a conta.",
     "errorUsernameTaken": "Este nome de utilizador já está em uso.",
     "errorPasswordShort": "A palavra-passe deve ter pelo menos 6 caracteres.",

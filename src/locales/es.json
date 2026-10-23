@@ -562,6 +562,7 @@
     "backToLogin": "Iniciar sesión",
     "registrationDisabled": "Los registros están desactivados.",
     "errorLogin": "Credenciales incorrectas.",
+    "errorAccessSession": "Tu sesión de Cloudflare ha caducado. Inicia sesión de nuevo para continuar.",
     "errorRegister": "Error al crear la cuenta.",
     "errorUsernameTaken": "Este nombre de usuario ya está en uso.",
     "errorPasswordShort": "La contraseña debe tener al menos 6 caracteres.",
