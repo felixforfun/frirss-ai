@@ -104,19 +104,27 @@ describe('rankInterestingArticles', () => {
   });
 
   it('diversifies repeated sources without banning them for the rest of the list', () => {
+    // Mêmes textes ET même horodatage, posés explicitement : ce test éprouve
+    // la règle de diversification des sources, pas la pendule. Laissés à
+    // Date.now(), les cinq articles reçoivent des âges différents à la
+    // milliseconde selon la charge de la machine ; les scores alors très
+    // légèrement inégaux se départent sur ce bruit avant la
+    // diversification, et l'ordre attendu — feed/b en troisième position —
+    // devient aléatoire (environ 1 échec sur 15, vu en CI sur main).
+    const published = Date.parse('2026-01-15T12:00:00Z');
     const sameSource = [
-      article('a', 'AI chip research', 'Artificial intelligence advances'),
-      article('b', 'AI chip research', 'Artificial intelligence advances'),
-      article('c', 'AI chip research', 'Artificial intelligence advances'),
-      article('d', 'AI chip research', 'Artificial intelligence advances'),
+      article('a', 'AI chip research', 'Artificial intelligence advances', published),
+      article('b', 'AI chip research', 'Artificial intelligence advances', published),
+      article('c', 'AI chip research', 'Artificial intelligence advances', published),
+      article('d', 'AI chip research', 'Artificial intelligence advances', published),
     ];
     sameSource.forEach((item) => { item.sourceId = 'feed/a'; });
-    const otherSource = article('other', 'AI chip research', 'Artificial intelligence advances');
+    const otherSource = article('other', 'AI chip research', 'Artificial intelligence advances', published);
     otherSource.sourceId = 'feed/b';
     const ranked = rankInterestingArticles(
       [...sameSource, otherSource],
       [feedback('AI chip research', 'Artificial intelligence advances', 1)],
-      Date.now(),
+      published + 3_600_000,
       'combined',
     );
     expect(ranked[2].sourceId).toBe('feed/b');
