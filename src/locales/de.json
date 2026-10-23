@@ -562,6 +562,7 @@
     "backToLogin": "Anmelden",
     "registrationDisabled": "Registrierungen sind deaktiviert.",
     "errorLogin": "Ungültige Anmeldedaten.",
+    "errorAccessSession": "Ihre Cloudflare-Sitzung ist abgelaufen. Melden Sie sich erneut an, um fortzufahren.",
     "errorRegister": "Fehler beim Erstellen des Kontos.",
     "errorUsernameTaken": "Dieser Benutzername ist bereits vergeben.",
     "errorPasswordShort": "Das Passwort muss mindestens 6 Zeichen lang sein.",

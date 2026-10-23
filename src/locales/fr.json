@@ -562,6 +562,7 @@
     "backToLogin": "Se connecter",
     "registrationDisabled": "Les inscriptions sont désactivées.",
     "errorLogin": "Identifiants incorrects.",
+    "errorAccessSession": "Votre session Cloudflare a expiré. Reconnectez-vous pour continuer.",
     "errorRegister": "Erreur lors de la création du compte.",
     "errorUsernameTaken": "Ce nom d'utilisateur est déjà pris.",
     "errorPasswordShort": "Le mot de passe doit contenir au moins 6 caractères.",

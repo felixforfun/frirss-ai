@@ -70,6 +70,19 @@ describe('health', () => {
   });
 });
 
+describe('access recovery landing', () => {
+  // Cloudflare Access recovery (src/api/client.ts) navigates here: the route
+  // sits under /api/ so the PWA service worker's navigateFallbackDenylist
+  // never answers it, and the request always reaches the network. It must be
+  // public (no JWT — the user has nothing to authenticate with FriRSS yet)
+  // and do nothing but bounce back to the app.
+  it('is public and bounces back to the app', async () => {
+    const res = await request(app).get('/api/auth/access-recovery');
+    expect(res.status).toBe(302);
+    expect(res.headers.location).toBe('/');
+  });
+});
+
 describe('crypto', () => {
   it('round-trips a value', () => {
     const enc = encrypt('secret-token');

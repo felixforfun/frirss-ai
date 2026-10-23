@@ -13,7 +13,8 @@ import {
   type OidcConfig,
 } from '../../api/backend';
 import { login as freshrssLogin } from '../../api/auth';
-import { loginErrorKey, serverConnectErrorKey } from '../../lib/loginErrors';
+import { resetCloudflareAccessRecovery } from '../../api/client';
+import { loginErrorKey, serverConnectErrorKey, isCloudflareAccessError } from '../../lib/loginErrors';
 import { useFeedStore } from '../../stores/feedStore';
 import MatrixRain from './MatrixRain';
 import RestoreFlow from '../backup/RestoreFlow';
@@ -124,6 +125,11 @@ function AuthStep({ onSuccess, oidcError }: AuthStepProps) {
     }
 
     setLoading(true);
+    // Une nouvelle tentative explicite repart d'une récupération vierge :
+    // le délai de grâce sert à calmer des échecs en fond qui déclencheraient
+    // navigation sur navigation, pas à refuser le clic que l'utilisateur
+    // vient de faire.
+    resetCloudflareAccessRecovery();
     try {
       let data;
       if (mode === 'register') {
@@ -137,7 +143,12 @@ function AuthStep({ onSuccess, oidcError }: AuthStepProps) {
       const ax = err as { response?: { status?: number; data?: { error?: string } } };
       const code = ax.response?.status;
       const msg = ax.response?.data?.error;
-      if (code === 409) {
+      if (isCloudflareAccessError(err)) {
+        // Session Cloudflare Access expirée : les identifiants FriRSS n'ont
+        // rien à voir là-dedans. Le message nomme la vraie cause — dans les
+        // deux modes, connexion et création de compte.
+        setError(t('login.errorAccessSession'));
+      } else if (code === 409) {
         setError(t('login.errorUsernameTaken'));
       } else if (mode === 'register') {
         setError(msg || t('login.errorRegister'));
