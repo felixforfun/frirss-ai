@@ -10,7 +10,7 @@ vi.mock('../stores/authStore', () => ({
   },
 }));
 
-import { BACKEND_AUTH_MARKERS } from '../lib/loginErrors';
+import { BACKEND_AUTH_MARKERS, isCloudflareAccessError } from '../lib/loginErrors';
 import client from './client';
 
 const handlers = (client.interceptors.response as unknown as {
@@ -77,6 +77,22 @@ describe('no hand-built Access login URLs', () => {
       expect(source(file), file).not.toMatch(/cdn-cgi\/access\/login\/\$\{/);
     }
   });
+
+  it('recovers through a path the service worker never intercepts', () => {
+    // The PWA service worker answers every navigation — reloads included —
+    // from its precache (vite.config.js `navigateFallback`), so recovery can
+    // only work if it navigates somewhere the SW is told to ignore. The
+    // landing lives under /api/ because navigateFallbackDenylist excludes
+    // exactly that prefix; if either side drifts, the recovery navigation is
+    // swallowed by the precache again and becomes a silent no-op — the bug
+    // in the deployed PWA this pairing exists to catch.
+    const vite = readFileSync(new URL('../../vite.config.js', import.meta.url), 'utf8');
+    expect(vite).toContain('navigateFallback:');
+    expect(vite).toContain('[/^\\/api\\//]');
+    const clientSource = readFileSync(new URL('./client.ts', import.meta.url), 'utf8');
+    expect(clientSource).toContain("'/api/auth/access-recovery'");
+    expect(clientSource).not.toMatch(/window\.location\.reload\(\)/);
+  });
 });
 
 describe('Cloudflare Access 401 handling', () => {
@@ -94,7 +110,7 @@ describe('Cloudflare Access 401 handling', () => {
     expect(values.get('frirss:cloudflare-access-reload-at')).toBe('123');
   });
 
-  it('reloads once for an Access fingerprint and stops without navigating', async () => {
+  it('navigates once to the Access recovery landing and stops without navigating', async () => {
     const reload = vi.fn();
     const assign = vi.fn();
     const values = new Map<string, string>();
@@ -108,17 +124,25 @@ describe('Cloudflare Access 401 handling', () => {
     };
     vi.stubGlobal('window', fakeWindow);
 
-    await expect(rejected(proxyError(401, 'Unauthorized', {
+    const first = await rejected(proxyError(401, 'Unauthorized', {
       'www-authenticate': 'Cloudflare-Access',
-    }))).rejects.toThrow('Cloudflare Access authentication required');
+    })).catch((e: unknown) => e);
+    // Typed, so the login screen can name the real cause ("Cloudflare session
+    // expired") instead of blaming the FriRSS credentials.
+    expect(isCloudflareAccessError(first)).toBe(true);
+    expect((first as Error).message).toBe('Cloudflare Access authentication required');
     await expect(rejected(proxyError(401, 'Unauthorized', {
       'www-authenticate': 'Cloudflare-Access realm="example"',
     }))).rejects.toThrow('Cloudflare Access authentication required');
-    expect(reload).toHaveBeenCalledTimes(1);
-    expect(assign).not.toHaveBeenCalled();
+    // The landing is a document request the service worker cannot answer —
+    // unlike a reload, which the precache swallows (see vite.config.js).
+    expect(assign).toHaveBeenCalledTimes(1);
+    expect(assign).toHaveBeenCalledWith('/api/auth/access-recovery');
+    expect(reload).not.toHaveBeenCalled();
 
-    // A reload did not restore Access: FriRSS must stop, never navigate. Any
-    // hand-built login URL would 404 without Cloudflare's signed kid+meta.
+    // The landing did not restore Access (cooldown still active): FriRSS must
+    // stop, never navigate elsewhere. Any hand-built login URL would 404
+    // without Cloudflare's signed kid+meta.
     const loginValues = new Map<string, string>([['frirss:cloudflare-access-reload-at', String(Date.now())]]);
     const secondReload = vi.fn();
     const secondAssign = vi.fn();
@@ -186,14 +210,47 @@ describe('Cloudflare Access 401 handling', () => {
       },
     });
     await expect(freshRejected(bounce)).rejects.toThrow('Cloudflare Access authentication required');
-    expect(reload).toHaveBeenCalledTimes(1);
-    expect(assign).not.toHaveBeenCalled();
+    expect(assign).toHaveBeenCalledTimes(1);
+    expect(assign).toHaveBeenCalledWith('/api/auth/access-recovery');
+    expect(reload).not.toHaveBeenCalled();
 
     // An unrelated network error is not an Access failure.
     await expect(freshRejected(Object.assign(new Error('Network Error'), {
       request: { responseURL: 'https://rss.example.test/api/proxy' },
     }))).rejects.toThrow('Network Error');
-    expect(reload).toHaveBeenCalledTimes(1);
+    expect(assign).toHaveBeenCalledTimes(1);
+  });
+
+  it('lets an explicit retry start a fresh recovery immediately', async () => {
+    const assign = vi.fn();
+    const values = new Map<string, string>();
+    vi.stubGlobal('window', {
+      location: { reload: vi.fn(), assign, origin: 'https://rss.example.test', host: 'rss.example.test', pathname: '/', search: '', hash: '' },
+      sessionStorage: {
+        getItem: (key: string) => values.get(key) ?? null,
+        setItem: (key: string, value: string) => { values.set(key, value); },
+        removeItem: (key: string) => { values.delete(key); },
+      },
+    });
+    vi.resetModules();
+    const freshClient = await import('./client');
+    const freshRejected = (freshClient.default.interceptors.response as unknown as {
+      handlers: { rejected: (error: unknown) => Promise<unknown> }[];
+    }).handlers[0].rejected;
+    const access401 = proxyError(401, 'Unauthorized', {
+      'www-authenticate': 'Cloudflare-Access',
+    });
+
+    await expect(freshRejected(access401)).rejects.toThrow('Cloudflare Access authentication required');
+    expect(assign).toHaveBeenCalledTimes(1);
+
+    // The sign-in submit clears the state before retrying: the cooldown and
+    // the in-memory guard exist to calm background failure storms, not to
+    // refuse the attempt the user just asked for.
+    freshClient.resetCloudflareAccessRecovery();
+    expect(values.has('frirss:cloudflare-access-reload-at')).toBe(false);
+    await expect(freshRejected(access401)).rejects.toThrow('Cloudflare Access authentication required');
+    expect(assign).toHaveBeenCalledTimes(2);
   });
 });
 

@@ -562,6 +562,7 @@
     "backToLogin": "Log in",
     "registrationDisabled": "Registration is disabled.",
     "errorLogin": "Invalid credentials.",
+    "errorAccessSession": "Your Cloudflare session has expired. Sign in again to continue.",
     "errorRegister": "Error creating account.",
     "errorUsernameTaken": "This username is already taken.",
     "errorPasswordShort": "Password must be at least 6 characters.",
