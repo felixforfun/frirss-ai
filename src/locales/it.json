@@ -562,6 +562,7 @@
     "backToLogin": "Accedi",
     "registrationDisabled": "Le registrazioni sono disattivate.",
     "errorLogin": "Credenziali errate.",
+    "errorAccessSession": "La tua sessione Cloudflare è scaduta. Accedi di nuovo per continuare.",
     "errorRegister": "Errore durante la creazione dell'account.",
     "errorUsernameTaken": "Questo nome utente è già in uso.",
     "errorPasswordShort": "La password deve contenere almeno 6 caratteri.",

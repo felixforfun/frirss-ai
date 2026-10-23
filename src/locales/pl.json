@@ -574,6 +574,7 @@
     "backToLogin": "Zaloguj się",
     "registrationDisabled": "Rejestracje są wyłączone.",
     "errorLogin": "Nieprawidłowe dane logowania.",
+    "errorAccessSession": "Twoja sesja Cloudflare wygasła. Zaloguj się ponownie, aby kontynuować.",
     "errorRegister": "Błąd podczas tworzenia konta.",
     "errorUsernameTaken": "Ta nazwa użytkownika jest już zajęta.",
     "errorPasswordShort": "Hasło musi mieć co najmniej 6 znaków.",

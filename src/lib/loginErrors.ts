@@ -1,4 +1,40 @@
 /**
+ * Rejetée quand l'échec vient de la session Cloudflare Access, pas des
+ * identifiants FriRSS.
+ *
+ * Les intercepteurs (`src/api/backend.ts`, `src/api/client.ts`) lancent cette
+ * erreur à la place du 401 d'origine dès que `reloadForCloudflareAccess`
+ * confirme l'empreinte Access. Sans ce marqueur typé, l'écran de connexion ne
+ * pouvait pas distinguer « votre session Cloudflare a fondu » d'un refus de
+ * nos propres identifiants : un 401 sans corps reconnaissable retombait sur
+ * `login.errorLogin` — « identifiants incorrects » — pendant que la vraie
+ * cause, une session Access expirée, continuait de s'afficher nulle part.
+ *
+ * Le message reste celui d'avant (`Cloudflare Access authentication
+ * required`) : les tests d'intercepteur s'y accrochent, et il décrit
+ * exactement ce qui s'est passé.
+ */
+export class CloudflareAccessError extends Error {
+  constructor() {
+    super('Cloudflare Access authentication required');
+    this.name = 'CloudflareAccessError';
+  }
+}
+
+/**
+ * Cet échec est-il celui de Cloudflare Access ?
+ *
+ * Le `name` est vérifié en plus de `instanceof` : une erreur peut traverser
+ * une frontière de module (double chargement lors d'un test avec
+ * `vi.resetModules()`) où `instanceof` ne voit plus la même classe. Le nom de
+ * domaine est public et stable, il traverse ces frontières.
+ */
+export function isCloudflareAccessError(err: unknown): boolean {
+  return err instanceof CloudflareAccessError ||
+    (err as { name?: string } | null)?.name === 'CloudflareAccessError';
+}
+
+/**
  * Clé i18n décrivant un échec de connexion.
  *
  * L'écran affirmait « identifiants incorrects » pour TOUTE panne : un 429, un
@@ -9,6 +45,11 @@
  * Seul un 401 dit réellement « ces identifiants ne conviennent pas ».
  */
 export function loginErrorKey(err: unknown): string {
+  // Une session Cloudflare Access expirée arrive ici en 401 (ou en erreur de
+  // réseau après un rebond sur la page d'accueil hébergée) : le mot de passe
+  // n'a rien à voir là-dedans, et lui parler d'« identifiants incorrects »
+  // enverrait l'utilisateur retaper un mot de passe pourtant juste.
+  if (isCloudflareAccessError(err)) return 'login.errorAccessSession';
   const status = (err as { response?: { status?: number } })?.response?.status;
   if (status === 401 || status === 403) return 'login.errorLogin';
   if (status === 429) return 'login.errorTooMany';

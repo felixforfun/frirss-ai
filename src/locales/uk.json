@@ -574,6 +574,7 @@
     "backToLogin": "Увійти",
     "registrationDisabled": "Реєстрація вимкнена.",
     "errorLogin": "Невірні облікові дані.",
+    "errorAccessSession": "Вашу сесію Cloudflare завершено. Увійдіть знову, щоб продовжити.",
     "errorRegister": "Помилка під час створення облікового запису.",
     "errorUsernameTaken": "Це ім'я користувача вже зайняте.",
     "errorPasswordShort": "Пароль має містити щонайменше 6 символів.",

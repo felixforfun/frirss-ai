@@ -230,6 +230,19 @@ router.get('/status', (req, res) => {
   });
 });
 
+// ── GET /api/auth/access-recovery ───────────────────────────────────
+// Public landing for Cloudflare Access recovery (src/api/client.ts).
+//
+// This route exists only to be a DOCUMENT request that the PWA service
+// worker never answers: vite.config.js excludes /^\/api\// from
+// navigateFallback, so a navigation here always reaches the network.
+// Cloudflare sees an unauthenticated document, mints its own challenge
+// (with the signed kid+meta parameters FriRSS must never build itself),
+// and redirects back to the app. Nothing renders: a 302 does the rest.
+router.get('/access-recovery', (req, res) => {
+  res.redirect(302, '/');
+});
+
 // ── GET /api/auth/oidc/config ───────────────────────────────────────
 // Public: returns whether SSO is enabled + the button label
 router.get('/oidc/config', (req, res) => {

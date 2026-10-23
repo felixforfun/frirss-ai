@@ -10,6 +10,7 @@ vi.mock('../stores/authStore', () => ({
 }));
 
 import backend from './backend';
+import { isCloudflareAccessError } from '../lib/loginErrors';
 
 const handlers = (backend.interceptors.response as unknown as {
   handlers: {
@@ -74,19 +75,27 @@ describe('backend response interceptor: Access vs FriRSS auth', () => {
     // The exact fingerprint of an expired Cloudflare Access session on an
     // XHR (previously a 302 to the login page, which surfaced as a CORS
     // network error on /api/preferences and never triggered recovery).
-    await expect(freshRejected(error401({
+    const caught = await freshRejected(error401({
       'www-authenticate': 'Cloudflare-Access resource_metadata="https://rss.example.test/.well-known/cloudflare-access-protected-resource/api/preferences"',
-    }))).rejects.toThrow('Cloudflare Access authentication required');
-    expect(reload).toHaveBeenCalledTimes(1);
-    expect(assign).not.toHaveBeenCalled();
+    })).catch((e: unknown) => e);
+    // Typed, so the login screen can name the real cause ("Cloudflare session
+    // expired") instead of blaming the FriRSS credentials.
+    expect(isCloudflareAccessError(caught)).toBe(true);
+    expect((caught as Error).message).toBe('Cloudflare Access authentication required');
+    // The recovery landing is a document request the service worker cannot
+    // answer — unlike a reload, which the PWA precache swallows.
+    expect(assign).toHaveBeenCalledTimes(1);
+    expect(assign).toHaveBeenCalledWith('/api/auth/access-recovery');
+    expect(reload).not.toHaveBeenCalled();
     expect(logoutBackend).not.toHaveBeenCalled();
   });
 
   it('does not misclassify an Access 401 during cooldown as a FriRSS login failure', async () => {
     const reload = vi.fn();
+    const assign = vi.fn();
     const now = Date.now();
     vi.stubGlobal('window', {
-      location: { reload, assign: vi.fn(), origin: 'https://rss.example.test', host: 'rss.example.test', pathname: '/', search: '', hash: '' },
+      location: { reload, assign, origin: 'https://rss.example.test', host: 'rss.example.test', pathname: '/', search: '', hash: '' },
       sessionStorage: {
         getItem: (key: string) => key === 'frirss:cloudflare-access-reload-at' ? String(now - 1000) : null,
         setItem: vi.fn(),
@@ -103,6 +112,7 @@ describe('backend response interceptor: Access vs FriRSS auth', () => {
       'www-authenticate': 'Cloudflare-Access resource_metadata="https://rss.example.test/.well-known/cloudflare-access-protected-resource/api/auth/login"',
     }))).rejects.toThrow('Cloudflare Access authentication required');
     expect(reload).not.toHaveBeenCalled();
+    expect(assign).not.toHaveBeenCalled();
     expect(logoutBackend).not.toHaveBeenCalled();
   });
 
@@ -114,12 +124,13 @@ describe('backend response interceptor: Access vs FriRSS auth', () => {
   });
 
   it('ignores other statuses and network errors', async () => {
-    const { reload } = stubWindow();
+    const { reload, assign } = stubWindow();
     for (const status of [400, 403, 429, 500, 502]) {
       await reject({ response: { status, headers: {} } });
     }
     await reject(new Error('Network Error'));
     expect(logoutBackend).not.toHaveBeenCalled();
     expect(reload).not.toHaveBeenCalled();
+    expect(assign).not.toHaveBeenCalled();
   });
 });
