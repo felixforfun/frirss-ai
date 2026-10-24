@@ -29,10 +29,18 @@ const MAX_REDIRECTS = 5;
 const MAX_TIMEMAP_BYTES = 64 * 1024;
 const MAX_PROBE_BYTES = 32 * 1024;
 const MAX_SNAPSHOT_CHECKS = 5;
-const TIMEMAP_TIMEOUT_MS = 7_000;
+const TIMEMAP_TIMEOUT_MS = 5_000;
 const TIMEMAP_BODY_TIMEOUT_MS = 2_000;
 const SNAPSHOT_TIMEOUT_MS = 4_000;
 const PROBE_BODY_TIMEOUT_MS = 2_000;
+// archive.is is canonical but unreachable from some networks while the other
+// hostnames serve the same snapshots from different edges. The resolver fails
+// over down this order instead of hard-failing on the first hostname.
+const MIRROR_HOSTS = [
+  'archive.is', 'archive.ph', 'archive.today', 'archive.md', 'archive.li',
+  'archive.fo', 'archive.vn', 'archive.st', 'archive.gs',
+] as const;
+const TIMEMAP_MIRROR_ATTEMPTS = 3;
 
 export type ArchiveResolveResult =
   | { status: 'ok'; url: string; timestamp: string }
@@ -91,11 +99,6 @@ export function normalizeArticleUrl(raw: string): string | null {
     if (k.startsWith('utm_') || k === 'mod') url.searchParams.delete(key);
   }
   return url.toString();
-}
-
-function timeMapUrl(originalUrl: string): string {
-  // TimeMap expects the original URL appended to the endpoint, including its query.
-  return `https://archive.is/timemap/${originalUrl}`;
 }
 
 /** Parse RFC 7089 link-format; rel values can contain several whitespace-separated tokens. */
@@ -160,6 +163,27 @@ async function fetchArchive(
       continue;
     }
     return { response, url: current };
+  }
+  return null;
+}
+
+/**
+ * Try the timemap on several archive mirrors in order. All hostnames serve the
+ * same backend, but their reachability differs per network — archive.is in
+ * particular hangs from some vantage points while archive.ph/archive.today
+ * respond. Returns the first mirror that answers, or null when none does
+ * (the caller turns that into soft_block, as before).
+ */
+async function fetchTimeMapWithFailover(
+  originalUrl: string,
+  headers: Record<string, string>,
+): Promise<{ response: Response; url: string } | null> {
+  for (const host of MIRROR_HOSTS.slice(0, TIMEMAP_MIRROR_ATTEMPTS)) {
+    let result: { response: Response; url: string } | null = null;
+    try {
+      result = await fetchArchive(`https://${host}/timemap/${originalUrl}`, headers, TIMEMAP_TIMEOUT_MS);
+    } catch { result = null; }
+    if (result) return result;
   }
   return null;
 }
@@ -274,6 +298,7 @@ interface ResolveTrace {
   isWelt: boolean;
   welt?: { premium: boolean; ms: number };
   publisher?: { result: string; ms: number };
+  timemapSource?: string;
   timemap?: { httpStatus: number | null; contentType: string | null; count: number; ms: number };
   snapshots?: Array<{ url: string; usable: boolean; httpStatus: number | null; contentType: string | null; ms: number }>;
   winner?: string | null;
@@ -312,43 +337,54 @@ async function snapshotLooksUsable(
 ): Promise<boolean> {
   const startedAt = Date.now();
   let row: { url: string; usable: boolean; httpStatus: number | null; contentType: string | null; ms: number };
-  try {
-    const result = await fetchArchive(snapshotUrl, {
+  // The snapshot URL is normalized to archive.is by parseTimeMap, but that
+  // hostname hangs from some networks; try the other mirrors in order.
+  let target = snapshotUrl;
+  for (let attempt = 0; attempt < TIMEMAP_MIRROR_ATTEMPTS; attempt++) {
+    if (attempt > 0) {
+      try {
+        const next = new URL(target);
+        next.hostname = MIRROR_HOSTS[attempt];
+        target = next.toString();
+      } catch { break; }
+    }
+    try {
+      const result = await fetchArchive(target, {
       Accept: 'text/html',
       'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36',
       Range: `bytes=0-${MAX_PROBE_BYTES - 1}`,
     }, SNAPSHOT_TIMEOUT_MS);
-    if (!result) {
-      row = { url: snapshotUrl, usable: false, httpStatus: null, contentType: null, ms: Date.now() - startedAt };
+      if (!result) continue;
+      const { response, url } = result;
+      const status = response.status;
+      const contentType = response.headers.get('content-type');
+      if (!isArchiveHost(new URL(url).hostname) || !response.ok) {
+        await cancelBody(response);
+        row = { url: target, usable: false, httpStatus: status, contentType, ms: Date.now() - startedAt };
+        if (trace?.snapshots) trace.snapshots.push(row);
+        return false;
+      }
+      if (!(contentType || '').toLowerCase().includes('text/html')) {
+        await cancelBody(response);
+        row = { url: target, usable: false, httpStatus: status, contentType, ms: Date.now() - startedAt };
+        if (trace?.snapshots) trace.snapshots.push(row);
+        return false;
+      }
+      const html = await readPrefixText(response, MAX_PROBE_BYTES, PROBE_BODY_TIMEOUT_MS);
+      const usable = html !== null && !looksLikeChallengePage(html, publisherHostname);
+      row = { url: target, usable, httpStatus: status, contentType, ms: Date.now() - startedAt };
       if (trace?.snapshots) trace.snapshots.push(row);
-      return false;
+      return usable;
+    } catch (error) {
+      if (attempt === TIMEMAP_MIRROR_ATTEMPTS - 1) {
+        row = { url: target, usable: false, httpStatus: null, contentType: null, ms: Date.now() - startedAt };
+        if (trace?.snapshots) trace.snapshots.push(row);
+        if (trace) trace.error = 'probe: ' + String((error as Error)?.message || error).slice(0, 200);
+        return false;
+      }
     }
-    const { response, url } = result;
-    const status = response.status;
-    const contentType = response.headers.get('content-type');
-    if (!isArchiveHost(new URL(url).hostname) || !response.ok) {
-      await cancelBody(response);
-      row = { url: snapshotUrl, usable: false, httpStatus: status, contentType, ms: Date.now() - startedAt };
-      if (trace?.snapshots) trace.snapshots.push(row);
-      return false;
-    }
-    if (!(contentType || '').toLowerCase().includes('text/html')) {
-      await cancelBody(response);
-      row = { url: snapshotUrl, usable: false, httpStatus: status, contentType, ms: Date.now() - startedAt };
-      if (trace?.snapshots) trace.snapshots.push(row);
-      return false;
-    }
-    const html = await readPrefixText(response, MAX_PROBE_BYTES, PROBE_BODY_TIMEOUT_MS);
-    const usable = html !== null && !looksLikeChallengePage(html, publisherHostname);
-    row = { url: snapshotUrl, usable, httpStatus: status, contentType, ms: Date.now() - startedAt };
-    if (trace?.snapshots) trace.snapshots.push(row);
-    return usable;
-  } catch (error) {
-    row = { url: snapshotUrl, usable: false, httpStatus: null, contentType: null, ms: Date.now() - startedAt };
-    if (trace?.snapshots) trace.snapshots.push(row);
-    if (trace) trace.error = 'probe: ' + String((error as Error)?.message || error).slice(0, 200);
-    return false;
   }
+  return false;
 }
 
 const memoryCache = new Map<string, { expiresAt: number; value: ArchiveResolveResult }>();
@@ -546,11 +582,26 @@ async function resolveForUser(userId: number, rawUrl: string, domains: string[])
     }
     const publisher = new URL(publisherUrl);
 
-    const lookupStartedAt = Date.now();
-    const lookup = await fetchArchive(timeMapUrl(publisherUrl), {
+    // All archive mirrors serve the same timemap; archive.is hangs from some
+    // networks, so try mirrors in order instead of betting on one hostname.
+    // A URL carrying share-tracking query parameters (wsj.com ?st=…&reflink=…,
+    // washingtonpost.com ?linkNumber=…) 404s here although snapshots exist —
+    // they are indexed under the bare URL — so retry without the query.
+    const timemapHeaders = {
       Accept: 'application/link-format',
       'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36',
-    }, TIMEMAP_TIMEOUT_MS);
+    };
+    const lookupStartedAt = Date.now();
+    let lookup = await fetchTimeMapWithFailover(publisherUrl, timemapHeaders);
+    let lookupSource = 'url';
+    if (!lookup && new URL(publisherUrl).search) {
+      const bare = normalizeArticleUrl(new URL(publisherUrl).origin + new URL(publisherUrl).pathname);
+      if (bare && bare !== publisherUrl) {
+        lookup = await fetchTimeMapWithFailover(bare, timemapHeaders);
+        lookupSource = 'bare';
+      }
+    }
+    trace.timemapSource = lookupSource;
     if (!lookup) {
       trace.timemap = { httpStatus: null, contentType: null, count: 0, ms: Date.now() - lookupStartedAt };
       trace.duration_ms = Date.now() - startedAt;
