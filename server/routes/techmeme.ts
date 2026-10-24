@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { requireAuth } from '../middleware/auth.js';
+import db from '../db.js';
 
 const router = Router();
 router.use(requireAuth);
@@ -92,6 +93,10 @@ export function isTechmemePermalink(rawUrl: string): URL | null {
   return requested;
 }
 
+export function canonicalPermalinkKey(requested: URL): string {
+  return requested.pathname.replace(/\/$/, '');
+}
+
 /**
  * Resolve a validated Techmeme permalink against the live RSS feed by reading
  * the response the caller supplies: `fetchUpstream` returns the Response — the
@@ -154,8 +159,28 @@ export async function resolveFromFeed(requested: URL, upstreamFeed: typeof fetch
 router.get('/resolve', async (req, res) => {
   const rawUrl = typeof req.query.url === 'string' ? req.query.url : '';
   const requested = isTechmemePermalink(rawUrl);
-  if (!requested) return res.status(400).json({ url: null });
-  return res.json({ url: await resolveFromFeed(requested) });
+  if (!requested) return res.status(400).json({ url: null, domain: null });
+
+  // Persistent mapping first: feed items rotate out within hours, and the
+  // mapping itself is stable — an old story must still resolve after it left
+  // the feed. Keyed by pathname so fragment and host variants share an entry.
+  const key = canonicalPermalinkKey(requested);
+  const cached = db.prepare('SELECT canonical_url, publisher_domain FROM techmeme_resolutions WHERE permalink_path = ?').get(key) as { canonical_url: string; publisher_domain: string } | undefined;
+  if (cached) {
+    return res.json({ url: cached.canonical_url, domain: cached.publisher_domain, cached: true });
+  }
+
+  const publisher = await resolveFromFeed(requested);
+  if (publisher) {
+    let domain = '';
+    try { domain = new URL(publisher).hostname.replace(/^www\./, ''); } catch { domain = ''; }
+    db.prepare(
+      'INSERT INTO techmeme_resolutions (permalink_path, canonical_url, publisher_domain, resolved_at) VALUES (?, ?, ?, datetime(\'now\')) ' +
+      'ON CONFLICT(permalink_path) DO UPDATE SET canonical_url = excluded.canonical_url, publisher_domain = excluded.publisher_domain, resolved_at = excluded.resolved_at'
+    ).run(key, publisher, domain);
+    return res.json({ url: publisher, domain, cached: false });
+  }
+  return res.json({ url: null, domain: null });
 });
 
 export default router;

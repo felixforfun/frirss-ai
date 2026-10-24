@@ -1,5 +1,19 @@
-import { describe, it, expect, vi, afterEach } from 'vitest';
-import { isTechmemePermalink, publisherLink, sameTechmemeStory, tagText, resolveFromFeed } from './techmeme.js';
+import { describe, it, expect, vi, afterEach, afterAll, beforeEach } from 'vitest';
+import express from 'express';
+import request from 'supertest';
+import type { Express, Request, Response, NextFunction } from 'express';
+import { isTechmemePermalink, canonicalPermalinkKey, publisherLink, sameTechmemeStory, tagText, resolveFromFeed } from './techmeme.js';
+import db from '../db.js';
+
+// Mount trick from `server/test/proxyRateLimit.test.ts`: replace the JWT
+// middleware so the route is reachable without a session.
+vi.mock('../middleware/auth.js', () => ({
+  requireAuth: (req: Request, _res: Response, next: NextFunction) => {
+    (req as Request & { user: unknown }).user = { id: 1, username: 'tester', role: 'user', email: '', display_name: '', active: 1, auth_provider: 'local' };
+    next();
+  },
+  requireAdmin: (_req: Request, _res: Response, next: NextFunction) => next(),
+}));
 
 // Fixtures are REAL items from https://www.techmeme.com/feed.xml?x=1
 // (2026-10-24), with only whitespace trimmed. They cover the two description
@@ -150,5 +164,96 @@ describe('resolveFromFeed', () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+});
+
+// ── Route montée : auth stub + fetch stub + base isolée ────────────────
+// Même motif que server/test/proxyRateLimit.test.ts : vi.resetModules() pour
+// que chaque bloc charge la route avec son propre fetch doublé.
+async function buildApp(): Promise<{ app: import('express').Express }> {
+  vi.resetModules();
+  const techmeme = await import('./techmeme.js');
+  const app = express();
+  app.use(express.json());
+  app.use('/api/techmeme', techmeme.default);
+  return { app };
+}
+
+// Résolution réussie puis FEUILLE DÉPOURTÉE : la deuxième demande arrive avec
+// une feed qui ne contient PLUS l'histoire — seul l'achat depuis la table
+// peut la résoudre.
+describe('GET /resolve (persistent canonical mapping)', () => {
+  beforeEach(() => {
+    vi.stubGlobal('fetch', feedResponse(FEED_FIXTURE) as unknown as typeof fetch);
+  });
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+  afterAll(() => {
+    db.prepare('DELETE FROM techmeme_resolutions').run();
+  });
+
+  it('stores the mapping on first hit and answers later misses from the table', async () => {
+    const { app } = await buildApp();
+    const target = 'https://www.techmeme.com/261023/p28#a261023p28';
+    const first = await request(app).get(`/api/techmeme/resolve?url=${encodeURIComponent(target)}`);
+    expect(first.status).toBe(200);
+    expect(first.body).toEqual({
+      url: 'https://www.androidauthority.com/google-personal-intelligence-privacy-3727111/',
+      domain: 'androidauthority.com',
+      cached: false,
+    });
+
+    // La feed ne contient plus l'histoire, mais la table si.
+    vi.stubGlobal('fetch', feedResponse('<rss version="2.0"><channel></channel></rss>') as unknown as typeof fetch);
+    const second = await request(app).get(`/api/techmeme/resolve?url=${encodeURIComponent(target)}`);
+    expect(second.status).toBe(200);
+    expect(second.body).toEqual({
+      url: 'https://www.androidauthority.com/google-personal-intelligence-privacy-3727111/',
+      domain: 'androidauthority.com',
+      cached: true,
+    });
+  });
+
+  it('keeps a single row per permalink across repeated resolutions (no duplicates)', async () => {
+    const { app } = await buildApp();
+    const target = 'https://www.techmeme.com/261023/p27#a261023p27';
+    const first = await request(app).get(`/api/techmeme/resolve?url=${encodeURIComponent(target)}`);
+    expect(first.status).toBe(200);
+    expect(first.body.url).toBe('https://www.theinformation.com/briefings/aws-sold-capacity-2028-jassy-says');
+    // Seconde résolution (host différent, même item) : UPSERT, pas une ligne.
+    vi.stubGlobal('fetch', feedResponse(FEED_FIXTURE) as unknown as typeof fetch);
+    await request(app).get(`/api/techmeme/resolve?url=${encodeURIComponent('https://techmeme.com/261023/p27')}`);
+    const rows = db.prepare('SELECT COUNT(*) AS n FROM techmeme_resolutions WHERE permalink_path = ?').get('/261023/p27') as { n: number };
+    expect(rows.n).toBe(1);
+  });
+
+  it('answers a miss with url:null and stores nothing', async () => {
+    const { app } = await buildApp();
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const r = await request(app).get(`/api/techmeme/resolve?url=${encodeURIComponent('https://www.techmeme.com/230101/p99#a230101p99')}`);
+    expect(r.status).toBe(200);
+    expect(r.body).toEqual({ url: null, domain: null });
+    const rows = db.prepare('SELECT COUNT(*) AS n FROM techmeme_resolutions WHERE permalink_path = ?').get('/230101/p99') as { n: number };
+    expect(rows.n).toBe(0);
+    expect(warn).toHaveBeenCalledWith('[techmeme] resolve miss: story not in feed');
+  });
+
+  it('still rejects non-Techmeme and non-permalink targets with 400', async () => {
+    const { app } = await buildApp();
+    for (const bad of [
+      'https://www.androidauthority.com/google-personal-intelligence-privacy-3727111/',
+      'https://www.techmeme.com/',
+      'not a URL',
+    ]) {
+      const r = await request(app).get(`/api/techmeme/resolve?url=${encodeURIComponent(bad)}`);
+      expect(r.status, bad).toBe(400);
+      expect(r.body).toEqual({ url: null, domain: null });
+    }
+  });
+
+  it('canonicalPermalinkKey is fragment/host insensitive', () => {
+    expect(canonicalPermalinkKey(new URL('https://www.techmeme.com/261024/p2#a261024p2'))).toBe('/261024/p2');
+    expect(canonicalPermalinkKey(new URL('http://techmeme.com/261024/p2'))).toBe('/261024/p2');
   });
 });

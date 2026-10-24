@@ -48,7 +48,9 @@ export function openArticleAtSource(
   article: Article,
   selectArticle: (article: Article | null) => void,
 ): void {
-  if (!article.url?.trim()) return;
-  openArchiveAware(article.url);
+  // Item Techmeme résolu : on ouvre l'article éditeur, pas l'emballage.
+  const target = article.canonicalUrl || article.url;
+  if (!target?.trim()) return;
+  openArchiveAware(target);
   selectArticle(article);
 }

@@ -21,6 +21,15 @@ export interface Article {
   source: string;
   /** streamId de la source (origin.streamId) — clé des compteurs non-lus */
   sourceId: string;
+  /**
+   * Cible canonique résolue pour les articles Techmeme : l'URL de l'article
+   * original chez l'éditeur. Laissée vide pour tout article dont l'`url`
+   * pointe déjà chez l'éditeur ; les actions utilisateur et l'affichage
+   * préfèrent cette cible quand elle existe, SANS remplacer l'identité
+   * FreshRSS (`id`, état lu/favori/labels — l'item Techmeme reste la
+   * source d'enregistrement).
+   */
+  canonicalUrl?: string;
   /** Timestamp en millisecondes */
   published: number;
   /**

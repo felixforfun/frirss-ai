@@ -49,9 +49,14 @@ export default function IntelligenceFeedback({ article, compact = false }: { art
         setVote(null);
         window.dispatchEvent(new Event('frirss-intelligence-feedback-changed'));
       } else {
+        // Techmeme résolu : le vote porte sur l'article éditeur (les signaux
+        // externes et les rapprochements s'indexent par URL), mais la clé
+        // `articleId` reste l'item FreshRSS — un vote par article, jamais de
+        // doublon entre les deux identités.
+        const voteUrl = article.canonicalUrl || article.url || '';
         await setArticleFeedback({
           articleId: article.id,
-          url: article.url || '',
+          url: voteUrl,
           title: article.title || '',
           summary: article.summary || '',
           content: article.content || '',

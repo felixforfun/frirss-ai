@@ -24,6 +24,7 @@ import { IMAGE_CACHE_NAME } from '../../lib/storageEstimate';
 import { recordArticleOpen } from '../../api/readingStats';
 import { useAuthStore } from '../../stores/authStore';
 import { getAiSummaryConfig, getCachedAiSummary, summarizeArticle, resolveTechmemeArticleUrl, type AiSummaryConfig } from '../../api/backend';
+import { isTechmemePermalinkUrl, canonicalOrSelf, canonicalPathKey } from '../../lib/canonicalArticle';
 import { findTextRanges } from '../../lib/articleFind';
 import MarkdownSummary from './MarkdownSummary';
 import SavedCategoryPicker from '../ArticleList/SavedCategoryPicker';
@@ -1025,8 +1026,18 @@ export default function ReadingPane({ showBack }: ReadingPaneProps) {
       // Techmeme permalinks are story wrappers. Resolve them to the lead
       // publisher URL while the RSS entry is available; on a miss, keep the
       // original Techmeme URL and use the existing extraction path.
-      const publisherUrl = await resolveTechmemeArticleUrl(url.href);
-      if (publisherUrl) url = new URL(publisherUrl);
+      const clickedUrl = url.href;
+      const publisherUrl = await resolveTechmemeArticleUrl(clickedUrl);
+      if (publisherUrl) {
+        url = new URL(publisherUrl);
+        // Si le lien cliqué est le permalink de l'item sélectionné, la
+        // résolution devient la cible canonique de CET article pour toute
+        // l'interface (un autre lien Techmeme, lui, ne concerne pas l'item).
+        const selected = useFeedStore.getState().selectedArticle;
+        if (selected && canonicalPathKey(selected.url) === canonicalPathKey(clickedUrl)) {
+          useFeedStore.getState().applyCanonicalUrl(selected.id, publisherUrl);
+        }
+      }
       const extraction = (async () => {
         const { extractFullContent } = await import('../../utils/extractContent');
         return extractFullContent(url.href);
@@ -1123,7 +1134,13 @@ export default function ReadingPane({ showBack }: ReadingPaneProps) {
       const articleUrl = new URL(selectedArticle.url);
       techmemePermalink = ['techmeme.com', 'www.techmeme.com'].includes(articleUrl.hostname.toLowerCase());
       if (techmemePermalink) {
-        techmemePublisherUrl = await resolveTechmemeArticleUrl(articleUrl.href);
+        // Already canonical (primeCanonicalArticle wrote the store): no call.
+        const canonical = selectedArticle.canonicalUrl ?? await resolveTechmemeArticleUrl(articleUrl.href);
+        if (canonical) {
+          techmemePublisherUrl = canonical;
+          // Share the resolution with the whole UI: display, other actions.
+          useFeedStore.getState().applyCanonicalUrl(selectedArticle.id, canonical);
+        }
       }
     } catch { /* keep the normal extraction fallback */ }
     if (!stillCurrent()) return;
@@ -1475,11 +1492,11 @@ export default function ReadingPane({ showBack }: ReadingPaneProps) {
         {/* Open original */}
         {article.url && (
           <a
-            href={linkedPage?.url || article.url}
+            href={linkedPage?.url || canonicalOrSelf(article)}
             target="_blank"
             rel="noopener noreferrer"
-            onClick={(event) => handleArchiveAnchorClick(event, linkedPage?.url || article.url || undefined)}
-            onAuxClick={(event) => handleArchiveAnchorAuxClick(event, linkedPage?.url || article.url || undefined)}
+            onClick={(event) => handleArchiveAnchorClick(event, linkedPage?.url || canonicalOrSelf(article) || undefined)}
+            onAuxClick={(event) => handleArchiveAnchorAuxClick(event, linkedPage?.url || canonicalOrSelf(article) || undefined)}
             className="action-btn flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] font-semibold transition-all duration-200"
             style={{
               color: 'var(--reading-meta)',
@@ -1497,7 +1514,7 @@ export default function ReadingPane({ showBack }: ReadingPaneProps) {
         {/* Partager / copier le lien */}
         {article.url && (
           <button
-            onClick={() => shareArticle(linkedPage?.content.title || article.title, linkedPage?.url || article.url || '')}
+            onClick={() => shareArticle(linkedPage?.content.title || article.title, linkedPage?.url || canonicalOrSelf(article))}
             className="action-btn flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] font-semibold transition-all duration-200"
             style={{ color: 'var(--reading-meta)', border: '1.5px solid transparent' }}
             title={t('readingPane.copyLink')}
@@ -1669,19 +1686,26 @@ export default function ReadingPane({ showBack }: ReadingPaneProps) {
             onClick={handleArticleArchiveClick}
             onAuxClick={handleArticleArchiveAuxClick}
           >
-          {/* Source / Author / Date / Reading time. Linked pages use their own metadata. */}
+          {/* Source / Author / Date / Reading time. Linked pages use their own metadata.
+              For a Techmeme item resolved to its publisher article, the publisher takes the
+              source slot — same component, same styling as any other article. The feed
+              identity stays in the article list, which keeps showing the Techmeme feed. */}
           {(() => {
             const linkedUrl = linkedPage ? new URL(linkedPage.url) : null;
             const linkedSource = linkedPage
               ? (linkedPage.content.siteName || linkedUrl?.hostname.replace(/^www\./, '') || article.source)
               : article.source;
+            const canonicalPublisher = !linkedPage && article.canonicalUrl && isTechmemePermalinkUrl(article.url)
+              ? new URL(article.canonicalUrl).hostname.replace(/^www\./, '')
+              : null;
+            const displaySource = canonicalPublisher || linkedSource;
             const linkedAuthor = linkedPage ? linkedPage.content.byline : article.author;
             const headerDate = linkedPage ? (linkedPage.content.publishedDate ? formatArticleDate(Date.parse(linkedPage.content.publishedDate)) : '') : date;
             return isMobileOrTablet ? (
               <div className="flex items-stretch gap-3 mb-3">
                 <div className="flex-1 min-w-0">
                   <div className="text-xs font-semibold uppercase tracking-wide truncate" style={{ color: 'var(--list-source)' }}>
-                    {linkedSource}
+                    {displaySource}
                   </div>
                   <div className="text-xs truncate mt-0.5" style={{ color: 'var(--reading-meta)' }}>
                     {linkedAuthor ? `${linkedAuthor}${headerDate ? ' · ' : ''}` : ''}{headerDate}
@@ -1696,7 +1720,7 @@ export default function ReadingPane({ showBack }: ReadingPaneProps) {
               </div>
             ) : (
               <div className="flex items-center gap-2 mb-3">
-                <span className="text-xs font-semibold uppercase tracking-wide" style={{ color: 'var(--list-source)' }}>{linkedSource}</span>
+                <span className="text-xs font-semibold uppercase tracking-wide" style={{ color: 'var(--list-source)' }}>{displaySource}</span>
                 {linkedAuthor && <><span style={{ color: 'var(--reading-meta)' }}>·</span><span className="text-xs" style={{ color: 'var(--reading-meta)' }}>{linkedAuthor}</span></>}
                 {headerDate && <><span style={{ color: 'var(--reading-meta)' }}>·</span><span className="text-xs" style={{ color: 'var(--reading-meta)' }}>{headerDate}</span></>}
                 {!linkedPage && showReadingTime && <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium" style={{ color: 'var(--accent)', background: 'var(--accent-glow)' }}><svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>{readingTime} min</span>}
@@ -1712,7 +1736,7 @@ export default function ReadingPane({ showBack }: ReadingPaneProps) {
               </h1>
             </a>
           ) : article.url ? (
-            <a href={article.url} target="_blank" rel="noopener noreferrer" onClick={(event) => handleArchiveAnchorClick(event, article.url || undefined)} onAuxClick={(event) => handleArchiveAnchorAuxClick(event, article.url || undefined)} className="block mb-4 hover:underline" title={t('readingPane.openOriginal')}>
+            <a href={canonicalOrSelf(article)} target="_blank" rel="noopener noreferrer" onClick={(event) => handleArchiveAnchorClick(event, canonicalOrSelf(article) || undefined)} onAuxClick={(event) => handleArchiveAnchorAuxClick(event, canonicalOrSelf(article) || undefined)} className="block mb-4 hover:underline" title={t('readingPane.openOriginal')}>
               <h1 dir="auto" className="font-bold leading-tight article-title-target" data-theme="reading-title" style={{ color: 'var(--reading-title)', fontSize: 'var(--fs-reading-title)' }}>{article.title}</h1>
             </a>
           ) : (
