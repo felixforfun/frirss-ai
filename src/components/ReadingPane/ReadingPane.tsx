@@ -23,7 +23,7 @@ import { formatArticleDate } from '../../utils/dates';
 import { IMAGE_CACHE_NAME } from '../../lib/storageEstimate';
 import { recordArticleOpen } from '../../api/readingStats';
 import { useAuthStore } from '../../stores/authStore';
-import { getAiSummaryConfig, getCachedAiSummary, summarizeArticle, type AiSummaryConfig } from '../../api/backend';
+import { getAiSummaryConfig, getCachedAiSummary, summarizeArticle, resolveTechmemeArticleUrl, type AiSummaryConfig } from '../../api/backend';
 import { findTextRanges } from '../../lib/articleFind';
 import MarkdownSummary from './MarkdownSummary';
 import SavedCategoryPicker from '../ArticleList/SavedCategoryPicker';
@@ -1022,6 +1022,11 @@ export default function ReadingPane({ showBack }: ReadingPaneProps) {
     try {
       // A linked-page fetch must never leave the reader in a permanent loading state.
       // Bound the whole extraction attempt, including a slow backend/proxy response.
+      // Techmeme permalinks are story wrappers. Resolve them to the lead
+      // publisher URL while the RSS entry is available; on a miss, keep the
+      // original Techmeme URL and use the existing extraction path.
+      const publisherUrl = await resolveTechmemeArticleUrl(url.href);
+      if (publisherUrl) url = new URL(publisherUrl);
       const extraction = (async () => {
         const { extractFullContent } = await import('../../utils/extractContent');
         return extractFullContent(url.href);
