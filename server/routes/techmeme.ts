@@ -20,30 +20,54 @@ function decodeXml(value: string): string {
     .trim();
 }
 
-function tagText(item: string, tag: string): string {
+export function tagText(item: string, tag: string): string {
   const match = item.match(new RegExp('<' + tag + '(?:\\s[^>]*)?>([\\s\\S]*?)</' + tag + '\\s*>', 'i'));
   return match ? decodeXml(match[1]) : '';
 }
 
-function publisherLink(description: string): string | null {
-  // Techmeme's RSS descriptions include the lead story as an anchor around an image.
+function hrefOf(anchor: string): string | null {
+  const match = anchor.match(/\bhref\s*=\s*(?:"([^"]+)"|'([^']+)'|([^\s>]+))/i);
+  if (!match) return null;
+  const url = nonTechmemeUrl(decodeXml(match[1] ?? match[2] ?? match[3] ?? ''));
+  return url;
+}
+
+function nonTechmemeUrl(raw: string): string | null {
+  try {
+    const url = new URL(raw);
+    if ((url.protocol === 'https:' || url.protocol === 'http:') && !TECHMEME_HOSTS.has(url.hostname.toLowerCase())) {
+      return url.toString();
+    }
+  } catch { /* ignore malformed RSS link */ }
+  return null;
+}
+
+export function publisherLink(description: string): string | null {
+  // Techmeme's RSS descriptions carry the lead publisher URL in one of two places.
+  // Items with a lead photo wrap it in an anchor around an image; items without
+  // one (paywalled outlets, social sources) only carry it inside the bold
+  // headline anchor, so that structure is the fallback — without it, roughly a
+  // fifth of the feed's items resolve to nothing and silently fall back to the
+  // Techmeme wrapper page.
   const html = decodeXml(description);
   const anchors = html.match(/<a\b[^>]*>[\s\S]*?<\/a\s*>/gi) || [];
   for (const anchor of anchors) {
     if (!/<img\b/i.test(anchor)) continue;
-    const href = anchor.match(/\bhref\s*=\s*(?:"([^"]+)"|'([^']+)'|([^\s>]+))/i);
-    const raw = decodeXml(href?.[1] || href?.[2] || href?.[3] || '');
-    try {
-      const url = new URL(raw);
-      if ((url.protocol === 'https:' || url.protocol === 'http:') && !TECHMEME_HOSTS.has(url.hostname.toLowerCase())) {
-        return url.toString();
-      }
-    } catch { /* ignore malformed RSS link */ }
+    const found = hrefOf(anchor);
+    if (found) return found;
+  }
+  const bolds = html.match(/<b\b[^>]*>([\s\S]*?)<\/b\s*>/gi) || [];
+  for (const bold of bolds) {
+    const headlineAnchors = bold.match(/<a\b[^>]*>[\s\S]*?<\/a\s*>/gi) || [];
+    for (const anchor of headlineAnchors) {
+      const found = hrefOf(anchor);
+      if (found) return found;
+    }
   }
   return null;
 }
 
-function sameTechmemeStory(a: string, b: string): boolean {
+export function sameTechmemeStory(a: string, b: string): boolean {
   try {
     const left = new URL(a);
     const right = new URL(b);
@@ -57,26 +81,36 @@ function sameTechmemeStory(a: string, b: string): boolean {
   }
 }
 
-router.get('/resolve', async (req, res) => {
-  const rawUrl = typeof req.query.url === 'string' ? req.query.url : '';
+export function isTechmemePermalink(rawUrl: string): URL | null {
   let requested: URL;
-  try { requested = new URL(rawUrl); } catch { return res.status(400).json({ url: null }); }
+  try { requested = new URL(rawUrl); } catch { return null; }
   if (!TECHMEME_HOSTS.has(requested.hostname.toLowerCase())
     || !/^\/(?:\d{6}\/)?p\d+$/i.test(requested.pathname)
     || (requested.protocol !== 'https:' && requested.protocol !== 'http:')) {
-    return res.status(400).json({ url: null });
+    return null;
   }
+  return requested;
+}
 
+/**
+ * Resolve a validated Techmeme permalink against the live RSS feed by reading
+ * the response the caller supplies: `fetchUpstream` returns the Response — the
+ * route passes `fetch` itself, tests pass a stub.
+ */
+export async function resolveFromFeed(requested: URL, upstreamFeed: typeof fetch = fetch): Promise<string | null> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), FEED_TIMEOUT_MS);
   try {
-    const response = await fetch(TECHMEME_FEED_URL, {
+    const response = await upstreamFeed(TECHMEME_FEED_URL, {
       headers: { Accept: 'application/rss+xml, application/xml, text/xml' },
       signal: controller.signal,
     });
-    if (!response.ok) return res.json({ url: null });
+    if (!response.ok) {
+      console.warn('[techmeme] feed fetch failed with HTTP', response.status);
+      return null;
+    }
     const reader = response.body?.getReader();
-    if (!reader) return res.json({ url: null });
+    if (!reader) return null;
     const chunks: Uint8Array[] = [];
     let size = 0;
     try {
@@ -86,7 +120,7 @@ router.get('/resolve', async (req, res) => {
         size += value.byteLength;
         if (size > MAX_FEED_BYTES) {
           await reader.cancel().catch(() => {});
-          return res.json({ url: null });
+          return null;
         }
         chunks.push(value);
       }
@@ -95,19 +129,33 @@ router.get('/resolve', async (req, res) => {
     }
     const xml = new TextDecoder().decode(Buffer.concat(chunks.map((chunk) => Buffer.from(chunk))));
     const items = xml.match(/<item\b[\s\S]*?<\/item\s*>/gi) || [];
+    let storyInFeed = false;
     for (const item of items) {
       const permalink = tagText(item, 'link');
       if (!permalink || !sameTechmemeStory(permalink, requested.toString())) continue;
+      storyInFeed = true;
       const publisher = publisherLink(tagText(item, 'description'));
-      if (publisher) return res.json({ url: publisher });
+      if (publisher) return publisher;
     }
-    return res.json({ url: null });
+    // Diagnostics for misses, logged path-free: the access log deliberately
+    // keeps URLs out of the journal, and this console line should too.
+    console.warn(storyInFeed
+      ? '[techmeme] resolve miss: RSS item has no publisher link'
+      : '[techmeme] resolve miss: story not in feed');
+    return null;
   } catch {
     // Resolution is best-effort; the reader should fall back to the Techmeme URL.
-    return res.json({ url: null });
+    return null;
   } finally {
     clearTimeout(timer);
   }
+}
+
+router.get('/resolve', async (req, res) => {
+  const rawUrl = typeof req.query.url === 'string' ? req.query.url : '';
+  const requested = isTechmemePermalink(rawUrl);
+  if (!requested) return res.status(400).json({ url: null });
+  return res.json({ url: await resolveFromFeed(requested) });
 });
 
 export default router;

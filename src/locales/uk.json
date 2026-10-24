@@ -171,6 +171,7 @@
     "more": "Більше",
     "extracting": "Отримання…",
     "extractError": "Помилка під час отримання повної статті",
+    "techmemeResolveError": "Не вдалося знайти оригінальну статтю цієї новини Techmeme",
     "retry": "Повторити",
     "showRss": "Вміст RSS",
     "readingTime": "{{count}} хв",
