@@ -14,7 +14,12 @@ export function isArchiveEligibleUrl(rawUrl: string | null | undefined): boolean
   try { url = new URL(rawUrl); } catch { return false; }
   if (url.protocol !== 'http:' && url.protocol !== 'https:') return false;
   const domains = useUiStore.getState().archiveDomains;
-  return hostnameMatchesDomain(url.hostname, domains)
+  const host = url.hostname.toLowerCase().replace(/\\.$/, '');
+  // WELT article eligibility is decided server-side from the article's own
+  // JSON-LD metadata; do not add welt.de to the generic domain allowlist,
+  // which would archive free WELT articles too.
+  const isWelt = host === 'welt.de' || host.endsWith('.welt.de');
+  return isWelt || hostnameMatchesDomain(url.hostname, domains)
     || (domains.length > 0 && isArchiveRedirectWrapper(url.hostname));
 }
 
