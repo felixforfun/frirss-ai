@@ -350,7 +350,8 @@ async function snapshotLooksUsable(
     }
     try {
       const result = await fetchArchive(target, {
-          'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36',
+        Accept: 'text/html',
+        'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36',
         Range: `bytes=0-${MAX_PROBE_BYTES - 1}`,
       }, SNAPSHOT_TIMEOUT_MS);
       if (!result) continue;
