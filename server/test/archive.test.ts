@@ -76,6 +76,31 @@ describe('Archive.is snapshot resolver', () => {
     expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/timemap/'))).toBe(true);
   });
 
+  it('detects premium WELT metadata in the bounded prefix of a large HTML page', async () => {
+    const original = 'https://www.welt.de/debatte/plus123/large-premium-article.html';
+    const metadata = JSON.stringify({
+      '@context': 'https://schema.org',
+      '@type': 'NewsArticle',
+      url: original,
+      isAccessibleForFree: false,
+    });
+    const largeHtml = `<html><head><script type="application/ld+json">${metadata}</script></head><body>${'x'.repeat(1_600_000)}</body></html>`;
+    fetchMock.mockImplementation(async (url: string) => {
+      const target = String(url);
+      if (target === original) return response(largeHtml, 'text/html');
+      if (target.includes('/timemap/')) return response(timemap(original), 'application/link-format');
+      if (target.includes('/20261017140859/') || target.includes('/20261016021348/')) {
+        return response('<!doctype html><html><head><title>A real archived article</title></head><body><article><p>This is a real archived article body.</p></article></body></html>', 'text/html');
+      }
+      throw new Error(`Unexpected archive fetch: ${target}`);
+    });
+
+    const result = await request(app).get('/api/archive/resolve').query({ url: original });
+
+    expect(result.body.status).toBe('ok');
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/timemap/'))).toBe(true);
+  });
+
   it('does not archive a free WELT article even when unrelated premium teasers may exist on the page', async () => {
     const original = 'https://www.welt.de/kultur/article123/free-article.html';
     const metadata = JSON.stringify({
