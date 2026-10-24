@@ -3058,6 +3058,7 @@ qu'un terme n'est pas déjà pris avant de le réutiliser.
 | ALL | `/api/proxy` | Passage vers FreshRSS ; extraction d'articles en repli |
 | GET | `/api/extract` | Article extrait côté serveur, depuis le cache partagé ou fraîchement |
 | GET | `/api/archive/resolve` | Résout le dernier instantané Archive.is utilisable pour un domaine autorisé, sinon renvoie un repli neutre |
+| GET | `/api/techmeme/resolve` | Résout l'article principal lié depuis une page Techmeme |
 
 ---
 
