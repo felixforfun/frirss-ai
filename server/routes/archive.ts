@@ -7,6 +7,14 @@ import { cacheEnabled, cacheGet, cacheSet, cacheKey } from '../cache.js';
 const router = Router();
 router.use(requireAuth);
 if (proxyRateLimiter) router.use(proxyRateLimiter);
+// Resolve verdicts are per-click decisions with their own server-side cache.
+// Express's default ETag lets the browser cache a verdict and revalidate it
+// with 304s, which pins a transient failure in the browser long after the
+// server would have recovered.
+router.use((_req, res, next) => {
+  res.setHeader('Cache-Control', 'no-store');
+  next();
+});
 
 const DEFAULT_DOMAINS = [
   'wsj.com', 'ft.com', 'bloomberg.com', 'economist.com',
@@ -481,11 +489,22 @@ async function resolveForUser(userId: number, rawUrl: string, domains: string[])
   const isWelt = hostMatches(parsedOriginal.hostname, WELT_DOMAINS);
   if (!hostMatches(parsedOriginal.hostname, domains) && !isWelt
     && ![...REDIRECT_WRAPPERS].some((wrapper) => parsedOriginal.hostname === wrapper || parsedOriginal.hostname.endsWith('.' + wrapper))) {
+    recordTrace({ requested: rawUrl, isWelt, duration_ms: 0 }, 'not_allowed');
     return { status: 'not_allowed' };
   }
 
+  const safetyStartedAt = Date.now();
   try { await assertTargetSafe(normalisedUrl); }
-  catch { return { status: 'error' }; }
+  catch (error) {
+    // DIAGNOSTIC (temporary): make the pre-pipeline guard failure observable.
+    recordTrace({
+      requested: rawUrl,
+      isWelt,
+      error: 'assertTargetSafe: ' + String((error as Error)?.message || error).slice(0, 300),
+      duration_ms: Date.now() - safetyStartedAt,
+    }, 'error');
+    return { status: 'error' };
+  }
 
   const key = `archive-resolve:${normalisedUrl}:${[...domains].sort().join(',')}`;
   const cached = await readCache(userId, key);
