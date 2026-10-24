@@ -2,34 +2,16 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import express from 'express';
 import request from 'supertest';
 
-const { preference, fetchMock, assertSafeMock, dbRows } = vi.hoisted(() => ({
+const { preference, fetchMock, assertSafeMock } = vi.hoisted(() => ({
   preference: { value: JSON.stringify(['wsj.com', 'ft.com']) as string | undefined },
   fetchMock: vi.fn(),
   assertSafeMock: vi.fn().mockResolvedValue(undefined),
-  dbRows: [] as Array<{ id: number; at: string; requested_url: string; final_status: string; trace: string }>,
 }));
 
 vi.mock('../db.js', () => ({
   default: {
-    exec: () => { /* diagnostics table not created under the test mock */ },
-    prepare: (sql: string) => {
-      if (sql.includes('SELECT value FROM preferences')) {
-        return { get: () => preference.value ? { value: preference.value } : undefined };
-      }
-      if (sql.includes('INSERT INTO archive_resolve_debug')) {
-        return {
-          run: (url: string, status: string, trace: string) => {
-            dbRows.push({ id: dbRows.length + 1, at: 'test', requested_url: url, final_status: status, trace });
-            return { changes: 1 };
-          },
-        };
-      }
-      if (sql.includes('SELECT id, at, requested_url')) {
-        return { all: () => [...dbRows].reverse() };
-      }
-      // Unrecognised test SQL: behave like an empty result.
-      return { run: () => ({ changes: 0 }), get: () => undefined, all: () => [] };
-    },
+    exec: () => { /* schema cleanup not run under the test mock */ },
+    prepare: () => ({ get: () => preference.value ? { value: preference.value } : undefined }),
   },
 }));
 vi.mock('../middleware/auth.js', () => ({
@@ -266,30 +248,6 @@ describe('Archive.is snapshot resolver', () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
-  it('records the resolve decision path for diagnostics', async () => {
-    const original = 'https://www.ft.com/content/diagnostic-trace';
-    fetchMock.mockImplementation(async (url: string) => {
-      const target = String(url);
-      if (target.includes('/timemap/')) return response(timemap(original), 'application/link-format');
-      if (target.includes('/20261017140859/') || target.includes('/20261016021348/')) {
-        return response('<!doctype html><html><head><title>A real archived article</title></head><body><article><p>A real archived article body for diagnostics.</p></article></body></html>', 'text/html');
-      }
-      throw new Error(`Unexpected archive fetch: ${target}`);
-    });
-
-    const resolved = await request(app).get('/api/archive/resolve').query({ url: original });
-    expect(resolved.body.status).toBe('ok');
-
-    const debug = await request(app).get('/api/archive/debug');
-    expect(debug.status).toBe(200);
-    const row = (debug.body.rows || []).find((entry: { requested_url: string }) => entry.requested_url === original);
-    expect(row).toBeTruthy();
-    expect(row.final_status).toBe('ok');
-    expect(row.trace.timemap.count).toBeGreaterThanOrEqual(1);
-    expect(row.trace.snapshots.some((s: { usable: boolean }) => s.usable)).toBe(true);
-    expect(row.trace.winner).toContain(original);
-  });
-
   it('fails the timemap over to another mirror when archive.is is unreachable', async () => {
     const original = 'https://www.wsj.com/world/mirror-failover-article';
     fetchMock.mockImplementation(async (url: string) => {
@@ -335,9 +293,6 @@ describe('Archive.is snapshot resolver', () => {
 
     expect(result.body.status).toBe('ok');
     expect(result.body.url).toBe(`https://archive.is/20261017140859/${bare}`);
-    const row = dbRows.find((entry) => entry.requested_url === original);
-    expect(row?.final_status).toBe('ok');
-    expect(JSON.parse(row?.trace || '{}').timemapSource).toBe('bare');
   });
 
   it('probes the snapshot on another mirror when the canonical host is unreachable', async () => {

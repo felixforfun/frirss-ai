@@ -3058,7 +3058,6 @@ qu'un terme n'est pas déjà pris avant de le réutiliser.
 | ALL | `/api/proxy` | Passage vers FreshRSS ; extraction d'articles en repli |
 | GET | `/api/extract` | Article extrait côté serveur, depuis le cache partagé ou fraîchement |
 | GET | `/api/archive/resolve` | Résout le dernier instantané Archive.is utilisable pour un domaine autorisé, sinon renvoie un repli neutre |
-| GET | `/api/archive/debug` | Diagnostic temporaire : renvoie les traces de décision des dernières résolutions Archive.is |
 | GET | `/api/techmeme/resolve` | Résout l'article principal lié depuis une page Techmeme |
 
 ---
@@ -3120,7 +3119,6 @@ For the account-configured domain allowlist in Preferences → AI summaries, ope
 - **Route**: GET `/api/archive/resolve`
 - **Default domains**: WSJ, FT, Bloomberg, The Economist, NYT, SPIEGEL, The Washington Post, and Süddeutsche Zeitung. The list can be edited or cleared in Preferences → AI summaries.
 - **Safety**: Archive HTML is only probed with a size and time limit and is never embedded in FriRSS. Requests use the existing outbound SSRF guard and redirect validation.
-- **Diagnostic (temporary)**: GET `/api/archive/debug` returns the newest resolver decision traces (premium detection, timemap result, per-snapshot probes) recorded in the local database, to triage a failing resolve without container access. Intended for removal once the failure is identified.
 
 ## Intelligence and article feedback (MVP)
 
