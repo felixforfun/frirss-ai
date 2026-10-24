@@ -167,6 +167,7 @@
     "more": "Meer",
     "extracting": "Extraheren…",
     "extractError": "Fout bij het ophalen van het volledige artikel",
+    "techmemeResolveError": "Kon het originele artikel van dit Techmeme-bericht niet vinden",
     "retry": "Opnieuw proberen",
     "showRss": "RSS-inhoud",
     "readingTime": "{{count}} min",

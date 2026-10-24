@@ -11,6 +11,7 @@ vi.mock('../stores/authStore', () => ({
 
 import backend from './backend';
 import { isCloudflareAccessError } from '../lib/loginErrors';
+import { resolveTechmemeArticleUrl } from './backend';
 
 const handlers = (backend.interceptors.response as unknown as {
   handlers: {
@@ -132,5 +133,36 @@ describe('backend response interceptor: Access vs FriRSS auth', () => {
     expect(logoutBackend).not.toHaveBeenCalled();
     expect(reload).not.toHaveBeenCalled();
     expect(assign).not.toHaveBeenCalled();
+  });
+});
+
+describe('resolveTechmemeArticleUrl', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('skips the request for anything that is not a Techmeme URL', async () => {
+    const get = vi.spyOn(backend, 'get');
+    expect(await resolveTechmemeArticleUrl('https://www.androidauthority.com/google-personal-intelligence-privacy-3727111/')).toBeNull();
+    expect(get).not.toHaveBeenCalled();
+  });
+
+  it('calls GET /techmeme/resolve and returns a normalized publisher URL', async () => {
+    const get = vi.spyOn(backend, 'get').mockResolvedValue({ data: { url: 'https://www.androidauthority.com/google-personal-intelligence-privacy-3727111/' } });
+    const url = 'https://www.techmeme.com/261023/p28#a261023p28';
+    expect(await resolveTechmemeArticleUrl(url)).toBe('https://www.androidauthority.com/google-personal-intelligence-privacy-3727111/');
+    expect(get.mock.calls[0]?.[0]).toBe('/techmeme/resolve');
+    const params = (get.mock.calls[0]?.[1] as { params?: { url?: string } } | undefined)?.params;
+    expect(params?.url).toBe('https://www.techmeme.com/261023/p28#a261023p28');
+  });
+
+  it('returns null on a null resolution, a bad payload and request failure', async () => {
+    const get = vi.spyOn(backend, 'get');
+    get.mockResolvedValueOnce({ data: { url: null } });
+    expect(await resolveTechmemeArticleUrl('https://www.techmeme.com/261023/p28#a261023p28')).toBeNull();
+    get.mockResolvedValueOnce({ data: {} });
+    expect(await resolveTechmemeArticleUrl('https://www.techmeme.com/261023/p28#a261023p28')).toBeNull();
+    get.mockRejectedValueOnce(new Error('timeout'));
+    expect(await resolveTechmemeArticleUrl('https://www.techmeme.com/261023/p28#a261023p28')).toBeNull();
   });
 });

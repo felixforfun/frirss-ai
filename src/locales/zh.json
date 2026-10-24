@@ -167,6 +167,7 @@
     "more": "更多",
     "extracting": "提取中…",
     "extractError": "获取全文失败",
+    "techmemeResolveError": "未能找到这篇 Techmeme 报道的原始文章",
     "retry": "重试",
     "showRss": "RSS 内容",
     "readingTime": "{{count}} 分钟",

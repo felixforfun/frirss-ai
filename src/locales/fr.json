@@ -167,6 +167,7 @@
     "more": "Plus",
     "extracting": "Extraction…",
     "extractError": "Erreur lors de la récupération de l'article complet",
+    "techmemeResolveError": "Impossible de trouver l’article original de cette actualité Techmeme",
     "retry": "Réessayer",
     "showRss": "Contenu RSS",
     "readingTime": "{{count}} min",

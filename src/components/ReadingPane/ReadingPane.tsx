@@ -1118,9 +1118,11 @@ export default function ReadingPane({ showBack }: ReadingPaneProps) {
     // from an earlier extraction. The full-text toolbar action must use the
     // publisher URL too (not only links clicked inside article content).
     let techmemePublisherUrl: string | null = null;
+    let techmemePermalink = false;
     try {
       const articleUrl = new URL(selectedArticle.url);
-      if (['techmeme.com', 'www.techmeme.com'].includes(articleUrl.hostname.toLowerCase())) {
+      techmemePermalink = ['techmeme.com', 'www.techmeme.com'].includes(articleUrl.hostname.toLowerCase());
+      if (techmemePermalink) {
         techmemePublisherUrl = await resolveTechmemeArticleUrl(articleUrl.href);
       }
     } catch { /* keep the normal extraction fallback */ }
@@ -1140,6 +1142,14 @@ export default function ReadingPane({ showBack }: ReadingPaneProps) {
       } finally {
         setExtracting(false);
       }
+      return;
+    }
+    // A Techmeme permalink the resolve left open (story no longer in feed, or
+    // feed fetch failed) gets an explicit error instead of a silent extraction
+    // of techmeme.com, which only shows Techmeme's own wrapper page as if it
+    // were full text.
+    if (techmemePermalink) {
+      setExtractError(t('readingPane.techmemeResolveError'));
       return;
     }
     // 1) Memory hit → instant (e.g. swiping back, prefetched).
