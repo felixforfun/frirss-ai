@@ -287,56 +287,15 @@ export function looksLikeChallengePage(html: string, publisherHostname: string):
   return false;
 }
 
-/**
- * DIAGNOSTIC (temporary): decision-path trace for one resolve attempt.
- * Written to the local SQLite file (bounded to the newest rows) so a failing
- * deployment can be inspected through /api/archive/debug without SSH or
- * container-log access. Remove together with the /debug route once shipped.
- */
-interface ResolveTrace {
-  requested: string;
-  isWelt: boolean;
-  welt?: { premium: boolean; ms: number };
-  publisher?: { result: string; ms: number };
-  timemapSource?: string;
-  timemap?: { httpStatus: number | null; contentType: string | null; count: number; ms: number };
-  snapshots?: Array<{ url: string; usable: boolean; httpStatus: number | null; contentType: string | null; ms: number }>;
-  winner?: string | null;
-  error?: string;
-  duration_ms: number;
-}
-
-// DIAGNOSTIC (temporary): bounded table holding the newest resolve traces.
-db.exec(`
-  CREATE TABLE IF NOT EXISTS archive_resolve_debug (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    at TEXT NOT NULL DEFAULT (datetime('now')),
-    requested_url TEXT NOT NULL,
-    final_status TEXT NOT NULL,
-    trace TEXT NOT NULL
-  );
-`);
-
-function recordTrace(trace: ResolveTrace, finalStatus: string): void {
-  try {
-    db.prepare(`
-      INSERT INTO archive_resolve_debug (requested_url, final_status, trace)
-      VALUES (?, ?, ?)
-    `).run(trace.requested.slice(0, 2000), finalStatus, JSON.stringify(trace));
-    db.prepare(`
-      DELETE FROM archive_resolve_debug
-      WHERE id NOT IN (SELECT id FROM archive_resolve_debug ORDER BY id DESC LIMIT 200)
-    `).run();
-  } catch { /* diagnostics must never break resolution */ }
-}
+// DIAGNOSTIC (temporary) cleanup: earlier builds recorded resolver decision
+// traces in this bounded table for /api/archive/debug. That instrumentation is
+// gone again; drop the table and its disposable contents.
+db.exec('DROP TABLE IF EXISTS archive_resolve_debug');
 
 async function snapshotLooksUsable(
   snapshotUrl: string,
   publisherHostname: string,
-  trace?: ResolveTrace,
 ): Promise<boolean> {
-  const startedAt = Date.now();
-  let row: { url: string; usable: boolean; httpStatus: number | null; contentType: string | null; ms: number };
   // The snapshot URL is normalized to archive.is by parseTimeMap, but that
   // hostname hangs from some networks; try the other mirrors in order.
   let target = snapshotUrl;
@@ -356,32 +315,19 @@ async function snapshotLooksUsable(
       }, SNAPSHOT_TIMEOUT_MS);
       if (!result) continue;
       const { response, url } = result;
-      const status = response.status;
       const contentType = response.headers.get('content-type');
       if (!isArchiveHost(new URL(url).hostname) || !response.ok) {
         await cancelBody(response);
-        row = { url: target, usable: false, httpStatus: status, contentType, ms: Date.now() - startedAt };
-        if (trace?.snapshots) trace.snapshots.push(row);
         return false;
       }
       if (!(contentType || '').toLowerCase().includes('text/html')) {
         await cancelBody(response);
-        row = { url: target, usable: false, httpStatus: status, contentType, ms: Date.now() - startedAt };
-        if (trace?.snapshots) trace.snapshots.push(row);
         return false;
       }
       const html = await readPrefixText(response, MAX_PROBE_BYTES, PROBE_BODY_TIMEOUT_MS);
-      const usable = html !== null && !looksLikeChallengePage(html, publisherHostname);
-      row = { url: target, usable, httpStatus: status, contentType, ms: Date.now() - startedAt };
-      if (trace?.snapshots) trace.snapshots.push(row);
-      return usable;
-    } catch (error) {
-      if (attempt === TIMEMAP_MIRROR_ATTEMPTS - 1) {
-        row = { url: target, usable: false, httpStatus: null, contentType: null, ms: Date.now() - startedAt };
-        if (trace?.snapshots) trace.snapshots.push(row);
-        if (trace) trace.error = 'probe: ' + String((error as Error)?.message || error).slice(0, 200);
-        return false;
-      }
+      return html !== null && !looksLikeChallengePage(html, publisherHostname);
+    } catch {
+      if (attempt === TIMEMAP_MIRROR_ATTEMPTS - 1) return false;
     }
   }
   return false;
@@ -525,22 +471,11 @@ async function resolveForUser(userId: number, rawUrl: string, domains: string[])
   const isWelt = hostMatches(parsedOriginal.hostname, WELT_DOMAINS);
   if (!hostMatches(parsedOriginal.hostname, domains) && !isWelt
     && ![...REDIRECT_WRAPPERS].some((wrapper) => parsedOriginal.hostname === wrapper || parsedOriginal.hostname.endsWith('.' + wrapper))) {
-    recordTrace({ requested: rawUrl, isWelt, duration_ms: 0 }, 'not_allowed');
     return { status: 'not_allowed' };
   }
 
-  const safetyStartedAt = Date.now();
   try { await assertTargetSafe(normalisedUrl); }
-  catch (error) {
-    // DIAGNOSTIC (temporary): make the pre-pipeline guard failure observable.
-    recordTrace({
-      requested: rawUrl,
-      isWelt,
-      error: 'assertTargetSafe: ' + String((error as Error)?.message || error).slice(0, 300),
-      duration_ms: Date.now() - safetyStartedAt,
-    }, 'error');
-    return { status: 'error' };
-  }
+  catch { return { status: 'error' }; }
 
   const key = `archive-resolve:${normalisedUrl}:${[...domains].sort().join(',')}`;
   const cached = await readCache(userId, key);
@@ -550,29 +485,19 @@ async function resolveForUser(userId: number, rawUrl: string, domains: string[])
   if (inFlight.size >= 64) return { status: 'error' };
 
   const work = (async (): Promise<ArchiveResolveResult> => {
-    const trace: ResolveTrace = { requested: rawUrl, isWelt, duration_ms: 0 };
-    const startedAt = Date.now();
     try {
       // WELT is special: archive only articles explicitly marked paywalled in
       // the matching NewsArticle JSON-LD. Free articles and unknown metadata
       // keep the normal direct-to-publisher behavior.
       if (isWelt) {
-        const detectionStartedAt = Date.now();
         const premium = await isWeltPremiumArticle(normalisedUrl);
-        trace.welt = { premium, ms: Date.now() - detectionStartedAt };
         if (!premium) {
-          trace.duration_ms = Date.now() - startedAt;
-          recordTrace(trace, 'not_allowed');
           return { status: 'not_allowed' };
         }
       }
       const effectiveDomains = isWelt ? [...domains, 'welt.de'] : domains;
-      const publisherStartedAt = Date.now();
       const publisherUrl = await resolvePublisherUrl(normalisedUrl, effectiveDomains);
-      trace.publisher = { result: publisherUrl || 'none', ms: Date.now() - publisherStartedAt };
       if (!publisherUrl) {
-        trace.duration_ms = Date.now() - startedAt;
-        recordTrace(trace, 'not_allowed');
         return { status: 'not_allowed' };
       }
     // The original target was already DNS-checked before this cache lookup.
@@ -593,83 +518,49 @@ async function resolveForUser(userId: number, rawUrl: string, domains: string[])
       Accept: 'application/link-format',
       'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36',
     };
-    const lookupStartedAt = Date.now();
     const initialLookup = await fetchTimeMapWithFailover(publisherUrl, timemapHeaders);
     let lookup = initialLookup && initialLookup.response.ok ? initialLookup : null;
-    let lookupSource = 'url';
-    let failedStatus: number | null = null;
-    let failedContentType: string | null = null;
-    if (initialLookup && !initialLookup.response.ok) {
-      failedStatus = initialLookup.response.status;
-      failedContentType = initialLookup.response.headers.get('content-type');
-      await cancelBody(initialLookup.response);
-    }
+    if (initialLookup && !initialLookup.response.ok) await cancelBody(initialLookup.response);
     if (!lookup && new URL(publisherUrl).search) {
       const bare = normalizeArticleUrl(new URL(publisherUrl).origin + new URL(publisherUrl).pathname);
       if (bare && bare !== publisherUrl) {
         lookup = await fetchTimeMapWithFailover(bare, timemapHeaders);
-        lookupSource = 'bare';
       }
     }
-    trace.timemapSource = lookupSource;
     if (!lookup) {
-      trace.timemap = { httpStatus: failedStatus, contentType: failedContentType, count: 0, ms: Date.now() - lookupStartedAt };
-      trace.duration_ms = Date.now() - startedAt;
-      recordTrace(trace, 'soft_block');
       return { status: 'soft_block' };
     }
     const { response: lookupResponse } = lookup;
-    const lookupStatus = lookupResponse.status;
     const lookupContentType = lookupResponse.headers.get('content-type');
     if (!lookupResponse.ok) {
       await cancelBody(lookupResponse);
-      trace.timemap = { httpStatus: lookupStatus, contentType: lookupContentType, count: 0, ms: Date.now() - lookupStartedAt };
-      trace.duration_ms = Date.now() - startedAt;
-      recordTrace(trace, 'error');
       return { status: 'error' };
     }
     if (!(lookupContentType || '').toLowerCase().includes('application/link-format')) {
       await cancelBody(lookupResponse);
-      trace.timemap = { httpStatus: lookupStatus, contentType: lookupContentType, count: 0, ms: Date.now() - lookupStartedAt };
-      trace.duration_ms = Date.now() - startedAt;
-      recordTrace(trace, 'soft_block');
       return { status: 'soft_block' };
     }
     const timeMap = await readLimitedText(lookupResponse, MAX_TIMEMAP_BYTES, TIMEMAP_BODY_TIMEOUT_MS);
     if (timeMap === null) {
-      trace.timemap = { httpStatus: lookupStatus, contentType: lookupContentType, count: 0, ms: Date.now() - lookupStartedAt };
-      trace.duration_ms = Date.now() - startedAt;
-      recordTrace(trace, 'soft_block');
       return { status: 'soft_block' };
     }
-    trace.timemap = { httpStatus: lookupStatus, contentType: lookupContentType, count: 0, ms: Date.now() - lookupStartedAt };
     const snapshots = parseTimeMap(timeMap).slice(0, 100);
-    trace.timemap.count = snapshots.length;
     if (!snapshots.length) {
-      trace.duration_ms = Date.now() - startedAt;
-      recordTrace(trace, 'no_snapshot');
       return { status: 'no_snapshot' };
     }
 
     // Probe a small fixed number concurrently so one broken snapshot does not
     // leave the new tab blank for a long serial chain of timeouts. Preserve the
     // TimeMap's newest-first order when selecting the winner.
-    trace.snapshots = [];
     const candidates = snapshots.slice(0, MAX_SNAPSHOT_CHECKS);
     const usable = await Promise.all(candidates.map((candidate) =>
-      snapshotLooksUsable(candidate.url, publisher.hostname, trace)));
+      snapshotLooksUsable(candidate.url, publisher.hostname)));
     const winner = candidates.find((candidate, index) => usable[index]);
-    trace.winner = winner ? winner.url : null;
     const outcome = winner
       ? { status: 'ok' as const, url: winner.url, timestamp: winner.timestamp }
       : { status: 'no_good_snapshot' as const };
-    trace.duration_ms = Date.now() - startedAt;
-    recordTrace(trace, outcome.status);
     return outcome;
-    } catch (error) {
-      trace.error = String((error as Error)?.message || error).slice(0, 500);
-      trace.duration_ms = Date.now() - startedAt;
-      recordTrace(trace, 'error');
+    } catch {
       return { status: 'error' };
     }
   })();
@@ -683,24 +574,6 @@ async function resolveForUser(userId: number, rawUrl: string, domains: string[])
     if (inFlight.get(key) === work) inFlight.delete(key);
   }
 }
-
-router.get('/debug', async (_req, res) => {
-  // DIAGNOSTIC (temporary): recent resolver decision paths for failure triage.
-  try {
-    const rows = db.prepare(
-      'SELECT id, at, requested_url, final_status, trace FROM archive_resolve_debug ORDER BY id DESC LIMIT 30',
-    ).all();
-    const parsed = rows.map((row) => {
-      const r = row as { id: number; at: string; requested_url: string; final_status: string; trace: string };
-      let trace: unknown = null;
-      try { trace = JSON.parse(r.trace); } catch { trace = r.trace; }
-      return { id: r.id, at: r.at, requested_url: r.requested_url, final_status: r.final_status, trace };
-    });
-    return res.json({ rows: parsed });
-  } catch {
-    return res.json({ rows: [] });
-  }
-});
 
 router.get('/resolve', async (req, res) => {
   const rawUrl = typeof req.query.url === 'string' ? req.query.url : '';
