@@ -351,11 +351,11 @@ function sameArticleUrl(candidate: unknown, requested: string): boolean {
   try {
     const a = new URL(candidate);
     const b = new URL(requested);
-    const hostA = a.hostname.toLowerCase().replace(/^www\\./, '');
-    const hostB = b.hostname.toLowerCase().replace(/^www\\./, '');
+    const hostA = a.hostname.toLowerCase().replace(/^www\./, '');
+    const hostB = b.hostname.toLowerCase().replace(/^www\./, '');
     return (a.protocol === 'http:' || a.protocol === 'https:')
       && (b.protocol === 'http:' || b.protocol === 'https:')
-      && hostA === hostB && a.pathname.replace(/\\/$/, '') === b.pathname.replace(/\\/$/, '');
+      && hostA === hostB && a.pathname.replace(/\/$/, '') === b.pathname.replace(/\/$/, '');
   } catch { return false; }
 }
 
@@ -384,7 +384,7 @@ export async function isWeltPremiumArticle(rawUrl: string): Promise<boolean> {
   const source = await readLimitedText(response, WELT_METADATA_MAX_BYTES, 5_000);
   if (source === null) return false;
 
-  const scripts = source.matchAll(/<script\\b[^>]*type=["']application\\/ld\\+json["'][^>]*>([\\s\\S]*?)<\\/script\\s*>/gi);
+  const scripts = source.matchAll(/<script\b[^>]*type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script\s*>/gi);
   for (const match of scripts) {
     let parsed: unknown;
     try { parsed = JSON.parse(match[1]); } catch { continue; }
