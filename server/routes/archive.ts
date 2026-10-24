@@ -341,11 +341,76 @@ async function resolvePublisherUrl(originalUrl: string, domains: string[]): Prom
   } catch { return null; }
 }
 
+
+const WELT_DOMAINS = ['welt.de'] as const;
+const WELT_METADATA_MAX_BYTES = 1_500_000;
+
+/** Match a WELT NewsArticle JSON-LD node to the requested article URL. */
+function sameArticleUrl(candidate: unknown, requested: string): boolean {
+  if (typeof candidate !== 'string') return false;
+  try {
+    const a = new URL(candidate);
+    const b = new URL(requested);
+    const hostA = a.hostname.toLowerCase().replace(/^www\\./, '');
+    const hostB = b.hostname.toLowerCase().replace(/^www\\./, '');
+    return (a.protocol === 'http:' || a.protocol === 'https:')
+      && (b.protocol === 'http:' || b.protocol === 'https:')
+      && hostA === hostB && a.pathname.replace(/\\/$/, '') === b.pathname.replace(/\\/$/, '');
+  } catch { return false; }
+}
+
+/**
+ * WELT exposes explicit per-article access metadata in its NewsArticle JSON-LD.
+ * Only an exact matching article with isAccessibleForFree:false is eligible.
+ * Missing/invalid metadata and free articles fail closed (open the publisher URL).
+ */
+export async function isWeltPremiumArticle(rawUrl: string): Promise<boolean> {
+  let response: Response;
+  try {
+    response = await fetchUpstream(rawUrl, {
+      headers: {
+        Accept: 'text/html',
+        'Accept-Language': 'de-DE,de;q=0.9,en;q=0.8',
+        'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/131 Safari/537.36',
+      },
+      timeoutMs: 7_000,
+    });
+  } catch { return false; }
+
+  if (!response.ok || !(response.headers.get('content-type') || '').toLowerCase().includes('text/html')) {
+    await cancelBody(response);
+    return false;
+  }
+  const source = await readLimitedText(response, WELT_METADATA_MAX_BYTES, 5_000);
+  if (source === null) return false;
+
+  const scripts = source.matchAll(/<script\\b[^>]*type=["']application\\/ld\\+json["'][^>]*>([\\s\\S]*?)<\\/script\\s*>/gi);
+  for (const match of scripts) {
+    let parsed: unknown;
+    try { parsed = JSON.parse(match[1]); } catch { continue; }
+    const pending: unknown[] = Array.isArray(parsed) ? [...parsed] : [parsed];
+    while (pending.length) {
+      const node = pending.pop();
+      if (Array.isArray(node)) { pending.push(...node); continue; }
+      if (!node || typeof node !== 'object') continue;
+      const obj = node as Record<string, unknown>;
+      if (obj['@graph']) pending.push(obj['@graph']);
+      const types = Array.isArray(obj['@type']) ? obj['@type'] : [obj['@type']];
+      if (types.some((type) => type === 'NewsArticle' || type === 'Article')
+        && sameArticleUrl(obj.url, rawUrl)) {
+        return obj.isAccessibleForFree === false;
+      }
+    }
+  }
+  return false;
+}
+
 async function resolveForUser(userId: number, rawUrl: string, domains: string[]): Promise<ArchiveResolveResult> {
   const normalisedUrl = normalizeArticleUrl(rawUrl);
   if (!normalisedUrl) return { status: 'error' };
   const parsedOriginal = new URL(normalisedUrl);
-  if (!hostMatches(parsedOriginal.hostname, domains)
+  const isWelt = hostMatches(parsedOriginal.hostname, WELT_DOMAINS);
+  if (!hostMatches(parsedOriginal.hostname, domains) && !isWelt
     && ![...REDIRECT_WRAPPERS].some((wrapper) => parsedOriginal.hostname === wrapper || parsedOriginal.hostname.endsWith('.' + wrapper))) {
     return { status: 'not_allowed' };
   }
@@ -361,7 +426,14 @@ async function resolveForUser(userId: number, rawUrl: string, domains: string[])
   if (inFlight.size >= 64) return { status: 'error' };
 
   const work = (async (): Promise<ArchiveResolveResult> => {
-    const publisherUrl = await resolvePublisherUrl(normalisedUrl, domains);
+    // WELT is special: archive only articles explicitly marked paywalled in
+    // the matching NewsArticle JSON-LD. Free articles and unknown metadata
+    // keep the normal direct-to-publisher behavior.
+    if (isWelt && !(await isWeltPremiumArticle(normalisedUrl))) {
+      return { status: 'not_allowed' };
+    }
+    const effectiveDomains = isWelt ? [...domains, 'welt.de'] : domains;
+    const publisherUrl = await resolvePublisherUrl(normalisedUrl, effectiveDomains);
     if (!publisherUrl) return { status: 'not_allowed' };
     // The original target was already DNS-checked before this cache lookup.
     // Re-check only when a wrapper resolved to a different publisher URL.
