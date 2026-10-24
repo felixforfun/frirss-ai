@@ -1112,6 +1112,36 @@ export default function ReadingPane({ showBack }: ReadingPaneProps) {
     if (!selectedArticle?.url || extracting) return;
     const id = selectedArticle.id;
     const stillCurrent = () => useFeedStore.getState().selectedArticle?.id === id;
+
+    // Techmeme's feed URL is only a wrapper. Resolve it before consulting the
+    // article-id cache, because that cache may already contain Techmeme's page
+    // from an earlier extraction. The full-text toolbar action must use the
+    // publisher URL too (not only links clicked inside article content).
+    let techmemePublisherUrl: string | null = null;
+    try {
+      const articleUrl = new URL(selectedArticle.url);
+      if (['techmeme.com', 'www.techmeme.com'].includes(articleUrl.hostname.toLowerCase())) {
+        techmemePublisherUrl = await resolveTechmemeArticleUrl(articleUrl.href);
+      }
+    } catch { /* keep the normal extraction fallback */ }
+    if (!stillCurrent()) return;
+    if (techmemePublisherUrl) {
+      setExtractError(null);
+      setExtracting(true);
+      try {
+        const { extractFullContent } = await import('../../utils/extractContent');
+        const result = await extractFullContent(techmemePublisherUrl);
+        await putExtract(id, result);
+        if (!stillCurrent()) return;
+        lastExtractedId.current = id;
+        setExtractedContent(result);
+      } catch {
+        if (stillCurrent()) setExtractError(t('readingPane.extractError'));
+      } finally {
+        setExtracting(false);
+      }
+      return;
+    }
     // 1) Memory hit → instant (e.g. swiping back, prefetched).
     const inMem = peekExtract(id);
     if (inMem) {
