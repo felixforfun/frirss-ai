@@ -325,3 +325,24 @@ export async function saveInfrequentFeedCache(subscriptionIds: string[], feedIds
     subscriptionIds, feedIds, algorithmVersion: INFREQUENT_CLASSIFIER_VERSION,
   });
 }
+
+
+// Resolve Techmeme permalinks to the lead publisher article when the current RSS
+// feed still contains the story. Any miss or transient failure leaves the
+// original URL untouched by the caller.
+export async function resolveTechmemeArticleUrl(url: string): Promise<string | null> {
+  let parsed: URL;
+  try { parsed = new URL(url); } catch { return null; }
+  if (!['techmeme.com', 'www.techmeme.com'].includes(parsed.hostname.toLowerCase())) return null;
+  try {
+    const { data } = await backend.get<{ url: string | null }>('/techmeme/resolve', {
+      params: { url: parsed.toString() },
+      timeout: 6500,
+    });
+    if (typeof data.url !== 'string') return null;
+    const resolved = new URL(data.url);
+    return resolved.protocol === 'http:' || resolved.protocol === 'https:' ? resolved.toString() : null;
+  } catch {
+    return null;
+  }
+}
