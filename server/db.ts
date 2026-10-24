@@ -153,6 +153,24 @@ export function userCount(): number {
 export default db;
 
 
+// ── Techmeme canonical-article resolutions ──────────────────────────
+//
+// The Techmeme feed is a rolling list of the current stories: once an item
+// leaves it, the resolver can no longer resolve it against the XML. The
+// mapping from a Techmeme permalink to the lead publisher article is stable
+// though, so it is written here on the first successful resolution — every
+// later request (any client, any day) is answered from this table instead of
+// the feed. Keyed by the permalink PATH (not fragment/host), which is how the
+// feed identifies a story.
+db.exec(`
+  CREATE TABLE IF NOT EXISTS techmeme_resolutions (
+    permalink_path TEXT PRIMARY KEY,
+    canonical_url TEXT NOT NULL,
+    publisher_domain TEXT NOT NULL,
+    resolved_at TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+`);
+
 // ── AI article summaries ────────────────────────────────────────────
 // API keys reuse the application's AES-256-GCM encryption key. Only summaries
 // are cached; article content remains in FriRSS's existing content pipeline.

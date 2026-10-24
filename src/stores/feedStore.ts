@@ -51,9 +51,13 @@ import { shouldTopUpAfterRemoval } from '../lib/listTopUp';
 import { listCanScroll } from '../lib/listOverflow';
 import { planRowRestore } from '../lib/rollbackRow';
 import { writeFailureNotice } from '../lib/writeFailureNotice';
+import { isTechmemePermalinkUrl, canonicalTargetFor, canonicalPathKey, resolveCanonicalArticle } from '../lib/canonicalArticle';
 import { canLoadMore, shouldReportInvisibleProgress } from '../lib/listPagination';
 import { createWarmRunner } from '../lib/warmSchedule';
 import { startActualize, getActualizeStatus, getInfrequentFeedCache, saveInfrequentFeedCache, type ActualizeJob } from '../api/backend';
+
+/** Permeliens Techmeme déjà tentés pendant cette session (échec inclus). */
+const canonicalAttempted = new Set<string>();
 import { buildSavedArticleSignals, sameSavedArticleSignals } from '../lib/savedArticleSignals';
 import type { SavedArticleSignal } from '../lib/intelligenceNext';
 import type {
@@ -792,6 +796,19 @@ export interface FeedState {
   selectHomeAll: () => void;
   selectCategory: (cat: FeedCategory) => void;
   selectArticle: (article: Article | null) => void;
+  /**
+   * Écrit la cible canonique résolue sur l'article (liste, sélection, corpus,
+   * vue persistée). Aucun effet pour un article déjà à jour ; jamais de
+   * résolution NETTE répétée — arme du garde anti-doublon.
+   */
+  applyCanonicalUrl: (articleId: string, canonicalUrl: string) => void;
+  /**
+   * Déclenche (fire-and-forget) la résolution vers l'article éditeur pour un
+   * item Techmeme, puis l'écrit via `applyCanonicalUrl`. No-op pour tout
+   * article non Techmeme, déjà résolu, ou dont la résolution a déjà échoué
+   * (une session attend ; l'utilisateur force la main via le plein-texte).
+   */
+  primeCanonicalArticle: (article: Article) => void;
   loadSubscriptions: () => Promise<void>;
   loadSpecialCounts: () => Promise<void>;
   loadArticles: () => Promise<void>;
@@ -1076,6 +1093,7 @@ export const useFeedStore = create<FeedState>()((set, get) => ({
   selectArticle: (article) => {
     if (!article || article.read) {
       set({ selectedArticle: article });
+      if (article) get().primeCanonicalArticle(article);
       return;
     }
     // Optimistic update — mark read instantly in the UI, sync in the background.
@@ -1086,6 +1104,7 @@ export const useFeedStore = create<FeedState>()((set, get) => ({
       ),
       unreadCounts: updateCount(state.unreadCounts, article, -1),
     }));
+    get().primeCanonicalArticle(article);
     bumpCountsEpoch(); // écriture locale — voir la garde en tête de fichier
     memMarkRead(article.id, true);
     persistCurrentView(get);
@@ -1120,6 +1139,40 @@ export const useFeedStore = create<FeedState>()((set, get) => ({
       readWritesInFlight--;
       bumpCountsEpoch(); // règlement (succès ou échec) — voir Important 1 en tête de fichier
     });
+  },
+
+  applyCanonicalUrl: (articleId, canonicalUrl) => {
+    let changed = false;
+    set((state) => {
+      const articles = state.articles.map((a) => {
+        if (a.id !== articleId || a.canonicalUrl === canonicalUrl) return a;
+        changed = true;
+        return { ...a, canonicalUrl };
+      });
+      const selectedArticle = state.selectedArticle?.id === articleId
+        ? { ...state.selectedArticle, canonicalUrl }
+        : state.selectedArticle;
+      if (selectedArticle !== state.selectedArticle) changed = true;
+      return { articles, selectedArticle };
+    });
+    if (!changed) return;
+    persistCurrentView(get);
+    patchSearchCorpus(articleId, { canonicalUrl });
+  },
+
+  primeCanonicalArticle: (article) => {
+    if (!article?.url || !isTechmemePermalinkUrl(article.url) || article.canonicalUrl) return;
+    // Résolution déjà en mémoire partagée : on la colle sans réseau.
+    const known = canonicalTargetFor(article.url);
+    if (known) { get().applyCanonicalUrl(article.id, known.url); return; }
+    const key = canonicalPathKey(article.url);
+    // Un item dont la résolution a déjà tenté pendant cette session n'échoue
+    // pas en boucle : l'utilisateur force la main avec l'action plein-texte.
+    if (!key || canonicalAttempted.has(key)) return;
+    canonicalAttempted.add(key);
+    void resolveCanonicalArticle(article.url).then((target) => {
+      if (target) get().applyCanonicalUrl(article.id, target.url);
+    }).catch(() => { /* la lecture ne dépend jamais de la résolution */ });
   },
 
   loadSubscriptions: async () => {

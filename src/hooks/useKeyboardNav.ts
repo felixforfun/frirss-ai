@@ -2,6 +2,7 @@ import { useEffect } from 'react';
 import { useFeedStore } from '../stores/feedStore';
 import { useUiStore } from '../stores/uiStore';
 import { openArchiveAware } from '../lib/archive';
+import { canonicalOrSelf } from '../lib/canonicalArticle';
 
 export function useKeyboardNav(): void {
   const shortcuts = useUiStore((s) => s.shortcuts);
@@ -83,7 +84,10 @@ export function useKeyboardNav(): void {
       } else if (key === shortcuts.openOriginal) {
         e.preventDefault();
         const linkedUrl = document.querySelector<HTMLElement>('[data-linked-page-url]')?.dataset.linkedPageUrl;
-        openArchiveAware(linkedUrl || store.selectedArticle?.url);
+        openArchiveAware(
+          linkedUrl
+            || (store.selectedArticle ? canonicalOrSelf(store.selectedArticle) : undefined)
+        );
       } else if (key === shortcuts.toggleSidebar) {
         e.preventDefault();
         toggleSidebar();

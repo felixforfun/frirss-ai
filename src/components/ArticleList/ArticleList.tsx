@@ -12,6 +12,7 @@ import { shouldLoadMore, listBodyState, canLoadMore, searchAwareHasContinuation 
 import { listOverflows, publishListCanScroll, resetListCanScroll } from '../../lib/listOverflow';
 import { extractImageFromContent } from '../../lib/articleThumbnail';
 import { openArticleAtSource } from '../../lib/openArticleAtSource';
+import { isTechmemePermalinkUrl } from '../../lib/canonicalArticle';
 import type { RowActionSettings } from '../../lib/rowActions';
 import { timeAgo } from '../../lib/timeAgo';
 import ViewModeSwitcher from './ViewModeSwitcher';
@@ -355,6 +356,22 @@ export default function ArticleList() {
   // le remet à zéro — entrer dans un flux ou changer de filtre anime bien ses
   // lignes, y compris celles déjà croisées ailleurs.
   const articleIds = useMemo(() => articles.map((a) => a.id), [articles]);
+  // Résolution vers l'article éditeur pour les items Techmeme du tableau
+  // courant. Fire-and-forget par item (`primeCanonicalArticle`) : une fois
+  // résolu, le store écrit `canonicalUrl` et la liste re-rend — les actions
+  // utilisateur (ouvrir à la source, copier, menu) portent alors l'URL
+  // canonique sans avoir attendu quoi que ce soit au clic.
+  const techmemeUrls = useMemo(
+    () => articles.filter((a) => isTechmemePermalinkUrl(a.url) && !a.canonicalUrl).map((a) => `${a.id}::${a.url}`).join('\u0000'),
+    [articles],
+  );
+  useEffect(() => {
+    for (const article of articles) {
+      if (isTechmemePermalinkUrl(article.url) && !article.canonicalUrl) {
+        useFeedStore.getState().primeCanonicalArticle(article);
+      }
+    }
+  }, [techmemeUrls, articles]);
   const seenRowsRef = useRef<{ key: string; memo: Map<string, number | null> }>({
     key: scrollKey,
     memo: new Map(),
@@ -909,7 +926,7 @@ export default function ArticleList() {
           }}
           onToggleStar={() => { void toggleStar(menuArticle); }}
           onToggleReadLater={() => { void toggleReadLater(menuArticle); }}
-          onCopyLink={() => { void copyArticleLink(menuArticle.url); }}
+          onCopyLink={() => { void copyArticleLink(menuArticle.canonicalUrl || menuArticle.url); }}
         />
       )}
       {/* Header */}
