@@ -190,7 +190,7 @@ describe('Archive.is snapshot resolver', () => {
   it('fails closed for WELT when article-level access metadata is missing', async () => {
     const original = 'https://www.welt.de/kultur/article123/unknown-article.html';
     fetchMock.mockResolvedValue(response(
-      '<html><head><script type="application/ld+json">{\' + '"@type":"NewsArticle","url":"https://www.welt.de/other-article","isAccessibleForFree":false}</script></head><body>Article</body></html>',
+      '<html><head><script type="application/ld+json">{' + '"@type":"NewsArticle","url":"https://www.welt.de/other-article","isAccessibleForFree":false}</script></head><body>Article</body></html>',
       'text/html',
     ));
 
