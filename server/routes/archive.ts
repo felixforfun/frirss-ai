@@ -381,7 +381,8 @@ export async function isWeltPremiumArticle(rawUrl: string): Promise<boolean> {
     await cancelBody(response);
     return false;
   }
-  const source = await readLimitedText(response, WELT_METADATA_MAX_BYTES, 5_000);
+  // WELT pages can exceed this limit because of embedded page data. JSON-LD is in the head, so inspect a bounded prefix rather than rejecting the entire page when it is larger.
+  const source = await readPrefixText(response, WELT_METADATA_MAX_BYTES, 5_000);
   if (source === null) return false;
 
   const scripts = source.matchAll(/<script\b[^>]*type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script\s*>/gi);
