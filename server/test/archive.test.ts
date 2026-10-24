@@ -290,6 +290,78 @@ describe('Archive.is snapshot resolver', () => {
     expect(row.trace.winner).toContain(original);
   });
 
+  it('fails the timemap over to another mirror when archive.is is unreachable', async () => {
+    const original = 'https://www.wsj.com/world/mirror-failover-article';
+    fetchMock.mockImplementation(async (url: string) => {
+      const target = String(url);
+      // archive.is hangs on some networks: every request to it aborts. This
+      // check must come before the /timemap/ match so the timemap request to
+      // archive.is aborts too.
+      if (target.startsWith('https://archive.is/')) throw new Error('This operation was aborted');
+      if (target.includes('/timemap/')) return response(timemap(original), 'application/link-format');
+      if (target.includes('/20261017140859/') || target.includes('/20261016021348/')) {
+        return response('<!doctype html><html><head><title>A real archived article</title></head><body><article><p>A real article body served from the reachable mirror.</p></article></body></html>', 'text/html');
+      }
+      throw new Error(`Unexpected archive fetch: ${target}`);
+    });
+
+    const result = await request(app).get('/api/archive/resolve').query({ url: original });
+
+    expect(result.body.status).toBe('ok');
+    // The winning snapshot is still reported under the canonical archive.is
+    // host because all mirrors serve the same backend.
+    expect(result.body.url).toBe(`https://archive.is/20261017140859/${original}`);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).startsWith('https://archive.ph/timemap/'))).toBe(true);
+  });
+
+  it('retries the timemap without share-tracking query parameters after a 404', async () => {
+    const original = 'https://www.wsj.com/world/share-link-article?st=abc&reflink=share';
+    const bare = 'https://www.wsj.com/world/share-link-article';
+    fetchMock.mockImplementation(async (url: string) => {
+      const target = String(url);
+      // Share links carry tracking params (?st=…&reflink=…) that the archive
+      // does not index: the param'd timemap 404s while the bare URL resolves.
+      if (target.startsWith('https://archive.is/timemap/') && target.includes('?')) {
+        return response('TimeMap does not exists. The archive has no Mementos for the requested URI', 'text/plain;charset=utf-8', 404);
+      }
+      if (target.includes('/timemap/')) return response(timemap(bare), 'application/link-format');
+      if (target.includes('/20261017140859/') || target.includes('/20261016021348/')) {
+        return response('<!doctype html><html><head><title>A real archived article</title></head><body><article><p>A real article body for the bare-URL snapshot.</p></article></body></html>', 'text/html');
+      }
+      throw new Error(`Unexpected archive fetch: ${target}`);
+    });
+
+    const result = await request(app).get('/api/archive/resolve').query({ url: original });
+
+    expect(result.body.status).toBe('ok');
+    expect(result.body.url).toBe(`https://archive.is/20261017140859/${bare}`);
+    const row = dbRows.find((entry) => entry.requested_url === original);
+    expect(row?.final_status).toBe('ok');
+    expect(JSON.parse(row?.trace || '{}').timemapSource).toBe('bare');
+  });
+
+  it('probes the snapshot on another mirror when the canonical host is unreachable', async () => {
+    const original = 'https://www.ft.com/content/probe-failover-article';
+    fetchMock.mockImplementation(async (url: string) => {
+      const target = String(url);
+      // The timemap is reachable on archive.is, but fetching the snapshot from
+      // it aborts; the probe must move on to the next mirror.
+      if (target.includes('/timemap/')) return response(timemap(original), 'application/link-format');
+      if (target.startsWith('https://archive.is/')) throw new Error('This operation was aborted');
+      if (target.includes('/20261017140859/') || target.includes('/20261016021348/')) {
+        return response('<!doctype html><html><head><title>A real archived article</title></head><body><article><p>A real article body probed on the reachable mirror.</p></article></body></html>', 'text/html');
+      }
+      throw new Error(`Unexpected archive fetch: ${target}`);
+    });
+
+    const result = await request(app).get('/api/archive/resolve').query({ url: original });
+
+    expect(result.body.status).toBe('ok');
+    expect(result.body.url).toBe(`https://archive.is/20261017140859/${original}`);
+    expect(result.body.timestamp).toBe('20261017140859');
+    expect(fetchMock.mock.calls.some(([url]) => String(url).startsWith('https://archive.ph/20261017140859/'))).toBe(true);
+  });
+
   it('parses relation tokens and orders multiple mementos newest first', () => {
     const original = 'https://www.wsj.com/world/article-a';
     const body = [
