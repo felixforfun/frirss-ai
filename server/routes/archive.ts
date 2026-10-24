@@ -585,15 +585,25 @@ async function resolveForUser(userId: number, rawUrl: string, domains: string[])
     // All archive mirrors serve the same timemap; archive.is hangs from some
     // networks, so try mirrors in order instead of betting on one hostname.
     // A URL carrying share-tracking query parameters (wsj.com ?st=…&reflink=…,
-    // washingtonpost.com ?linkNumber=…) 404s here although snapshots exist —
-    // they are indexed under the bare URL — so retry without the query.
+    // washingtonpost.com ?linkNumber=…) gets an explicit timemap 404 although
+    // snapshots exist — they are indexed under the bare URL — so any failed
+    // lookup (unreachable mirror or non-OK response) is retried without the
+    // query.
     const timemapHeaders = {
       Accept: 'application/link-format',
       'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36',
     };
     const lookupStartedAt = Date.now();
-    let lookup = await fetchTimeMapWithFailover(publisherUrl, timemapHeaders);
+    const initialLookup = await fetchTimeMapWithFailover(publisherUrl, timemapHeaders);
+    let lookup = initialLookup && initialLookup.response.ok ? initialLookup : null;
     let lookupSource = 'url';
+    let failedStatus: number | null = null;
+    let failedContentType: string | null = null;
+    if (initialLookup && !initialLookup.response.ok) {
+      failedStatus = initialLookup.response.status;
+      failedContentType = initialLookup.response.headers.get('content-type');
+      await cancelBody(initialLookup.response);
+    }
     if (!lookup && new URL(publisherUrl).search) {
       const bare = normalizeArticleUrl(new URL(publisherUrl).origin + new URL(publisherUrl).pathname);
       if (bare && bare !== publisherUrl) {
@@ -603,7 +613,7 @@ async function resolveForUser(userId: number, rawUrl: string, domains: string[])
     }
     trace.timemapSource = lookupSource;
     if (!lookup) {
-      trace.timemap = { httpStatus: null, contentType: null, count: 0, ms: Date.now() - lookupStartedAt };
+      trace.timemap = { httpStatus: failedStatus, contentType: failedContentType, count: 0, ms: Date.now() - lookupStartedAt };
       trace.duration_ms = Date.now() - startedAt;
       recordTrace(trace, 'soft_block');
       return { status: 'soft_block' };
