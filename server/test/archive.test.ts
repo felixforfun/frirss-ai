@@ -50,6 +50,65 @@ describe('Archive.is snapshot resolver', () => {
     preference.value = JSON.stringify(['wsj.com', 'ft.com']);
   });
 
+  it('archives a WELT article only when its matching NewsArticle metadata marks it premium', async () => {
+    const original = 'https://www.welt.de/politik/deutschland/plus123/test-article.html';
+    const metadata = JSON.stringify({
+      '@context': 'https://schema.org',
+      '@type': 'NewsArticle',
+      url: original,
+      isAccessibleForFree: false,
+    });
+    fetchMock.mockImplementation(async (url: string) => {
+      const target = String(url);
+      if (target === original) {
+        return response(`<html><head><script type="application/ld+json">${metadata}</script></head><body>Article</body></html>`, 'text/html');
+      }
+      if (target.includes('/timemap/')) return response(timemap(original), 'application/link-format');
+      if (target.includes('/20261017140859/') || target.includes('/20261016021348/')) {
+        return response('<!doctype html><html><head><title>A real archived article</title></head><body><article><p>This is a real article body, not a challenge page.</p></article></body></html>', 'text/html');
+      }
+      throw new Error(`Unexpected archive fetch: ${target}`);
+    });
+
+    const result = await request(app).get('/api/archive/resolve').query({ url: original });
+
+    expect(result.body.status).toBe('ok');
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/timemap/'))).toBe(true);
+  });
+
+  it('does not archive a free WELT article even when unrelated premium teasers may exist on the page', async () => {
+    const original = 'https://www.welt.de/kultur/article123/free-article.html';
+    const metadata = JSON.stringify({
+      '@context': 'https://schema.org',
+      '@type': 'NewsArticle',
+      url: original,
+      isAccessibleForFree: true,
+    });
+    fetchMock.mockResolvedValue(response(
+      `<html><head><script type="application/ld+json">${metadata}</script></head><body><span class="c-teaser__badge is-premium">Weltplus Artikel</span></body></html>`,
+      'text/html',
+    ));
+
+    const result = await request(app).get('/api/archive/resolve').query({ url: original });
+
+    expect(result.body).toEqual({ status: 'not_allowed' });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/timemap/'))).toBe(false);
+  });
+
+  it('fails closed for WELT when article-level access metadata is missing', async () => {
+    const original = 'https://www.welt.de/kultur/article123/unknown-article.html';
+    fetchMock.mockResolvedValue(response(
+      '<html><head><script type="application/ld+json">{"@type":"NewsArticle","url":"https://www.welt.de/other-article","isAccessibleForFree":false}</script></head><body>Article</body></html>',
+      'text/html',
+    ));
+
+    const result = await request(app).get('/api/archive/resolve').query({ url: original });
+
+    expect(result.body).toEqual({ status: 'not_allowed' });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
   it('skips a latest challenge snapshot and selects the newest usable older capture', async () => {
     const original = 'https://www.wsj.com/world/article-a';
     fetchMock.mockImplementation(async (url: string) => {
