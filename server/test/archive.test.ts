@@ -14,7 +14,6 @@ vi.mock('../db.js', () => ({
     prepare: () => ({ get: () => preference.value ? { value: preference.value } : undefined }),
   },
 }));
-
 vi.mock('../middleware/auth.js', () => ({
   requireAuth: (req: express.Request, _res: express.Response, next: express.NextFunction) => {
     (req as express.Request & { user: { id: number } }).user = { id: 1 } as never;
