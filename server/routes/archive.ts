@@ -345,9 +345,9 @@ async function resolvePublisherUrl(originalUrl: string, domains: string[]): Prom
 const WELT_DOMAINS = ['welt.de'] as const;
 const WELT_METADATA_MAX_BYTES = 1_500_000;
 /** schema.org NewsArticle subtypes WELT emits per section (its debatte pieces are OpinionNewsArticle). */
-const WELT_ARTICLE_TYPES = new Set([
+const WELT_ARTICLE_TYPES = new Set<string>([
   'NewsArticle', 'OpinionNewsArticle', 'ReportageNewsArticle', 'BackgroundNewsArticle', 'Article',
-] as const);
+]);
 
 /** Match a WELT NewsArticle JSON-LD node to the requested article URL. */
 function sameArticleUrl(candidate: unknown, requested: string): boolean {
