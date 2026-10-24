@@ -344,6 +344,10 @@ async function resolvePublisherUrl(originalUrl: string, domains: string[]): Prom
 
 const WELT_DOMAINS = ['welt.de'] as const;
 const WELT_METADATA_MAX_BYTES = 1_500_000;
+/** schema.org NewsArticle subtypes WELT emits per section (its debatte pieces are OpinionNewsArticle). */
+const WELT_ARTICLE_TYPES = new Set<string>([
+  'NewsArticle', 'OpinionNewsArticle', 'ReportageNewsArticle', 'BackgroundNewsArticle', 'Article',
+]);
 
 /** Match a WELT NewsArticle JSON-LD node to the requested article URL. */
 function sameArticleUrl(candidate: unknown, requested: string): boolean {
@@ -360,7 +364,8 @@ function sameArticleUrl(candidate: unknown, requested: string): boolean {
 }
 
 /**
- * WELT exposes explicit per-article access metadata in its NewsArticle JSON-LD.
+ * WELT exposes explicit per-article access metadata in its NewsArticle JSON-LD
+ * (including the NewsArticle subtypes it uses, such as OpinionNewsArticle).
  * Only an exact matching article with isAccessibleForFree:false is eligible.
  * Missing/invalid metadata and free articles fail closed (open the publisher URL).
  */
@@ -397,7 +402,7 @@ export async function isWeltPremiumArticle(rawUrl: string): Promise<boolean> {
       const obj = node as Record<string, unknown>;
       if (obj['@graph']) pending.push(obj['@graph']);
       const types = Array.isArray(obj['@type']) ? obj['@type'] : [obj['@type']];
-      if (types.some((type) => type === 'NewsArticle' || type === 'Article')
+      if (types.some((type) => typeof type === 'string' && WELT_ARTICLE_TYPES.has(type))
         && sameArticleUrl(obj.url, rawUrl)) {
         return obj.isAccessibleForFree === false;
       }
