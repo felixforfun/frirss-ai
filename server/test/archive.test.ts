@@ -189,8 +189,15 @@ describe('Archive.is snapshot resolver', () => {
 
   it('fails closed for WELT when article-level access metadata is missing', async () => {
     const original = 'https://www.welt.de/kultur/article123/unknown-article.html';
+    // Metadata for a different article URL must not make this one premium.
+    const other = 'https://www.welt.de/other-article';
+    const metadata = JSON.stringify({
+      '@type': 'NewsArticle',
+      url: other,
+      isAccessibleForFree: false,
+    });
     fetchMock.mockResolvedValue(response(
-      '<html><head><script type="application/ld+json">{' + '"@type":"NewsArticle","url":"https://www.welt.de/other-article","isAccessibleForFree":false}</script></head><body>Article</body></html>',
+      `<html><head><script type="application/ld+json">${metadata}</script></head><body>Article</body></html>`,
       'text/html',
     ));
 
