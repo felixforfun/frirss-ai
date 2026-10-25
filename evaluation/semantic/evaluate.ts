@@ -10,7 +10,7 @@ import { homedir } from 'node:os';
 import { dirname, resolve } from 'node:path';
 import Database from 'better-sqlite3';
 import { rankInterestingArticles } from '../../src/lib/intelligenceRanking';
-import type { Article, ArticleFeedback } from '../../src/types/index';
+import type { Article } from '../../src/types/index';
 import type { ArticleFeedback as Feedback } from '../../src/api/intelligence';
 
 type Label = 1 | -1;
