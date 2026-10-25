@@ -6,7 +6,7 @@ import { useUiStore } from '../../stores/uiStore';
 import { useBreakpoint } from '../../hooks/useBreakpoint';
 import { useLatchedValue } from '../../hooks/useLatchedValue';
 import { groupByDate } from '../../utils/dates';
-import { markAllReadAction, canMarkAllRead, UNDO_CAP } from '../../lib/markAllRead';
+import { markAllReadAction, canMarkAllRead, canMarkAllReadIn, UNDO_CAP } from '../../lib/markAllRead';
 import { effectiveLayout } from '../../lib/effectiveLayout';
 import { shouldLoadMore, listBodyState, canLoadMore, searchAwareHasContinuation } from '../../lib/listPagination';
 import { listOverflows, publishListCanScroll, resetListCanScroll } from '../../lib/listOverflow';
@@ -214,14 +214,25 @@ export default function ArticleList() {
   // flux et pour la vue « tous les flux » : les sélections transversales
   // (favoris, à lire plus tard, étiquettes) ne sont pas des flux qu'on vide,
   // et un compte y voudrait dire autre chose.
+  const infrequentFeedIds = useFeedStore((s) => s.infrequentFeedIds);
   const headerUnread = useMemo(() => {
     if (filter === 'starred' || filter === 'readlater') return null;
+    // La vue « Sites peu fréquents » est calculée : le compte à côté du titre
+    // additionne les flux retenus par le classifieur, jamais la liste de
+    // lecture entière. Le total global (15 988 chez un utilisateur) n'avait
+    // rien à voir avec la liste affichée ; tant que la classification n'est
+    // pas connue (`null`), le compte se cache plutôt que d'afficher un faux
+    // total. Il grandit avec la liste pendant le balayage : même collection.
+    if (filter === 'infrequent' && !selectedFeed) {
+      if (infrequentFeedIds === null) return null;
+      return infrequentFeedIds.reduce((sum, id) => sum + (unreadCounts[id] || 0), 0);
+    }
     if (selectedFeed) {
       if (isCategoryStreamId(selectedFeed.id)) return null;
       return unreadCounts[selectedFeed.id] || 0;
     }
     return subscriptions.reduce((sum, sub) => sum + (unreadCounts[sub.id] || 0), 0);
-  }, [filter, selectedFeed, subscriptions, unreadCounts]);
+  }, [filter, selectedFeed, subscriptions, unreadCounts, infrequentFeedIds]);
 
   const listRef = useRef<HTMLDivElement>(null);
 
@@ -963,7 +974,7 @@ export default function ArticleList() {
                 onClick={() => useFeedStore.getState().setUnreadFilter(filter !== 'unread')} />
               <ToolbarBtn flex1 iconOnly icon={<StarIcon filled={filter === 'starred'} />} label={t('articleList.starred')} active={filter === 'starred'}
                 onClick={() => useFeedStore.getState().setFilter(filter === 'starred' ? 'all' : 'starred')} />
-              {canMarkAllRead(filter) && (
+              {canMarkAllReadIn(filter) && (
                 <ToolbarBtn flex1 iconOnly icon={<MarkAllReadIcon />} label={t('articleList.markAllRead')} onClick={handleMarkAllRead} />
               )}
               <ToolbarBtn flex1 iconOnly icon={<OptionsIcon />} label={t('articleList.viewOptions')} active={optionsOpen}
@@ -1080,7 +1091,7 @@ export default function ArticleList() {
                 onClick={() => useFeedStore.getState().setUnreadFilter(filter !== 'unread')} />
               <ToolbarBtn icon={<StarIcon filled={filter === 'starred'} />} label={t('articleList.starred')} active={filter === 'starred'}
                 onClick={() => useFeedStore.getState().setFilter(filter === 'starred' ? 'all' : 'starred')} />
-              {canMarkAllRead(filter) && (
+              {canMarkAllReadIn(filter) && (
                 <>
                   <ToolbarSep />
                   <ToolbarBtn icon={<MarkAllReadIcon />} label={t('articleList.markAllRead')} onClick={handleMarkAllRead} />
@@ -1169,7 +1180,7 @@ export default function ArticleList() {
                 onClick={() => useFeedStore.getState().setUnreadFilter(filter !== 'unread')} />
               <ToolbarBtn icon={<StarIcon filled={filter === 'starred'} />} label={t('articleList.starred')} active={filter === 'starred'}
                 onClick={() => useFeedStore.getState().setFilter(filter === 'starred' ? 'all' : 'starred')} />
-              {canMarkAllRead(filter) && (
+              {canMarkAllReadIn(filter) && (
                 <>
                   <ToolbarSep />
                   <ToolbarBtn icon={<MarkAllReadIcon />} label={t('articleList.markAllRead')} onClick={handleMarkAllRead} />
