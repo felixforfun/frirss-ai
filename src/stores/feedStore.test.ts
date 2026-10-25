@@ -2136,6 +2136,409 @@ describe('feedStore.loadArticles — Infrequent sites classification cache', () 
   });
 });
 
+describe('feedStore.loadArticles — Infrequent sites definition enforcement', () => {
+  // The definition (rolling 90-day window; ≥30 days of history; ≥2 articles;
+  // mean AND median interval ≥ 7 days; insufficient evidence → inconclusive,
+  // never eligible). These tests pin the behaviour of the classifier against
+  // hand-computed publication histories, not just the current heuristics.
+  const DAY_SECONDS = 24 * 60 * 60;
+  const nowSeconds = Math.floor(Date.now() / 1000);
+  const item = (feedId: string, daysAgo: number, id?: string) => ({
+    id: id ?? `${feedId}#${daysAgo}`,
+    title: `Item ${daysAgo}`,
+    published: nowSeconds - Math.round(daysAgo * DAY_SECONDS),
+    origin: { streamId: feedId, title: feedId },
+    categories: [],
+  });
+  const snapshotKey =
+    useAuthStore.getState().activeServerId || 'default';
+
+  beforeEach(() => {
+    // The infrequent scan repaints from the client-side article snapshot, so
+    // every test starts with an empty one for both the current and the
+    // pre-v2 (stale articles survived re-classification) key shapes.
+    localStorage.removeItem(`frirss_infrequent_articles_v2_${snapshotKey}`);
+    localStorage.removeItem(`frirss_infrequent_articles_v1_${snapshotKey}`);
+    useFeedStore.setState({
+      articles: [],
+      infrequentFeedIds: null,
+      unreadCounts: {},
+      loading: false,
+      revalidating: false,
+    });
+  });
+
+  const scanMockOnly = (items: ReturnType<typeof item>[], continuation: string | null = null) => {
+    vi.mocked(api.getStreamContents).mockResolvedValue({ items, continuation } as never);
+  };
+
+  it('positive control: a genuinely infrequent feed is eligible and its articles are published', async () => {
+    // 3 articles, 32-day intervals, 64-day span, exhausted stream.
+    scanMockOnly([item('feed/rare', 88), item('feed/rare', 56), item('feed/rare', 24)]);
+    vi.mocked(api.getStreamContents).mockImplementation(
+      ((streamId: string, _count: number, _cont: string | null, excludeTag: string | null) => {
+        if (excludeTag === 'user/-/state/com.google/read') {
+          return Promise.resolve({ items: [item(streamId, 24, 'rare-item')], continuation: null });
+        }
+        return Promise.resolve({
+          items: [item(streamId, 88), item(streamId, 56), item(streamId, 24)],
+          continuation: null,
+        });
+      }) as never,
+    );
+    useFeedStore.setState({
+      filter: 'infrequent',
+      selectedFeed: null,
+      subscriptions: [{ id: 'feed/rare', title: 'Rare' }] as Subscription[],
+    });
+
+    await useFeedStore.getState().loadArticles();
+
+    expect(backendApi.saveInfrequentFeedCache).toHaveBeenCalledWith(['feed/rare'], ['feed/rare']);
+    expect(useFeedStore.getState().articles.map((a) => a.id)).toContain('rare-item');
+    expect(useFeedStore.getState().infrequentFeedIds).toEqual(['feed/rare']);
+  });
+
+  it('excludes a feed whose mean interval passes but whose median interval is below seven days', async () => {
+    // Ascending ages 4,5,6,7,8,25,42,59 → intervals 1,1,1,1,17,17,17:
+    // mean = 55/7 ≈ 7.86d (passes), median = 1d (fails). A thorough scan is
+    // the only honest way to see this; the feed must be excluded either way.
+    scanMockOnly([
+      item('feed/bursty', 4), item('feed/bursty', 5), item('feed/bursty', 6), item('feed/bursty', 7),
+      item('feed/bursty', 8), item('feed/bursty', 25), item('feed/bursty', 42), item('feed/bursty', 59),
+    ]);
+    useFeedStore.setState({
+      filter: 'infrequent',
+      selectedFeed: null,
+      subscriptions: [{ id: 'feed/bursty', title: 'Bursty' }] as Subscription[],
+    });
+
+    await useFeedStore.getState().loadArticles();
+
+    expect(backendApi.saveInfrequentFeedCache).toHaveBeenCalledWith(['feed/bursty'], []);
+    expect(useFeedStore.getState().articles).toEqual([]);
+    expect(useFeedStore.getState().infrequentFeedIds).toEqual([]);
+  });
+
+  it('excludes a feed whose median interval passes but whose mean interval is below seven days', async () => {
+    // Ascending ages 23..89 → intervals 2,2,2,2,2,8,8,8,8,8,8,8: mean 5.5d
+    // (fails), median 8d (passes). 13 articles and 5 short intervals stay
+    // inside the provable bounds, so this must resolve through the statistics,
+    // not an early rejection.
+    scanMockOnly([
+      item('feed/daily', 23), item('feed/daily', 25), item('feed/daily', 27),
+      item('feed/daily', 29), item('feed/daily', 31), item('feed/daily', 33),
+      item('feed/daily', 41), item('feed/daily', 49), item('feed/daily', 57),
+      item('feed/daily', 65), item('feed/daily', 73), item('feed/daily', 81),
+      item('feed/daily', 89),
+    ]);
+    useFeedStore.setState({
+      filter: 'infrequent',
+      selectedFeed: null,
+      subscriptions: [{ id: 'feed/daily', title: 'Daily' }] as Subscription[],
+    });
+
+    await useFeedStore.getState().loadArticles();
+
+    expect(backendApi.saveInfrequentFeedCache).toHaveBeenCalledWith(['feed/daily'], []);
+    expect(useFeedStore.getState().articles).toEqual([]);
+    expect(useFeedStore.getState().infrequentFeedIds).toEqual([]);
+  });
+
+  it('excludes a feed with both statistics below seven days even from its first scan page', async () => {
+    // WELT-like high-volume cadence: intervals [1,1,1,1,1,1,1,3] → both
+    // mean (9/8) and median (1) are far below seven days. Six short
+    // intervals prove the median cannot reach the bar, so one page is enough.
+    const pages = [{ items: [
+      item('feed/welt', 0), item('feed/welt', 1), item('feed/welt', 2), item('feed/welt', 3),
+      item('feed/welt', 4), item('feed/welt', 5), item('feed/welt', 6), item('feed/welt', 9),
+    ], continuation: 'more-history' } as never];
+    vi.mocked(api.getStreamContents).mockImplementationOnce(() => Promise.resolve(pages[0]));
+
+    useFeedStore.setState({
+      filter: 'infrequent',
+      selectedFeed: null,
+      subscriptions: [{ id: 'feed/welt', title: 'WELT' }] as Subscription[],
+    });
+
+    await useFeedStore.getState().loadArticles();
+
+    expect(api.getStreamContents).toHaveBeenCalledTimes(1);
+    expect(backendApi.saveInfrequentFeedCache).toHaveBeenCalledWith(['feed/welt'], []);
+  });
+
+  it('excludes a high-volume feed on article count without scanning its whole history', async () => {
+    // 14 in-window articles cannot keep the mean at 7 days (mean = span/(n−1)
+    // and span ≤ 90 days ⇒ n ≤ 13). Two 8-item pages prove it, whatever the
+    // third page would contain.
+    vi.mocked(api.getStreamContents)
+      .mockImplementationOnce(() => Promise.resolve({
+        items: [
+          item('feed/many', 0), item('feed/many', 7), item('feed/many', 14), item('feed/many', 21),
+          item('feed/many', 28), item('feed/many', 35), item('feed/many', 42), item('feed/many', 49),
+        ],
+        continuation: 'next',
+      } as never))
+      .mockImplementationOnce(() => Promise.resolve({
+        items: [
+          item('feed/many', 56), item('feed/many', 56, 'many-2'), item('feed/many', 56, 'many-3'),
+          item('feed/many', 56, 'many-4'), item('feed/many', 56, 'many-5'), item('feed/many', 56, 'many-6'),
+        ],
+        continuation: 'third-page-never-read',
+      } as never));
+
+    useFeedStore.setState({
+      filter: 'infrequent',
+      selectedFeed: null,
+      subscriptions: [{ id: 'feed/many', title: 'Many' }] as Subscription[],
+    });
+
+    await useFeedStore.getState().loadArticles();
+
+    expect(api.getStreamContents).toHaveBeenCalledTimes(2);
+    expect(backendApi.saveInfrequentFeedCache).toHaveBeenCalledWith(['feed/many'], []);
+  });
+
+  it('does not early-exclude a qualifying feed whose newest pages look busy', async () => {
+    // Regression for the PR #65 heuristic (mean AND median of the scanned
+    // newest pages < 7 days ⇒ frequent). The feed below QUALIFIES over the
+    // full window (mean 84/12 = 7d, median 9d, 84-day span, 13 articles) while
+    // its newest six articles (intervals 1,1,1,1,14) would natively trip that
+    // old rule. The eligible result proves the early rejection is gone.
+    scanMockOnly([
+      item('feed/lull', 3), item('feed/lull', 4), item('feed/lull', 5), item('feed/lull', 6),
+      item('feed/lull', 7), item('feed/lull', 21), item('feed/lull', 30), item('feed/lull', 40),
+      item('feed/lull', 50), item('feed/lull', 60), item('feed/lull', 70), item('feed/lull', 79),
+      item('feed/lull', 87),
+    ]);
+    useFeedStore.setState({
+      filter: 'infrequent',
+      selectedFeed: null,
+      subscriptions: [{ id: 'feed/lull', title: 'Lull' }] as Subscription[],
+    });
+
+    await useFeedStore.getState().loadArticles();
+
+    expect(backendApi.saveInfrequentFeedCache).toHaveBeenCalledWith(['feed/lull'], ['feed/lull']);
+    expect(useFeedStore.getState().infrequentFeedIds).toEqual(['feed/lull']);
+  });
+
+  it('treats insufficient history as inconclusive — never eligible, never cached', async () => {
+    // Two articles four days apart: the sample cannot establish 30 days.
+    scanMockOnly([item('feed/new', 2), item('feed/new', 6)]);
+    useFeedStore.setState({
+      filter: 'infrequent',
+      selectedFeed: null,
+      subscriptions: [{ id: 'feed/new', title: 'New' }] as Subscription[],
+    });
+
+    await useFeedStore.getState().loadArticles();
+
+    expect(backendApi.saveInfrequentFeedCache).not.toHaveBeenCalled();
+    expect(useFeedStore.getState().articles).toEqual([]);
+    expect(useFeedStore.getState().infrequentFeedIds).toEqual([]);
+  });
+
+  it('treats a single-article sample as inconclusive', async () => {
+    scanMockOnly([item('feed/solo', 40)]);
+    useFeedStore.setState({
+      filter: 'infrequent',
+      selectedFeed: null,
+      subscriptions: [{ id: 'feed/solo', title: 'Solo' }] as Subscription[],
+    });
+
+    await useFeedStore.getState().loadArticles();
+
+    expect(backendApi.saveInfrequentFeedCache).not.toHaveBeenCalled();
+  });
+
+  it('treats an exhausted scan budget as inconclusive — incomplete evidence must not reject', async () => {
+    // Every page carries malformed/missing timestamps and the journal never
+    // ends: 12 pages prove nothing either way.
+    vi.mocked(api.getStreamContents).mockImplementation(() => Promise.resolve({
+      items: Array.from({ length: 8 }, (_, i) => ({ ...item('feed/ghost', i), published: i === 0 ? undefined : 0 })),
+      continuation: 'never-ending',
+    } as never));
+    useFeedStore.setState({
+      filter: 'infrequent',
+      selectedFeed: null,
+      subscriptions: [{ id: 'feed/ghost', title: 'Ghost' }] as Subscription[],
+    });
+
+    await useFeedStore.getState().loadArticles();
+
+    expect(api.getStreamContents).toHaveBeenCalledTimes(12);
+    expect(backendApi.saveInfrequentFeedCache).not.toHaveBeenCalled();
+  });
+
+  it('keeps articles outside the rolling 90-day window out of the statistics', async () => {
+    // In-window articles (8, 40 days ago → span 32d, 32d intervals) qualify;
+    // the 120-day-old article must neither join the calculation nor block it.
+    vi.mocked(api.getStreamContents).mockImplementation(
+      ((streamId: string, _count: number, _cont: string | null, excludeTag: string | null) => {
+        if (excludeTag === 'user/-/state/com.google/read') {
+          return Promise.resolve({ items: [item(streamId, 8, 'boundary-item')], continuation: null });
+        }
+        return Promise.resolve({
+          items: [item(streamId, 8), item(streamId, 40), item(streamId, 120)],
+          continuation: null,
+        });
+      }) as never,
+    );
+    useFeedStore.setState({
+      filter: 'infrequent',
+      selectedFeed: null,
+      subscriptions: [{ id: 'feed/boundary', title: 'Boundary' }] as Subscription[],
+    });
+
+    await useFeedStore.getState().loadArticles();
+
+    expect(backendApi.saveInfrequentFeedCache).toHaveBeenCalledWith(['feed/boundary'], ['feed/boundary']);
+    expect(useFeedStore.getState().articles.map((a) => a.id)).toContain('boundary-item');
+    expect(useFeedStore.getState().infrequentFeedIds).toEqual(['feed/boundary']);
+  });
+
+  it('handles multiple same-day articles: zero-length intervals count correctly', async () => {
+    // Ascending ages 3,3,3,3,10,20,30,40 → intervals 0,0,0,7,10,10,10:
+    // mean 37/7 ≈ 5.3d (fails) — same-day bursts must count as 0-length
+    // intervals, not disappear from the statistics.
+    scanMockOnly([
+      item('feed/same-day', 3), item('feed/same-day', 3, 'sd-2'), item('feed/same-day', 3, 'sd-3'),
+      item('feed/same-day', 3, 'sd-4'), item('feed/same-day', 10), item('feed/same-day', 20),
+      item('feed/same-day', 30), item('feed/same-day', 40),
+    ]);
+    useFeedStore.setState({
+      filter: 'infrequent',
+      selectedFeed: null,
+      subscriptions: [{ id: 'feed/same-day', title: 'SameDay' }] as Subscription[],
+    });
+
+    await useFeedStore.getState().loadArticles();
+
+    expect(backendApi.saveInfrequentFeedCache).toHaveBeenCalledWith(['feed/same-day'], []);
+    expect(useFeedStore.getState().articles).toEqual([]);
+  });
+
+  it('a conclusively excluded feed has its stale snapshot articles removed from the view', async () => {
+    // WELT's classification turned frequent; the local snapshot (from an
+    // earlier era or classification) still holds its articles. An exclusion —
+    // conclusive either way — must purge them from the view and the snapshot.
+    localStorage.setItem(
+      `frirss_infrequent_articles_v2_${snapshotKey}`,
+      JSON.stringify([{ id: 'welt-stale', title: 'WELT stale', sourceId: 'feed/welt', published: Date.now(), read: false, starred: false, labels: [], tags: [] }]),
+    );
+    scanMockOnly([
+      item('feed/welt', 0), item('feed/welt', 1), item('feed/welt', 2), item('feed/welt', 3),
+      item('feed/welt', 4), item('feed/welt', 5), item('feed/welt', 6), item('feed/welt', 9),
+    ]);
+    useFeedStore.setState({
+      filter: 'infrequent',
+      selectedFeed: null,
+      subscriptions: [{ id: 'feed/welt', title: 'WELT' }] as Subscription[],
+    });
+
+    await useFeedStore.getState().loadArticles();
+
+    expect(useFeedStore.getState().articles).toEqual([]);
+    expect(JSON.parse(localStorage.getItem(`frirss_infrequent_articles_v2_${snapshotKey}`) || '[]')).toEqual([]);
+  });
+
+  it('warm cache: exclusion survives a re-visit and an old snapshot cannot resurrect a feed', async () => {
+    localStorage.setItem(
+      `frirss_infrequent_articles_v2_${snapshotKey}`,
+      JSON.stringify([{ id: 'welt-stale', title: 'WELT stale', sourceId: 'feed/welt', published: Date.now(), read: false, starred: false, labels: [], tags: [] }]),
+    );
+    vi.mocked(backendApi.getInfrequentFeedCache).mockResolvedValueOnce({ cached: true, feedIds: [] });
+    useFeedStore.setState({
+      filter: 'infrequent',
+      selectedFeed: null,
+      subscriptions: [{ id: 'feed/welt', title: 'WELT' }] as Subscription[],
+    });
+
+    await useFeedStore.getState().loadArticles();
+
+    expect(api.getStreamContents).not.toHaveBeenCalled();
+    expect(backendApi.saveInfrequentFeedCache).not.toHaveBeenCalled();
+    expect(useFeedStore.getState().articles).toEqual([]);
+    expect(useFeedStore.getState().infrequentFeedIds).toEqual([]);
+  });
+
+  it('warm cache: articles from non-eligible feeds are purged while eligible feeds still publish', async () => {
+    localStorage.setItem(
+      `frirss_infrequent_articles_v2_${snapshotKey}`,
+      JSON.stringify([
+        { id: 'welt-stale', title: 'WELT stale', sourceId: 'feed/welt', published: Date.now(), read: false, starred: false, labels: [], tags: [] },
+      ]),
+    );
+    vi.mocked(backendApi.getInfrequentFeedCache).mockResolvedValueOnce({ cached: true, feedIds: ['feed/rare'] });
+    vi.mocked(api.getStreamContents).mockImplementation(
+      ((streamId: string, _count: number, _cont: string | null, excludeTag: string | null) => {
+        if (excludeTag === 'user/-/state/com.google/read') {
+          return Promise.resolve({ items: [item(streamId, 24, 'rare-item')], continuation: null });
+        }
+        throw new Error('no scan expected on a cache hit');
+      }) as never,
+    );
+    useFeedStore.setState({
+      filter: 'infrequent',
+      selectedFeed: null,
+      subscriptions: [
+        { id: 'feed/rare', title: 'Rare' },
+        { id: 'feed/welt', title: 'WELT' },
+      ] as Subscription[],
+    });
+
+    await useFeedStore.getState().loadArticles();
+
+    expect(useFeedStore.getState().articles.map((a) => a.id)).toEqual(['rare-item']);
+    expect(useFeedStore.getState().infrequentFeedIds).toEqual(['feed/rare']);
+    const snapshot = JSON.parse(localStorage.getItem(`frirss_infrequent_articles_v2_${snapshotKey}`) || '[]') as { id: string }[];
+    expect(snapshot.find((a) => a.id === 'welt-stale')).toBeUndefined();
+  });
+
+  it('ignores snapshots stored under the pre-v2 key shape', async () => {
+    localStorage.setItem(
+      `frirss_infrequent_articles_v1_${snapshotKey}`,
+      JSON.stringify([{ id: 'old-welt', title: 'Old WELT', sourceId: 'feed/welt', published: Date.now(), read: false, starred: false, labels: [], tags: [] }]),
+    );
+    vi.mocked(backendApi.getInfrequentFeedCache).mockResolvedValueOnce({ cached: true, feedIds: [] });
+    useFeedStore.setState({
+      filter: 'infrequent',
+      selectedFeed: null,
+      subscriptions: [{ id: 'feed/welt', title: 'WELT' }] as Subscription[],
+    });
+
+    await useFeedStore.getState().loadArticles();
+
+    // The stale pre-fix snapshot (a frequent publisher baked in by an older
+    // implementation) must NOT be painted — the collection starts empty.
+    expect(useFeedStore.getState().articles).toEqual([]);
+  });
+
+  it('silently refreshes counters but never replaces the classified list with the raw reading list', async () => {
+    // Regression: `silentRefresh` fell through to `fetchArticleStream`, whose
+    // default branch describes THE WHOLE READING-LIST — every tab-visibility
+    // regain, pull-to-refresh or refresh-loop tick replaced the Infrequent
+    // list with every publisher in the account (WELT, FAZ, …).
+    useFeedStore.setState({
+      filter: 'infrequent',
+      selectedFeed: null,
+      articles: [{ id: 'rare-item', read: false, sourceId: 'feed/rare' } as Article],
+    });
+
+    await useFeedStore.getState().silentRefresh();
+
+    // Only the counter-related streams may have been touched; nothing may
+    // have fetched the reading list or a feed stream to REPLACE the list.
+    const listCalls = vi.mocked(api.getStreamContents).mock.calls.filter(
+      (call) => call[0] === READING_LIST || String(call[0]).startsWith('feed/')
+        || String(call[0]).includes('reading-list'),
+    );
+    expect(listCalls).toEqual([]);
+    expect(useFeedStore.getState().articles.map((a) => a.id)).toEqual(['rare-item']);
+  });
+});
+
 describe('feedStore.loadSpecialCounts — saved-article snapshot for Intelligence Next', () => {
   const item = (id: string, title: string, extra: string[] = []) => ({
     id,

@@ -251,9 +251,32 @@ function medianInterval(times: number[]): number {
 // in stream/contents responses, so large scan pages waste bandwidth and delay first paint.
 const INFREQUENT_SCAN_PAGE_SIZE = 8;
 const INFREQUENT_ARTICLE_PAGE_SIZE = 12;
-// Bound deep scans, but reject clearly frequent feeds early based on a sustained
-// recent publishing cadence instead of paging through their entire history.
+// Bound deep scans, but let the sound early-exclusion rules below reject
+// clearly frequent feeds long before the budget is spent.
 const INFREQUENT_SCAN_MAX_PAGES = 12;
+// Sound early-exclusion bounds, derived from the definition itself:
+//
+//   mean(f) = span / (n − 1) and span ≤ 90 days, so mean ≥ 7 days forces
+//   n − 1 ≤ 90/7 → at most 13 in-window articles for a qualifying feed.
+//
+// Therefore 14 or more in-window, date-valid articles PROVE the mean interval
+// is below seven days. (Articles with missing/invalid dates are skipped — see
+// the stamping guard below — so the parseable count is a lower bound on the
+// real count and the bound stays sound.)
+const INFREQUENT_MAX_QUALIFYING_ARTICLES = 13;
+// With the mean at least seven days over a ≤90-day window, the feed has at
+// most 12 intervals. A median ≥ 7 days forces no more than ⌊(m−1)/2⌋ of those
+// intervals shorter than 7 days, i.e. at most 5. Six or more short intervals
+// PROVE the median is below seven days (and if the mean fails too, the feed is
+// excluded either way — both statistics must clear the bar, so one failure is
+// enough to reject).
+const INFREQUENT_MAX_SUB_THRESHOLD_INTERVALS = 5;
+// The previous heuristic (mean AND median of the scanned newest-pages below
+// 7 days) was NOT sound: a feed with ~10-day spacing, one pause and a few
+// bursts has a qualifying full-window mean AND median while its newest block
+// trips both statistics. See the regression test "does not early-exclude a
+// qualifying feed whose newest pages look busy" — the rules above replace it
+// with bounds that cannot be violated by a qualifying feed.
 let infrequentScanController: AbortController | null = null;
 
 async function fetchInfrequentArticles(
@@ -327,12 +350,29 @@ async function fetchInfrequentArticles(
       eligible.push(...cached.feedIds.filter((id) => subscriptionIds.includes(id)));
       cacheHit = true;
       classificationConclusive = true;
+      // The server cache holds a COMPLETE classification for this exact
+      // subscription set and algorithm version. Everything it did not mark
+      // eligible is conclusively ineligible — drop whatever an older local
+      // snapshot still shows for those feeds, so an item admitted by a
+      // since-invalidated classification cannot outlive its source. This is
+      // what keeps a warm cache (and a refresh after it) exclusion-safe.
+      useFeedStore.setState({ infrequentFeedIds: [...eligible] });
+      if (shouldContinue()) {
+        const eligibleSet = new Set(eligible);
+        for (const feed of subscriptions) {
+          if (!eligibleSet.has(feed.id)) onArticles?.([], feed.id);
+        }
+      }
     }
   } catch (error) {
     console.warn('[FriRSS] infrequent-sites: cache lookup failed; rescanning', error);
   }
 
   if (!cacheHit) {
+    // Fresh classification: the displayed collection starts from zero and is
+    // rebuilt feed by feed as eligibility resolves, so the badge and the list
+    // grow together and never inherit pre-scan totals.
+    useFeedStore.setState({ infrequentFeedIds: [] });
     // Avoid flooding FreshRSS with one request per subscription at once.
     let next = 0;
     let scanHadErrors = false;
@@ -356,25 +396,34 @@ async function fetchInfrequentArticles(
             }
             let old = false;
             for (const item of result.items) {
-              const published = (item.published || 0) * 1000;
-              if (!published) continue;
+              // The definition works on publication timestamps. Missing or
+              // malformed ones carry no evidence: they are skipped so they can
+              // neither qualify a feed nor tighten the sound bounds above
+              // (the parseable count is a lower bound on the real count).
+              const published = (item.published ?? 0) * 1000;
+              if (!Number.isFinite(published) || published <= 0) continue;
               if (published < cutoff) old = true; else times.push(published);
             }
 
-            // Fast negative classification: once at least six recent articles
-            // span >=14 days but their mean AND median intervals are <7 days,
-            // the feed is demonstrably too frequent. This avoids deep scans of
-            // high-volume feeds (the most expensive case for FreshRSS/proxy).
-            const recentTimes = [...times].sort((a, b) => a - b);
-            if (recentTimes.length >= 6 &&
-                recentTimes[recentTimes.length - 1] - recentTimes[0] >= 14 * 24 * 60 * 60 * 1000) {
-              const intervals = recentTimes.slice(1).map((t, i) => t - recentTimes[i]);
-              const meanInterval = intervals.reduce((sum, n) => sum + n, 0) / intervals.length;
-              if (meanInterval < INFREQUENT_MIN_INTERVAL_MS &&
-                  medianInterval(recentTimes) < INFREQUENT_MIN_INTERVAL_MS) {
-                definitelyFrequent = true;
-                break;
-              }
+            // Sound early exclusion: reject a feed as soon as the articles
+            // seen so far prove it cannot meet the definition (mean ≥ 7d AND
+            // median ≥ 7d over the 90-day window). At most 13 in-window
+            // articles can keep the mean at/above 7 days, and at most 5 of
+            // the intervals can stay below 7 days for the median to. Both
+            // rejections read in-window articles only — never a truncated
+            // scan — and only ever REJECT: acceptance is still confirmed by a
+            // full window boundary / exhausted scan of the feed's history.
+            const sortedTimes = [...times].sort((a, b) => a - b);
+            let shortIntervals = 0;
+            for (let i = 1; i < sortedTimes.length; i++) {
+              if (sortedTimes[i] - sortedTimes[i - 1] < INFREQUENT_MIN_INTERVAL_MS) shortIntervals++;
+            }
+            if (
+              times.length > INFREQUENT_MAX_QUALIFYING_ARTICLES ||
+              shortIntervals > INFREQUENT_MAX_SUB_THRESHOLD_INTERVALS
+            ) {
+              definitelyFrequent = true;
+              break;
             }
 
             continuation = result.continuation;
@@ -389,7 +438,13 @@ async function fetchInfrequentArticles(
           }
 
           // A conclusive frequent result needs no 30-day scan and is not an error.
-          if (definitelyFrequent) continue;
+          // Its articles (if any are still shown from an older snapshot) must
+          // leave the view — the classification that admitted them no longer
+          // stands.
+          if (definitelyFrequent) {
+            if (shouldContinue()) onArticles?.([], feed.id);
+            continue;
+          }
 
           if (!reachedWindowBoundary && !exhaustedFeed && continuation) {
             scanHadErrors = true;
@@ -406,8 +461,16 @@ async function fetchInfrequentArticles(
           if (intervals.reduce((sum, n) => sum + n, 0) / intervals.length >= INFREQUENT_MIN_INTERVAL_MS &&
               medianInterval(times) >= INFREQUENT_MIN_INTERVAL_MS) {
             eligible.push(feed.id);
+            useFeedStore.setState((state) => ({
+              infrequentFeedIds:
+                state.infrequentFeedIds === null ? [feed.id] : [...state.infrequentFeedIds, feed.id],
+            }));
             // Don't make the user wait for every other subscription to finish.
             await publishFeedArticles(feed.id);
+          } else {
+            // Thorough scan, both statistics below the threshold: conclusively
+            // not infrequent. Drop any of its articles the snapshot still holds.
+            if (shouldContinue()) onArticles?.([], feed.id);
           }
         } catch (error) {
           if (!shouldContinue() || signal.aborted) return;
@@ -762,6 +825,14 @@ export interface FeedState {
    * nothing changed; may lag a star toggle until the next refresh.
    */
   savedArticleSignals: SavedArticleSignal[] | null;
+  /**
+   * Feeds the Infrequent sites classifier holds eligible, or `null` while the
+   * classification is not known (another view, scan start). The list header
+   * sums unread counts over EXACTLY these feeds — never the whole reading
+   * list — so the badge always describes the same collection as the list, and
+   * it grows together with the list while a fresh scan resolves feed by feed.
+   */
+  infrequentFeedIds: string[] | null;
   feedErrors: Record<string, number>;
   // True while the initial subscriptions load is in flight — drives the thin
   // top progress bar so the user sees the app is revalidating (esp. after a
@@ -1032,6 +1103,7 @@ export const useFeedStore = create<FeedState>()((set, get) => ({
   starredCount: 0,
   readLaterCount: 0,
   savedArticleSignals: null,
+  infrequentFeedIds: null,
   offlinePrep: null,
   syncing: false,
   feedErrors: {}, // { [feedId]: timestamp } — tracks feeds that errored on load
@@ -1476,7 +1548,13 @@ export const useFeedStore = create<FeedState>()((set, get) => ({
         get().filter === 'infrequent' &&
         !get().selectedFeed &&
         serverId === useAuthStore.getState().activeServerId;
-      const articleCacheKey = `frirss_infrequent_articles_v1_${serverId || 'default'}`;
+      // Storage key carries the collection SEMANTICS, not the classifier
+      // version (that is the server cache's `algorithmVersion`). Bumped to v2
+      // so snapshots written before the displayed collection was purged on
+      // re-classification — which could still show articles from feeds the
+      // current classifier excludes, e.g. WELT — are dropped wholesale on
+      // upgrade instead of being painted one last time.
+      const articleCacheKey = `frirss_infrequent_articles_v2_${serverId || 'default'}`;
       let cachedArticles: Article[] = [];
       try {
         const raw = localStorage.getItem(articleCacheKey);
@@ -1501,6 +1579,10 @@ export const useFeedStore = create<FeedState>()((set, get) => ({
         continuation: null,
         articles: cachedArticles,
         selectedArticle: null,
+        // Eligibility is not known yet ("" past the snapshot's source feeds):
+        // the header badge hides until the classification, cache hit or fresh,
+        // resolves. It must never fall back to the whole reading-list total.
+        infrequentFeedIds: null,
       });
       const mergeArticles = (fresh: Article[], refreshedFeedId: string): Article[] => {
         if (refreshedFeedId === '__clear__') return [];
@@ -2699,6 +2781,16 @@ export const useFeedStore = create<FeedState>()((set, get) => ({
     if (get().searchQuery) return;
     // Silently reload current article list (no loading spinner)
     const { selectedFeed, filter } = get();
+    // La vue « Sites peu fréquents » est une vue CALCULÉE (les flux retenus
+    // par le classifieur) : `fetchArticleStream` n'a aucun flux à interroger
+    // pour elle — sa branche par défaut décrit la liste de lecture ENTIÈRE,
+    // sans restriction de source ni de non-lu. Un retour d'onglet, un
+    // tirer-pour-rafraîchir et la boucle d'une actualisation en cours ont
+    // donc remplacé la liste classifiée par le brut de tous les flux : c'est
+    // comme ça que WELT, FAZ et Slashdot entraient sous l'en-tête « Sites peu
+    // fréquents ». Les comptes restent synchronisés ci-dessus ; la liste est
+    // réconciliée par le balayage propre à cette vue (`loadArticles`).
+    if (filter === 'infrequent' && !selectedFeed) return;
     // La vue affichée au moment de la requête — comme `loadArticles` avec
     // `sameView()`. Sans ce garde-fou (M2, revue finale), un résultat qui
     // arrive après un changement de vue écrirait `articles` et remettrait
@@ -2928,6 +3020,9 @@ export const useFeedStore = create<FeedState>()((set, get) => ({
       starredCount: 0,
       readLaterCount: 0,
       savedArticleSignals: null,
+      // Per-server snapshot, not world state: the new server's classification
+      // is unknown until its own scan or cache lookup resolves.
+      infrequentFeedIds: null,
       feedErrors: {},
       // A refresh in flight belongs to the server we are leaving; its loop
       // abandons itself. Clear its state here so the banner doesn't stay
