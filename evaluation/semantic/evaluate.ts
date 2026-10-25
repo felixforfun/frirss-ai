@@ -159,7 +159,7 @@ function scoreFold(train: Vote[], test: Vote[], vectors: Map<string, Map<Variant
   const next = orderedScores(candidates, rankInterestingArticles(candidates, fb, fixedNow, 'intelligence-next'));
   out.set('Baseline: Current', current); out.set('Baseline: Intelligence Next', next);
   for (const variant of variants) {
-    const vec = new Map<string, number[]>(); for (const v of [...train, ...test]) vec.set(v.id, vectors.get(v.id)![variant.key]);
+    const vec = new Map<string, number[]>(); for (const v of [...train, ...test]) vec.set(v.id, vectors.get(v.id)!.get(variant.key)!);
     const methods: Record<Method, number[]> = {
       centroid: percentiles(centroidScores(train, test, vec)),
       knn15: percentiles(knnScores(train, test, vec)),
