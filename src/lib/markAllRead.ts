@@ -44,3 +44,20 @@ export function markAllReadAction(confirmEnabled: boolean, isConfirming: boolean
 export function canMarkAllRead(filter: Filter): boolean {
   return filter !== 'starred' && filter !== 'readlater';
 }
+
+/**
+ * Le bouton « Marquer tout comme lu » du groupe de boutons d'en-tête.
+ *
+ * La vue « Sites peu fréquents » est une sélection transversale calculée,
+ * comme les favoris et « à lire plus tard » : FreshRSS ne connaît aucun flux
+ * derrière. Sans contrôle, ce bouton, dans cette vue, vidait TOUTE la liste
+ * de lecture — le badge montrait alors le total global (15 988 non lus chez
+ * un utilisateur) et une confirmation à ce propos vidait chaque flux du
+ * compte, pas seulement les sites retenus par le classifieur. Couper le
+ * bouton ici ne coupe rien d'autre : le marquage par plage (« au-dessus /
+ * en dessous », `canMarkRange`) vise les articles affichés et reste
+ * disponible.
+ */
+export function canMarkAllReadIn(filter: Filter): boolean {
+  return canMarkAllRead(filter) && filter !== 'infrequent';
+}
