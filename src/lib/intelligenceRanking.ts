@@ -8,10 +8,13 @@ export type { IntelligenceContext, SavedArticleSignal } from './intelligenceNext
 export type ExternalSignalSource = 'gdelt' | 'github' | 'hackerNews' | 'lobsters';
 export interface CustomInterestingWeights {
   externalInfluence: number;
+  /** Share of the final score driven by server-side semantic scores. 0 keeps Custom exactly as before. */
+  semanticInfluence: number;
   sources: Record<ExternalSignalSource, number>;
 }
 export const DEFAULT_CUSTOM_INTERESTING_WEIGHTS: CustomInterestingWeights = {
   externalInfluence: 25,
+  semanticInfluence: 0,
   sources: { gdelt: 40, github: 20, hackerNews: 25, lobsters: 15 },
 };
 export function normalizeCustomInterestingWeights(value: unknown): CustomInterestingWeights {
@@ -22,6 +25,9 @@ export function normalizeCustomInterestingWeights(value: unknown): CustomInteres
     ? Math.max(0, Math.min(100, Math.round(v))) : fallback;
   return {
     externalInfluence: clamp(input.externalInfluence, DEFAULT_CUSTOM_INTERESTING_WEIGHTS.externalInfluence),
+    // Weights saved before this field existed (no semanticInfluence key) fall
+    // back to 0: existing setups keep their exact previous behavior.
+    semanticInfluence: clamp(input.semanticInfluence, DEFAULT_CUSTOM_INTERESTING_WEIGHTS.semanticInfluence),
     sources: {
       gdelt: clamp(sources.gdelt, DEFAULT_CUSTOM_INTERESTING_WEIGHTS.sources.gdelt),
       github: clamp(sources.github, DEFAULT_CUSTOM_INTERESTING_WEIGHTS.sources.github),
@@ -40,7 +46,7 @@ export interface ExternalArticleSignals {
 export type ExternalSignalsByUrl = Record<string, ExternalArticleSignals>;
 
 export type InterestingAlgorithm = 'current' | 'weighted-idf' | 'synonyms' | 'topics' | 'combined' | 'microsoft-news' | 'personal-news' | 'intelligence-next'
-  | 'gdelt' | 'gdelt-github' | 'gdelt-hn' | 'hn-lob' | 'all-four' | 'custom';
+  | 'gdelt' | 'gdelt-github' | 'gdelt-hn' | 'hn-lob' | 'all-four' | 'custom' | 'soft-balanced-margin';
 
 export const INTERESTING_ALGORITHMS: Array<{ value: InterestingAlgorithm; label: string }> = [
   { value: 'current', label: 'Current' },
@@ -57,6 +63,7 @@ export const INTERESTING_ALGORITHMS: Array<{ value: InterestingAlgorithm; label:
   { value: 'hn-lob', label: 'HN + LOB' },
   { value: 'all-four', label: 'ALL FOUR' },
   { value: 'custom', label: 'Custom' },
+  { value: 'soft-balanced-margin', label: 'Soft margin (semantic)' },
 ];
 
 /** The default; also the fallback for a missing or unknown saved choice. */
@@ -454,6 +461,65 @@ export function externalSourcesForAlgorithm(algorithm: InterestingAlgorithm, cus
   if (algorithm === 'custom') return customWeights.externalInfluence === 0 ? [] : (Object.keys(customWeights.sources) as ExternalSignalSource[]).filter((source) => customWeights.sources[source] > 0);
   return Object.keys(EXTERNAL_SIGNAL_WEIGHTS[algorithm] ?? {}) as ExternalSignalSource[];
 }
+
+/** Semantic soft-margin scores by article url, as computed by the server. */
+export type SemanticScoresByUrl = Record<string, number>;
+
+/**
+ * Whether the Interesting view needs server semantic scores for the current
+ * choice: the dedicated semantic method always does; Custom only when the
+ * reader gave semantic influence a non-zero share.
+ */
+export function needsSemanticScores(algorithm: InterestingAlgorithm, customWeights: CustomInterestingWeights = DEFAULT_CUSTOM_INTERESTING_WEIGHTS): boolean {
+  return algorithm === 'soft-balanced-margin' || (algorithm === 'custom' && customWeights.semanticInfluence > 0);
+}
+
+function rankWithSemanticScores(
+  articles: Article[],
+  feedback: ArticleFeedback[],
+  now: number,
+  context: IntelligenceContext,
+  semanticScores: SemanticScoresByUrl,
+): Article[] {
+  // Intelligence Next is the fixed base for the score-driven methods (same
+  // fallback family as the external-signal variants). Without any usable
+  // semantic score — provider unavailable, feedback still too thin, batches
+  // pending — the base ordering stands and nothing is penalised for missing
+  // data.
+  const base = rankIntelligenceNext(articles, feedback, now, context);
+  if (base.length < 2) return base;
+  const baseIndex = new Map(base.map((article, index) => [article, index]));
+  const scored = base.filter((article) => Number.isFinite(semanticScores[article.url]));
+  if (!scored.length) return base;
+  const byScore = [...scored].sort((a, b) => (semanticScores[b.url] ?? 0) - (semanticScores[a.url] ?? 0));
+  const semanticRank = new Map<Article, number>();
+  const last = byScore.length - 1;
+  byScore.forEach((article, index) => semanticRank.set(article, last ? (last - index) / last : 1));
+  // Pure soft-margin ordering where scores exist (the audited method has no
+  // freshness or diversity terms); unscored articles follow in base order.
+  return [...base].sort((a, b) => {
+    const rankA = semanticRank.get(a);
+    const rankB = semanticRank.get(b);
+    if (rankA !== undefined && rankB !== undefined) {
+      if (rankA !== rankB) return rankB - rankA;
+      return (baseIndex.get(a) ?? 0) - (baseIndex.get(b) ?? 0);
+    }
+    if (rankA !== undefined) return -1;
+    if (rankB !== undefined) return 1;
+    return (baseIndex.get(a) ?? 0) - (baseIndex.get(b) ?? 0);
+  });
+}
+
+/** Within-cohort rank score of the semantic scores, best article = 1. Missing entries stay absent. */
+function semanticRankScores(base: Article[], semanticScores: SemanticScoresByUrl): Map<Article, number> {
+  const scored = base.filter((article) => Number.isFinite(semanticScores[article.url]));
+  const byScore = [...scored].sort((a, b) => (semanticScores[b.url] ?? 0) - (semanticScores[a.url] ?? 0));
+  const ranks = new Map<Article, number>();
+  const last = byScore.length - 1;
+  byScore.forEach((article, index) => ranks.set(article, last ? (last - index) / last : 1));
+  return ranks;
+}
+
 function rankWithExternalSignals(
   articles: Article[],
   feedback: ArticleFeedback[],
@@ -462,6 +528,7 @@ function rankWithExternalSignals(
   context: IntelligenceContext,
   externalSignals: ExternalSignalsByUrl,
   customWeights: CustomInterestingWeights = DEFAULT_CUSTOM_INTERESTING_WEIGHTS,
+  semanticScores: SemanticScoresByUrl = {},
 ): Article[] {
   const base = rankIntelligenceNext(articles, feedback, now, context);
   if (base.length < 2) return base;
@@ -469,23 +536,47 @@ function rankWithExternalSignals(
   const weights: Partial<Record<ExternalSignalSource, number>> = algorithm === 'custom'
     ? customWeights.sources
     : (EXTERNAL_SIGNAL_WEIGHTS[algorithm] ?? {});
+  // Custom only: external and semantic influence shares, rescaled proportionally
+  // when together they exceed 100% so the base keeps the remainder.
+  const externalInfluence = algorithm === 'custom' ? customWeights.externalInfluence / 100 : 0.25;
+  // A missing semanticInfluence (weights saved before the field existed and
+  // passed directly, bypassing the store's normalisation) means no semantic
+  // share, never NaN.
+  const semanticInfluence = algorithm === 'custom' && Number.isFinite(customWeights.semanticInfluence) ? customWeights.semanticInfluence / 100 : 0;
+  const totalInfluence = externalInfluence + semanticInfluence;
+  const scale = totalInfluence > 1 ? 1 / totalInfluence : 1;
+  const externalShare = externalInfluence * scale;
+  const semanticShare = semanticInfluence * scale;
+  // With zero semantic influence this is exactly the previous blend:
+  // (1 - externalShare) * personal + externalShare * external.
+  const semanticRanks = semanticShare > 0 ? semanticRankScores(base, semanticScores) : null;
   return [...base].map((article, baseIndex) => {
     const personal = baseScore.get(article) ?? 0;
     const signals = externalSignals[article.url];
-    if (!signals) return { article, score: personal, baseIndex };
-    let weighted = 0;
-    let totalWeight = 0;
-    for (const [source, weight] of Object.entries(weights) as Array<[ExternalSignalSource, number]>) {
-      const value = signals[source];
-      if (value === null || value === undefined || !Number.isFinite(value)) continue;
-      weighted += weight * Math.max(0, Math.min(1, value));
-      totalWeight += weight;
+    // Articles with neither external signals nor a semantic rank keep the base
+    // score bit-for-bit, exactly as before the semantic blend existed.
+    if (!signals && !(semanticRanks && semanticRanks.has(article))) {
+      return { article, score: personal, baseIndex };
     }
-    // If every requested provider failed or was inapplicable, preserve the
-    // base rank exactly. Do not turn missing data into a popularity penalty.
-    const external = totalWeight > 0 ? weighted / totalWeight : personal;
-    const influence = algorithm === 'custom' ? customWeights.externalInfluence / 100 : 0.25;
-    return { article, score: (1 - influence) * personal + influence * external, baseIndex };
+    let external = personal;
+    if (signals) {
+      let weighted = 0;
+      let totalWeight = 0;
+      for (const [source, weight] of Object.entries(weights) as Array<[ExternalSignalSource, number]>) {
+        const value = signals[source];
+        if (value === null || value === undefined || !Number.isFinite(value)) continue;
+        weighted += weight * Math.max(0, Math.min(1, value));
+        totalWeight += weight;
+      }
+      // If every requested provider failed or was inapplicable, preserve the
+      // base rank exactly. Do not turn missing data into a popularity penalty.
+      external = totalWeight > 0 ? weighted / totalWeight : personal;
+    }
+    // Missing semantic scores are neutral (the personal score), like missing
+    // external signals; a scored article's rank within the scored cohort is real.
+    const semantic = semanticRanks?.get(article) ?? personal;
+    const score = (1 - externalShare - semanticShare) * personal + externalShare * external + semanticShare * semantic;
+    return { article, score, baseIndex };
   }).sort((a, b) => b.score - a.score || a.baseIndex - b.baseIndex).map(({ article }) => article);
 }
 
@@ -503,9 +594,13 @@ export function rankInterestingArticles(
   context: IntelligenceContext = {},
   externalSignals: ExternalSignalsByUrl = {},
   customWeights: CustomInterestingWeights = DEFAULT_CUSTOM_INTERESTING_WEIGHTS,
+  semanticScores: SemanticScoresByUrl = {},
 ): Article[] {
+  if (algorithm === 'soft-balanced-margin') {
+    return rankWithSemanticScores(articles, feedback, now, context, semanticScores);
+  }
   if (EXTERNAL_SIGNAL_WEIGHTS[algorithm] || algorithm === 'custom') {
-    return rankWithExternalSignals(articles, feedback, now, algorithm, context, externalSignals, customWeights);
+    return rankWithExternalSignals(articles, feedback, now, algorithm, context, externalSignals, customWeights, semanticScores);
   }
   if (algorithm === 'current') return rankCurrent(articles, feedback, now);
   if (algorithm === 'intelligence-next') return rankIntelligenceNext(articles, feedback, now, context);

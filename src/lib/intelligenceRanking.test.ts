@@ -1,7 +1,18 @@
 import { describe, expect, it } from 'vitest';
 import type { Article } from '../types';
 import type { ArticleFeedback } from '../api/intelligence';
-import { DEFAULT_INTERESTING_ALGORITHM, INTERESTING_ALGORITHMS, isInterestingAlgorithm, rankInterestingArticles } from './intelligenceRanking';
+import {
+  DEFAULT_CUSTOM_INTERESTING_WEIGHTS,
+  DEFAULT_INTERESTING_ALGORITHM,
+  INTERESTING_ALGORITHMS,
+  isInterestingAlgorithm,
+  needsSemanticScores,
+  normalizeCustomInterestingWeights,
+  rankInterestingArticles,
+  type ExternalSignalSource,
+  type SemanticScoresByUrl,
+} from './intelligenceRanking';
+import { rankIntelligenceNext, type IntelligenceContext } from './intelligenceNext';
 
 function article(id: string, title: string, summary: string, published = Date.now()): Article {
   return {
@@ -23,7 +34,7 @@ describe('rankInterestingArticles', () => {
   it('keeps the Intelligence Next order when custom external influence is zero', () => {
     const first = article('first', 'AI systems', 'Research on AI');
     const second = article('second', 'Gardening', 'Growing vegetables');
-    const weights = { externalInfluence: 0, sources: { gdelt: 100, github: 0, hackerNews: 0, lobsters: 0 } };
+    const weights = { externalInfluence: 0, semanticInfluence: 0, sources: { gdelt: 100, github: 0, hackerNews: 0, lobsters: 0 } };
     const base = rankInterestingArticles([first, second], [], Date.now(), 'intelligence-next');
     const custom = rankInterestingArticles([first, second], [], Date.now(), 'custom', {}, {
       [first.url]: { gdelt: 0, github: null, hackerNews: null, lobsters: null },
@@ -35,7 +46,7 @@ describe('rankInterestingArticles', () => {
   it('allows external signals to fully determine the custom ranking at 100 percent', () => {
     const first = article('first', 'AI systems', 'Research on AI');
     const second = article('second', 'Gardening', 'Growing vegetables');
-    const weights = { externalInfluence: 100, sources: { gdelt: 100, github: 0, hackerNews: 0, lobsters: 0 } };
+    const weights = { externalInfluence: 100, semanticInfluence: 0, sources: { gdelt: 100, github: 0, hackerNews: 0, lobsters: 0 } };
     const custom = rankInterestingArticles([first, second], [], Date.now(), 'custom', {}, {
       [first.url]: { gdelt: 0, github: null, hackerNews: null, lobsters: null },
       [second.url]: { gdelt: 1, github: null, hackerNews: null, lobsters: null },
@@ -331,7 +342,7 @@ describe('algorithm registry and selection contract', () => {
     expect(DEFAULT_INTERESTING_ALGORITHM).toBe('current');
     expect(INTERESTING_ALGORITHMS.map((a) => a.value)).toEqual([
       'current', 'weighted-idf', 'synonyms', 'topics', 'combined', 'microsoft-news', 'personal-news', 'intelligence-next',
-      'gdelt', 'gdelt-github', 'gdelt-hn', 'hn-lob', 'all-four', 'custom',
+      'gdelt', 'gdelt-github', 'gdelt-hn', 'hn-lob', 'all-four', 'custom', 'soft-balanced-margin',
     ]);
     expect(INTERESTING_ALGORITHMS.every((a) => isInterestingAlgorithm(a.value))).toBe(true);
     for (const value of ['', 'Current', 'intelligence', null, undefined, 3]) expect(isInterestingAlgorithm(value)).toBe(false);
@@ -380,9 +391,184 @@ describe('algorithm registry and selection contract', () => {
       savedArticles: [{ id: 's', title: 'Tomato garden tips', summary: '', content: '', sourceId: 'feed/2', starred: true, readLater: true }],
     };
     for (const { value } of INTERESTING_ALGORITHMS) {
-      if (value === 'intelligence-next' || ['gdelt', 'gdelt-github', 'gdelt-hn', 'hn-lob', 'all-four', 'custom'].includes(value)) continue;
+      if (value === 'intelligence-next' || ['gdelt', 'gdelt-github', 'gdelt-hn', 'hn-lob', 'all-four', 'custom', 'soft-balanced-margin'].includes(value)) continue;
       const without = rankInterestingArticles(items, votes, now, value).map((x) => x.id);
       expect(rankInterestingArticles(items, votes, now, value, context).map((x) => x.id), value).toEqual(without);
     }
+  });
+});
+
+describe('soft-balanced-margin (semantic) method', () => {
+  it('is registered as a fifteenth method with the existing fourteen untouched', () => {
+    expect(isInterestingAlgorithm('soft-balanced-margin')).toBe(true);
+    expect(INTERESTING_ALGORITHMS).toHaveLength(15);
+    expect(new Set(INTERESTING_ALGORITHMS.map((item) => item.value)).size).toBe(15);
+    const legacy = ['current', 'weighted-idf', 'synonyms', 'topics', 'combined', 'microsoft-news', 'personal-news',
+      'intelligence-next', 'gdelt', 'gdelt-github', 'gdelt-hn', 'hn-lob', 'all-four', 'custom'];
+    legacy.forEach((value, index) => expect(INTERESTING_ALGORITHMS[index].value).toBe(value));
+    expect(INTERESTING_ALGORITHMS[14]).toEqual({ value: 'soft-balanced-margin', label: 'Soft margin (semantic)' });
+  });
+
+  const now = Date.parse('2026-01-15T12:00:00Z');
+  const items = [
+    article('a', 'Rust compiler release', 'Faster builds and borrow checking', now - 3_600_000),
+    article('b', 'Tomato garden tips', 'Grow tomatoes on a balcony', now - 7_200_000),
+    article('c', 'Compiler internals deep dive', 'How the Rust borrow checker works', now - 1_800_000),
+    article('d', 'Stock market wobble', 'Bond yields jump again', now - 900_000),
+  ];
+  const votes = [feedback('Rust compiler', 'borrow checker', 1), feedback('Stock market', 'bond yields', -1)];
+
+  it('orders purely by semantic score, then follows base order for unscored articles', () => {
+    const scores = { 'https://example.test/d': 0.9, 'https://example.test/b': 0.4, 'https://example.test/a': -0.2 };
+    const ranked = rankInterestingArticles(items, votes, now, 'soft-balanced-margin', {}, {}, DEFAULT_CUSTOM_INTERESTING_WEIGHTS, scores);
+    // d (0.9) first, b (0.4) next, a (-0.2, scored) after, then the unscored c in base position.
+    expect(ranked.map((item) => item.id)).toEqual(['d', 'b', 'a', 'c']);
+  });
+
+  it('ranks equal scores by base order', () => {
+    const scores = Object.fromEntries(items.map((item) => [item.url, 0.5]));
+    const ranked = rankInterestingArticles(items, votes, now, 'soft-balanced-margin', {}, {}, DEFAULT_CUSTOM_INTERESTING_WEIGHTS, scores);
+    expect(ranked.map((item) => item.id)).toEqual(['c', 'a', 'd', 'b']);
+  });
+
+  it('falls back to the base (Intelligence Next) ordering without usable scores', () => {
+    const base = rankInterestingArticles(items, votes, now, 'intelligence-next');
+    const scoreVariants: SemanticScoresByUrl[] = [{}, { 'https://example.test/unknown': 1 }, { 'https://example.test/a': Number.NaN }];
+    for (const scores of scoreVariants) {
+      expect(rankInterestingArticles(items, votes, now, 'soft-balanced-margin', {}, {}, DEFAULT_CUSTOM_INTERESTING_WEIGHTS, scores).map((item) => item.id))
+        .toEqual(base.map((item) => item.id));
+    }
+  });
+
+  it('is deterministic for repeated calls', () => {
+    const scores = { 'https://example.test/c': 0.7, 'https://example.test/a': 0.2 };
+    const first = rankInterestingArticles(items, votes, now, 'soft-balanced-margin', {}, {}, DEFAULT_CUSTOM_INTERESTING_WEIGHTS, scores);
+    const second = rankInterestingArticles(items, votes, now, 'soft-balanced-margin', {}, {}, DEFAULT_CUSTOM_INTERESTING_WEIGHTS, scores);
+    expect(first.map((item) => item.id)).toEqual(second.map((item) => item.id));
+  });
+});
+
+describe('semantic influence in Custom', () => {
+  const now = Date.parse('2026-01-15T12:00:00Z');
+  const context: IntelligenceContext = {};
+
+  /** Verbatim replica of the pre-change Custom blend, for the regression proof. */
+  function legacyCustomRank(
+    input: Article[],
+    feedback: ArticleFeedback[],
+    externalSignals: Record<string, { gdelt: number | null; github: number | null; hackerNews: number | null; lobsters: number | null }>,
+    customWeights: { externalInfluence: number; sources: Record<string, number> },
+  ): Article[] {
+    const base = rankIntelligenceNext(input, feedback, now, context);
+    if (base.length < 2) return base;
+    const baseScore = new Map(base.map((article, index) => [article, (base.length - index - 1) / (base.length - 1)]));
+    return [...base].map((article, baseIndex) => {
+      const personal = baseScore.get(article) ?? 0;
+      const signals = externalSignals[article.url];
+      if (!signals) return { article, score: personal, baseIndex };
+      let weighted = 0;
+      let totalWeight = 0;
+      for (const [source, weight] of Object.entries(customWeights.sources) as Array<[ExternalSignalSource, number]>) {
+        const value = signals[source];
+        if (value === null || value === undefined || !Number.isFinite(value)) continue;
+        weighted += weight * Math.max(0, Math.min(1, value));
+        totalWeight += weight;
+      }
+      const external = totalWeight > 0 ? weighted / totalWeight : personal;
+      const influence = customWeights.externalInfluence / 100;
+      return { article, score: (1 - influence) * personal + influence * external, baseIndex };
+    }).sort((a, b) => b.score - a.score || a.baseIndex - b.baseIndex).map(({ article }) => article);
+  }
+
+  const items = [
+    article('a', 'Rust compiler release', 'Faster builds and borrow checking', now - 3_600_000),
+    article('b', 'Tomato garden tips', 'Grow tomatoes on a balcony', now - 7_200_000),
+    article('c', 'Compiler internals deep dive', 'How the Rust borrow checker works', now - 1_800_000),
+    article('d', 'Stock market wobble', 'Bond yields jump again', now - 900_000),
+    article('e', 'Quantum sensor research', 'Trap ion clock stability', now - 500_000),
+  ];
+  const votes = [feedback('Rust compiler', 'borrow checker', 1), feedback('Stock market', 'bond yields', -1)];
+  const signals = {
+    'https://example.test/a': { gdelt: 0.9, github: 0, hackerNews: 0, lobsters: 0 },
+    'https://example.test/b': { gdelt: null, github: null, hackerNews: null, lobsters: null },
+    'https://example.test/c': { gdelt: 0.2, github: 0, hackerNews: 0, lobsters: 0 },
+    'https://example.test/d': { gdelt: 0.5, github: 0, hackerNews: 0, lobsters: 0 },
+    // e has no entry at all (lookup failed).
+  };
+  const weights = { externalInfluence: 25, semanticInfluence: 0, sources: { gdelt: 100, github: 0, hackerNews: 0, lobsters: 0 } };
+
+  it('produces exactly the legacy Custom ordering at 0% semantic influence', () => {
+    const legacy = legacyCustomRank(items, votes, signals, weights);
+    const current = rankInterestingArticles(items, votes, now, 'custom', context, signals, weights);
+    expect(current.map((item) => item.id)).toEqual(legacy.map((item) => item.id));
+  });
+
+  it('is untouched by semantic score values while semantic influence is 0', () => {
+    const junkScores = Object.fromEntries(items.map((item, index) => [item.url, index % 2 ? 1 : -1]));
+    const without = rankInterestingArticles(items, votes, now, 'custom', context, signals, weights);
+    const withJunk = rankInterestingArticles(items, votes, now, 'custom', context, signals, weights, junkScores);
+    expect(withJunk.map((item) => item.id)).toEqual(without.map((item) => item.id));
+  });
+
+  it('changes the ordering once semantic influence is non-zero', () => {
+    const semanticScores = { 'https://example.test/e': 0.99, 'https://example.test/a': 0.1 };
+    const weightsWithSemantic = { ...weights, semanticInfluence: 60 };
+    const ranked = rankInterestingArticles(items, votes, now, 'custom', context, signals, weightsWithSemantic, semanticScores);
+    const withoutSemantic = rankInterestingArticles(items, votes, now, 'custom', context, signals, weights);
+    expect(ranked.map((item) => item.id)).not.toEqual(withoutSemantic.map((item) => item.id));
+    // At a full semantic share the ordering IS the semantic rank order.
+    const fullSemantic = { ...weights, externalInfluence: 0, semanticInfluence: 100 };
+    const allScores = { 'https://example.test/e': 0.99, 'https://example.test/b': 0.5, 'https://example.test/c': 0.3, 'https://example.test/d': 0.2, 'https://example.test/a': 0.1 };
+    expect(rankInterestingArticles(items, votes, now, 'custom', context, signals, fullSemantic, allScores).map((item) => item.id))
+      .toEqual(['e', 'b', 'c', 'd', 'a']);
+  });
+
+  it('rescales external and semantic shares proportionally when they exceed 100%', () => {
+    const semanticScores = { 'https://example.test/a': 0.99 };
+    const overshooting = { ...weights, externalInfluence: 100, semanticInfluence: 100 };
+    const ranked = rankInterestingArticles(items, votes, now, 'custom', context, signals, overshooting, semanticScores);
+    // 50/50 after rescaling: the article with the top semantic score and a top
+    // external signal should surface; nothing may NaN or vanish.
+    expect(ranked).toHaveLength(items.length);
+    expect(new Set(ranked).size).toBe(items.length);
+    expect(ranked[0].id).toBe('a');
+  });
+
+  it('keeps custom external influence 0 equal to plain Intelligence Next', () => {
+    const zeroExternal = { ...weights, externalInfluence: 0 };
+    const base = rankInterestingArticles(items, votes, now, 'intelligence-next');
+    expect(rankInterestingArticles(items, votes, now, 'custom', context, signals, zeroExternal).map((item) => item.id))
+      .toEqual(base.map((item) => item.id));
+  });
+});
+
+describe('needsSemanticScores', () => {
+  it('is true for the semantic method and for Custom with non-zero semantic influence', () => {
+    expect(needsSemanticScores('soft-balanced-margin')).toBe(true);
+    expect(needsSemanticScores('custom', { ...DEFAULT_CUSTOM_INTERESTING_WEIGHTS, semanticInfluence: 1 })).toBe(true);
+    expect(needsSemanticScores('custom', { ...DEFAULT_CUSTOM_INTERESTING_WEIGHTS, semanticInfluence: 0 })).toBe(false);
+    expect(needsSemanticScores('current')).toBe(false);
+    expect(needsSemanticScores('gdelt')).toBe(false);
+    expect(needsSemanticScores('intelligence-next')).toBe(false);
+  });
+});
+
+describe('normalizeCustomInterestingWeights backward compatibility', () => {
+  it('defaults missing semanticInfluence to 0 for weights stored before the field existed', () => {
+    const normalized = normalizeCustomInterestingWeights({
+      externalInfluence: 40,
+      sources: { gdelt: 50, github: 10, hackerNews: 30, lobsters: 10 },
+    });
+    expect(normalized).toEqual({
+      externalInfluence: 40,
+      semanticInfluence: 0,
+      sources: { gdelt: 50, github: 10, hackerNews: 30, lobsters: 10 },
+    });
+  });
+
+  it('clamps out-of-range semantic influence', () => {
+    expect(normalizeCustomInterestingWeights({ semanticInfluence: 250 }).semanticInfluence).toBe(100);
+    expect(normalizeCustomInterestingWeights({ semanticInfluence: -5 }).semanticInfluence).toBe(0);
+    expect(normalizeCustomInterestingWeights({ semanticInfluence: 'x' }).semanticInfluence).toBe(0);
   });
 });

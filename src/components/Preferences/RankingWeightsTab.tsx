@@ -58,6 +58,33 @@ export default function RankingWeightsTab() {
         </div>
       </section>
 
+      <section className="rounded-xl p-4 space-y-3" style={{ border: '1px solid var(--panel-border)' }}>
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <label htmlFor="ranking-semantic-influence" className="text-sm font-medium" style={{ color: 'var(--list-title)' }}>
+              {t('preferences.rankingWeights.semanticInfluence', 'Semantic influence')}
+            </label>
+            <p className="text-xs mt-1" style={{ color: 'var(--list-summary)' }}>
+              {t('preferences.rankingWeights.semanticInfluenceHelp', 'The share of the final ranking score driven by semantic similarity to your votes. 0% keeps the ranking exactly as it is.')}
+            </p>
+          </div>
+          <div className="flex items-center gap-1.5 shrink-0">
+            <input id="ranking-semantic-influence-number" type="number" min={0} max={100} step={5} value={weights.semanticInfluence}
+              onChange={(e) => setWeights({ ...weights, semanticInfluence: Number(e.target.value) })}
+              aria-label={t('preferences.rankingWeights.semanticInfluence', 'Semantic influence')}
+              className={fieldClass} style={fieldStyle} />
+            <span className="text-sm" style={{ color: 'var(--list-summary)' }}>%</span>
+          </div>
+        </div>
+        <input id="ranking-semantic-influence" type="range" min={0} max={100} step={5} value={weights.semanticInfluence}
+          onChange={(e) => setWeights({ ...weights, semanticInfluence: Number(e.target.value) })}
+          aria-label={t('preferences.rankingWeights.semanticInfluence', 'Semantic influence')}
+          className="w-full accent-[var(--accent)]" />
+        <div className="flex justify-between text-xs" style={{ color: 'var(--list-summary)' }}>
+          <span>0% · No semantic influence</span><span>100% · Semantic scores only</span>
+        </div>
+      </section>
+
       <section className="space-y-4">
         <div>
           <h4 className="text-sm font-semibold" style={{ color: 'var(--list-title)' }}>

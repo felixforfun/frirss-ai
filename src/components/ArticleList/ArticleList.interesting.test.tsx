@@ -81,6 +81,9 @@ describe('ArticleList — Interesting algorithm choice', () => {
         ],
         savedArticles: [],
       }),
+      expect.anything(), // external signals map
+      expect.anything(), // custom ranking weights
+      expect.anything(), // semantic scores map
     );
   });
 

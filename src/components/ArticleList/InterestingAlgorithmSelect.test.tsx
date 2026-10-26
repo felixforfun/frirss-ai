@@ -27,10 +27,11 @@ const LABELS = [
   'HN + LOB',
   'ALL FOUR',
   'Custom',
+  'Soft margin (semantic)',
 ];
 
 describe.each(['toolbar', 'sheet'] as const)('InterestingAlgorithmSelect (%s)', (variant) => {
-  it('lists every algorithm, existing ones first and Intelligence Next last', () => {
+  it('lists every algorithm, existing ones first and the new semantic method last', () => {
     render(<InterestingAlgorithmSelect value="current" onChange={() => {}} variant={variant} />);
     const select = screen.getByRole('combobox', { name: 'articleList.rankingAlgorithmLabel' }) as HTMLSelectElement;
     expect([...select.options].map((option) => option.textContent)).toEqual(LABELS);

@@ -550,6 +550,8 @@
       "intro": "Dostosuj wpływ zewnętrznego zainteresowania na widok Interesujące. Ustawienia dotyczą algorytmu Niestandardowy. Istniejące presety pozostają bez zmian.",
       "externalInfluence": "Wpływ zewnętrzny",
       "externalInfluenceHelp": "Część końcowego wyniku rankingu wynikająca z sygnałów zewnętrznych.",
+      "semanticInfluence": "Wpływ semantyczny",
+      "semanticInfluenceHelp": "Udział wyniku końcowego rankingu oparty na podobieństwie semantycznym do Twoich głosów. 0% pozostawia ranking bez zmian.",
       "sourcesTitle": "Wagi źródeł zewnętrznych",
       "sourcesHelp": "Wagi określają względny udział źródeł. Są automatycznie normalizowane i nie muszą sumować się do 100%. Ustaw 0%, aby wykluczyć źródło.",
       "savedAutomatically": "Zmiany są automatycznie zapisywane na koncie. Wybierz Niestandardowy w widoku Interesujące, aby ich użyć.",

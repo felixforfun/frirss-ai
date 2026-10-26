@@ -41,8 +41,8 @@ import { prefersReducedMotion } from '../../lib/reducedMotion';
 import { staggerIndexes, rememberStagger } from '../../lib/rowStagger';
 import type { Article, Filter } from '../../types';
 import { useIntelligenceFeedback } from '../../hooks/useIntelligenceFeedback';
-import { externalSourcesForAlgorithm, rankInterestingArticles, type IntelligenceContext } from '../../lib/intelligenceRanking';
-import { getExternalSignals, type ExternalSignalsByUrl } from '../../api/intelligence';
+import { externalSourcesForAlgorithm, needsSemanticScores, rankInterestingArticles, type IntelligenceContext, type SemanticScoresByUrl } from '../../lib/intelligenceRanking';
+import { getExternalSignals, getSemanticScores, type ExternalSignalsByUrl } from '../../api/intelligence';
 import { useInterestingAlgorithm } from '../../hooks/useInterestingAlgorithm';
 import InterestingAlgorithmSelect from './InterestingAlgorithmSelect';
 
@@ -64,6 +64,10 @@ const contextSignalArrived = (adopted: IntelligenceContextInputs, latest: Intell
   || (adopted.savedArticles === null && latest.savedArticles !== null);
 const NO_RANKED_KEYS: string[] = [];
 
+/** Bounded resumable polling for pending semantic embedding batches. */
+const SEMANTIC_POLL_LIMIT = 12;
+const SEMANTIC_POLL_DELAY_MS = 2000;
+
 // Per-view scroll position, kept across remounts (e.g. returning from an
 // article in 2-panel desktop, or any re-mount of the list).
 const listScrollMem = new Map<string, number>();
@@ -82,6 +86,7 @@ export default function ArticleList() {
   const [interestingAlgorithm, setInterestingAlgorithm] = useInterestingAlgorithm();
   const interestingRankingWeights = useUiStore((s) => s.interestingRankingWeights);
   const [externalSignals, setExternalSignals] = useState<ExternalSignalsByUrl>({});
+  const [semanticScores, setSemanticScores] = useState<SemanticScoresByUrl>({});
 
   const {
     articles,
@@ -832,6 +837,48 @@ export default function ArticleList() {
   // The ranking key captures meaningful article changes without reacting to
   // unrelated feed-store object identity changes.
   }, [isInterestingView, interestingAlgorithm, interestingRankingKey, externalSignalSources]);
+  // Semantic scores (soft balanced margin) are fetched only when the selected
+  // ranking uses them. The server embeds bounded batches per request and
+  // reports the remainder as `missing`; polling continues until the list is
+  // fully scored, reordering progressively as scores arrive. A vote refetches
+  // the feedback and with it the scores, so new votes take effect immediately.
+  const semanticNeeded = useMemo(
+    () => needsSemanticScores(interestingAlgorithm, interestingRankingWeights),
+    [interestingAlgorithm, interestingRankingWeights],
+  );
+  useEffect(() => {
+    if (!isInterestingView || !semanticNeeded) {
+      setSemanticScores((current) => Object.keys(current).length ? {} : current);
+      return;
+    }
+    let cancelled = false;
+    let pollTimer: number | undefined;
+    setSemanticScores((current) => Object.keys(current).length ? {} : current);
+    const request = (attempt: number) => {
+      const candidates = articles.slice(0, 300).map(({ url, title, summary }) => ({ url, title, summary }));
+      void getSemanticScores(candidates).then((response) => {
+        if (cancelled) return;
+        // No usable scores yet: the fallback ordering stands, keep polling in
+        // case feedback or the provider becomes available.
+        if (response.status === 'insufficient-feedback' || response.status === 'provider-unavailable') {
+          if (attempt < SEMANTIC_POLL_LIMIT) pollTimer = window.setTimeout(() => request(attempt + 1), SEMANTIC_POLL_DELAY_MS);
+          return;
+        }
+        setSemanticScores(response.scores);
+        if (response.missing.length && attempt < SEMANTIC_POLL_LIMIT) {
+          pollTimer = window.setTimeout(() => request(attempt + 1), SEMANTIC_POLL_DELAY_MS);
+        }
+      }).catch(() => { /* network or server failure: the fallback ordering stands */ });
+    };
+    request(0);
+    return () => {
+      cancelled = true;
+      if (pollTimer !== undefined) window.clearTimeout(pollTimer);
+    };
+  // The ranking key captures meaningful article changes; the feedback array
+  // identity changes only when the votes change.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isInterestingView, interestingAlgorithm, semanticNeeded, interestingRankingKey, intelligenceFeedback]);
   // Intelligence Next also reads the subscriptions (id, title, folder labels,
   // feed and site URL) and the starred / read-later snapshot. A refresh rebuilds the subscription
   // array even when nothing changed, so the context is keyed by those fields
@@ -877,12 +924,10 @@ export default function ArticleList() {
   );
   const rankedArticleKeys = useMemo(
     () => (isInterestingView
-      ? (externalSignalSources.length > 0
-        ? rankInterestingArticles(articles, intelligenceFeedback, Date.now(), interestingAlgorithm, intelligenceContext, externalSignals, interestingRankingWeights)
-        : rankInterestingArticles(articles, intelligenceFeedback, Date.now(), interestingAlgorithm, intelligenceContext))
+      ? rankInterestingArticles(articles, intelligenceFeedback, Date.now(), interestingAlgorithm, intelligenceContext, externalSignals, interestingRankingWeights, semanticScores)
         .map(rankingIdentity)
       : NO_RANKED_KEYS),
-    [interestingRankingKey, intelligenceFeedback, interestingAlgorithm, intelligenceContext, externalSignals, externalSignalSources, interestingRankingWeights, rankingIdentity, isInterestingView],
+    [interestingRankingKey, intelligenceFeedback, interestingAlgorithm, intelligenceContext, externalSignals, interestingRankingWeights, semanticScores, rankingIdentity, isInterestingView],
   );
   const rankedArticles = useMemo(() => {
     if (!isInterestingView) return articles;
