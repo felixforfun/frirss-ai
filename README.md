@@ -161,6 +161,38 @@ The first launch generates the JWT secret and the token-encryption key and store
 | `FRIRSS_PROXY_RATE_LIMIT` | Proxied **and** article-extraction requests allowed per user per minute — one shared budget (`0` disables; non-integer or negative → default) | `600` |
 | `CORS_ORIGIN` | Allowed CORS origin(s) — only for split front/back deployments | — |
 
+### Semantic ranking (embedding provider)
+
+The **Soft margin (semantic)** ranking method (and the optional *Semantic
+influence* in Custom) needs an embedding provider, configured on the **server
+environment only** — the key is never sent to the browser, accepted from
+clients, or written to logs or API responses:
+
+| Variable | Description | Default |
+|---|---|---|
+| `OPENROUTER_API_KEY` | OpenRouter API key — enables OpenRouter as the embedding provider | — |
+| `OPENROUTER_EMBED_MODEL` | OpenRouter embedding model | `baai/bge-m3` |
+| `OPENROUTER_BASE_URL` | OpenRouter API base URL | `https://openrouter.ai/api/v1` |
+| `OLLAMA_URL` | Ollama base URL — optional fallback when no OpenRouter key is set | — |
+| `OLLAMA_EMBED_MODEL` | Ollama embedding model | `bge-m3` |
+
+OpenRouter wins when its key is present; Ollama is the fallback; with neither,
+the semantic methods stay selectable but keep the base ordering (nothing
+breaks). `openrouter.ai` is a public host and passes the outbound proxy guard
+as-is; a private Ollama host (e.g. `http://ollama:11434` on the Docker network)
+must additionally be listed in `PROXY_INTERNAL_HOSTS`. Vectors are cached per
+provider/model in SQLite, so only the first request for a text pays for the
+embedding. Example for an Unraid/Docker deployment:
+
+```bash
+docker run -d --name frirss -p 8080:80 -v /mnt/user/appdata/frirss:/app/data \
+  -e TZ=Europe/Zurich \
+  -e OPENROUTER_API_KEY=sk-or-v1-… \
+  -e PROXY_INTERNAL_HOSTS=ollama \
+  -e OLLAMA_URL=http://ollama:11434 \
+  ghcr.io/fripix/frirss:latest
+```
+
 > Since 1.4.10 the **server** extracts article text: the browser asks
 > `GET /api/extract` first, and falls back to extracting the page itself only
 > when that route is missing (an older backend), refuses the page, is busy, or

@@ -302,4 +302,218 @@ router.post('/external-signals', async (req, res) => {
   res.json({ signals: Object.fromEntries(signals) });
 });
 
+// ── Semantic (soft balanced margin) scores ─────────────────────────────
+// An exact port of the audited scorer (server/semanticScoring.ts): bge-m3
+// embeddings of clean(title) + "\n" + clean(summary) capped at 5000 chars,
+// cosine similarities against the reader's up- and downvoted articles, and a
+// temperature-smoothed log-mean-exp margin. Vectors are cached per
+// provider/model/preprocessing-version so incompatible configurations never
+// reuse each other's embeddings.
+import {
+  SEMANTIC_PREP_VERSION,
+  embeddingCacheKey,
+  embeddingText,
+  softBalancedMarginScore,
+  unit,
+} from '../semanticScoring.js';
+import { resolveEmbeddingProvider, type EmbeddingProvider } from '../semanticEmbeddings.js';
+
+db.exec(`
+  CREATE TABLE IF NOT EXISTS semantic_embedding_cache (
+    cache_key    TEXT    NOT NULL,
+    provider     TEXT    NOT NULL,
+    model        TEXT    NOT NULL,
+    prep_version INTEGER NOT NULL,
+    vector_json  TEXT    NOT NULL,
+    created_at   TEXT    NOT NULL DEFAULT (datetime('now')),
+    updated_at   TEXT    NOT NULL DEFAULT (datetime('now')),
+    PRIMARY KEY (provider, model, prep_version, cache_key)
+  );
+  CREATE INDEX IF NOT EXISTS idx_semantic_embedding_cache_updated
+    ON semantic_embedding_cache(updated_at);
+`);
+db.prepare('DELETE FROM semantic_embedding_cache WHERE updated_at < datetime(\'now\', \'-90 days\')').run();
+
+/** One in-flight embedding per cache key across concurrent requests. */
+const semanticInFlight = new Map<string, Promise<number[] | null>>();
+
+interface SemanticArticleInput { url: string; title: string; summary: string }
+const SEMANTIC_MAX_ARTICLES = 300;
+/** Bounded, resumable batches: candidates beyond this stay pending for the next request. */
+const SEMANTIC_MAX_EMBEDS_PER_REQUEST = 128;
+/** Reference (feedback) embeddings are a one-time cost and must stay complete: the audited formula uses each class's FULL set. */
+const SEMANTIC_MAX_REF_EMBEDS = 5000;
+
+function semanticIdentity(providerId: string, model: string, key: string): string {
+  return providerId + '|' + model + '|' + key;
+}
+
+router.post('/semantic-scores', async (req, res) => {
+  const body = req.body as { articles?: unknown };
+  if (!Array.isArray(body.articles) || body.articles.length < 1 || body.articles.length > SEMANTIC_MAX_ARTICLES) {
+    return res.status(400).json({ error: 'Invalid semantic-score request' });
+  }
+  const articles: SemanticArticleInput[] = [];
+  const seenUrls = new Set<string>();
+  for (const raw of body.articles) {
+    if (!raw || typeof raw !== 'object') return res.status(400).json({ error: 'Invalid article' });
+    const item = raw as Record<string, unknown>;
+    if (typeof item.url !== 'string' || item.url.length > 4096 || !/^https?:\/\//i.test(item.url)
+      || typeof item.title !== 'string' || item.title.length > 2000
+      || typeof item.summary !== 'string' || item.summary.length > 10000) {
+      return res.status(400).json({ error: 'Invalid article fields' });
+    }
+    if (seenUrls.has(item.url)) continue; // duplicate/syndicated copies: first occurrence wins
+    seenUrls.add(item.url);
+    articles.push({ url: item.url, title: item.title, summary: item.summary });
+  }
+
+  const provider = resolveEmbeddingProvider();
+  if (!provider) {
+    // No provider configured: the current ordering stands; nothing is cached as failed.
+    return res.json({ status: 'provider-unavailable', scores: {}, missing: articles.map((article) => article.url), provider: null });
+  }
+
+  // Reference classes must be complete (the audited formula aggregates over
+  // every upvote and every downvote), so their embeddings are not capped at
+  // the per-request candidate limit; they are one-time costs, then cached.
+  const rows = db.prepare(
+    'SELECT title, summary, content, vote FROM intelligence_feedback WHERE user_id = ? AND vote IN (-1, 1)',
+  ).all(req.user.id) as Array<{ title: string; summary: string; content: string; vote: number }>;
+  const refJobs = new Map<string, { text: string; vote: number }>();
+  for (const row of rows) {
+    // The audit embedded title + summary; content only fills in for old
+    // feedback rows stored before summaries were captured.
+    const text = embeddingText(row.title, row.summary || row.content || '');
+    refJobs.set(embeddingCacheKey(provider.model, text), { text, vote: row.vote });
+  }
+  const refResult = await semanticEmbeddingsFor(
+    provider,
+    [...refJobs.entries()].map(([key, job]) => ({ key, text: job.text })),
+    SEMANTIC_MAX_REF_EMBEDS,
+  );
+  const refVectorByKey = new Map(refResult.vectors.map((entry) => [entry.key, entry.vector]));
+  const positiveRefs: number[][] = [];
+  const negativeRefs: number[][] = [];
+  for (const [key, job] of refJobs) {
+    const vector = refVectorByKey.get(key);
+    if (vector) (job.vote === 1 ? positiveRefs : negativeRefs).push(vector);
+  }
+  if (!positiveRefs.length || !negativeRefs.length) {
+    // Genuine single-class history vs a provider that failed (or is still
+    // working through) the reference embeddings: only the former is a stable
+    // answer, the latter must invite a retry.
+    const hasPositiveRow = rows.some((row) => row.vote === 1);
+    const hasNegativeRow = rows.some((row) => row.vote === -1);
+    const status = hasPositiveRow && hasNegativeRow ? 'no-scores' : 'insufficient-feedback';
+    return res.json({ status, scores: {}, missing: [], provider: provider.id });
+  }
+
+  const scores: Record<string, number> = {};
+  const missing: string[] = [];
+  const candidateJobs = articles.map((article) => {
+    const text = embeddingText(article.title, article.summary);
+    return { article, text, key: embeddingCacheKey(provider.model, text) };
+  });
+  const candidateResult = await semanticEmbeddingsFor(provider, candidateJobs, SEMANTIC_MAX_EMBEDS_PER_REQUEST);
+  const vectorByKey = new Map(candidateResult.vectors.map((entry) => [entry.key, entry.vector]));
+  const refVectors = [...positiveRefs, ...negativeRefs];
+  for (const job of candidateJobs) {
+    const vector = vectorByKey.get(job.key);
+    if (!vector) { missing.push(job.article.url); continue; }
+    const sims = refVectors.map((ref) => {
+      let dot = 0;
+      const length = Math.min(vector.length, ref.length);
+      for (let index = 0; index < length; index++) dot += vector[index] * ref[index];
+      return dot;
+    });
+    const score = softBalancedMarginScore(
+      sims.slice(0, positiveRefs.length),
+      sims.slice(positiveRefs.length),
+    );
+    if (score === null) missing.push(job.article.url);
+    else scores[job.article.url] = score;
+  }
+  const status = missing.length ? (Object.keys(scores).length ? 'partial' : 'no-scores') : 'ok';
+  res.json({ status, scores, missing, provider: provider.id });
+});
+
+/**
+ * Cache-backed embedding lookup for one provider, writing successful vectors
+ * through. Bounded and resumable: at most `maxEmbeds` provider lookups per
+ * call; jobs beyond that are returned as `notAttempted` so the caller re-asks.
+ * Concurrent requests share one in-flight embedding per cache key.
+ */
+async function semanticEmbeddingsFor(
+  provider: EmbeddingProvider,
+  jobs: Array<{ key: string; text: string }>,
+  maxEmbeds: number,
+): Promise<{ vectors: Array<{ key: string; vector: number[] }>; notAttempted: Set<string>; failures: number }> {
+  const vectors: Array<{ key: string; vector: number[] }> = [];
+  const uncached: Array<{ key: string; text: string }> = [];
+  const read = db.prepare(`SELECT vector_json FROM semantic_embedding_cache
+    WHERE provider = ? AND model = ? AND prep_version = ? AND cache_key = ?`);
+  for (const job of jobs) {
+    const row = read.get(provider.id, provider.model, SEMANTIC_PREP_VERSION, job.key) as { vector_json: string } | undefined;
+    if (row) {
+      try {
+        const vector = JSON.parse(row.vector_json) as unknown;
+        // Vectors are stored already unit-normalised; reusing them as-is keeps
+        // scores bit-identical between a fresh embed and a cache hit.
+        if (Array.isArray(vector) && vector.length && vector.every((value) => typeof value === 'number' && Number.isFinite(value))) {
+          vectors.push({ key: job.key, vector: vector as number[] });
+          continue;
+        }
+      } catch { /* corrupt row: treat as a miss and overwrite below */ }
+    }
+    uncached.push(job);
+  }
+  const attempted = uncached.slice(0, maxEmbeds);
+  const notAttempted = new Set(uncached.slice(maxEmbeds).map((job) => job.key));
+  if (!attempted.length) return { vectors, notAttempted, failures: 0 };
+
+  const write = db.prepare(`INSERT INTO semantic_embedding_cache
+      (cache_key, provider, model, prep_version, vector_json, updated_at)
+    VALUES (?, ?, ?, ?, ?, datetime('now'))
+    ON CONFLICT(provider, model, prep_version, cache_key) DO UPDATE SET
+      vector_json = excluded.vector_json, updated_at = excluded.updated_at`);
+
+  // Jobs with no in-flight embedding yet are embedded in ONE batched provider
+  // call whose result is distributed per key; concurrent requests join it.
+  const fresh = attempted.filter((job) => !semanticInFlight.has(semanticIdentity(provider.id, provider.model, job.key)));
+  if (fresh.length) {
+    const batchPromise = provider.embed(fresh.map((job) => job.text)).then((results) => {
+      const byKey = new Map<string, number[] | null>();
+      fresh.forEach((job, index) => byKey.set(job.key, results[index] ?? null));
+      return byKey;
+    }).catch(() => {
+      // A failed wave leaves nothing cached: the next request retries.
+      const byKey = new Map<string, number[] | null>();
+      for (const job of fresh) byKey.set(job.key, null);
+      return byKey;
+    }).finally(() => {
+      for (const job of fresh) semanticInFlight.delete(semanticIdentity(provider.id, provider.model, job.key));
+    });
+    for (const job of fresh) {
+      semanticInFlight.set(
+        semanticIdentity(provider.id, provider.model, job.key),
+        batchPromise.then((byKey) => byKey.get(job.key) ?? null),
+      );
+    }
+  }
+
+  const settled = await Promise.all(attempted.map(async (job) => ({
+    key: job.key,
+    vector: await (semanticInFlight.get(semanticIdentity(provider.id, provider.model, job.key)) ?? Promise.resolve<number[] | null>(null)),
+  })));
+  let failures = 0;
+  for (const entry of settled) {
+    if (!entry.vector) { failures++; continue; }
+    const normalized = unit(entry.vector);
+    write.run(entry.key, provider.id, provider.model, SEMANTIC_PREP_VERSION, JSON.stringify(normalized));
+    vectors.push({ key: entry.key, vector: normalized });
+  }
+  return { vectors, notAttempted, failures };
+}
+
 export default router;

@@ -3073,6 +3073,10 @@ fichiers statiques et `trust proxy`) · `PORT` (port interne d'Express, 3001) ·
 **Proxy sortant** — `PROXY_REWRITES` · `PROXY_INTERNAL_HOSTS` ·
 `FRIRSS_PROXY_RATE_LIMIT`
 
+**Embeddings sémantiques** — `OPENROUTER_API_KEY` · `OPENROUTER_EMBED_MODEL` ·
+`OPENROUTER_BASE_URL` · `OLLAMA_URL` · `OLLAMA_EMBED_MODEL` (clé jamais envoyée
+au client ; voir « Semantic ranking »)
+
 **Cache et relève** — `REDIS_URL` · `CACHE_ARTICLES_PER_FEED` · `CACHE_TTL` ·
 `CACHE_SYNC_INTERVAL` · `CACHE_SYNC_ACTIVE_DAYS` · `CACHE_SYNC_PARALLEL_USERS` ·
 `FRIRSS_REFRESH_MAX_FEEDS`
@@ -3122,12 +3126,22 @@ For the account-configured domain allowlist in Preferences → AI summaries, ope
 
 ## Intelligence and article feedback (MVP)
 
-An **Interesting** view ranks articles using per-user feedback while leaving FreshRSS as the source of truth for article content and read/unread state. A positive or negative vote can be toggled off; feedback is stored in FriRSS SQLite and is scoped to the signed-in FriRSS account. Ranking offers several local models, including Intelligence Next, plus five opt-in external-signal experiments (GDELT coverage, GitHub repository traction, Hacker News engagement and Lobsters engagement). External lookups are authenticated, cached per article/source in SQLite, and unavailable providers are neutral. The external variants use Intelligence Next as their fixed base and blend rank-normalized scores at 75/25. GDELT measures recent seven-day coverage; GitHub uses repository stars and push recency, not historical star growth. The local models do **not** use semantic embeddings: related concepts expressed with different words may not match. Missing article content falls back to title and RSS summary, so ranking quality depends on the text available. No vote means unknown, not a negative signal.
+An **Interesting** view ranks articles using per-user feedback while leaving FreshRSS as the source of truth for article content and read/unread state. A positive or negative vote can be toggled off; feedback is stored in FriRSS SQLite and is scoped to the signed-in FriRSS account. Ranking offers several local models, including Intelligence Next, plus five opt-in external-signal experiments (GDELT coverage, GitHub repository traction, Hacker News engagement and Lobsters engagement). External lookups are authenticated, cached per article/source in SQLite, and unavailable providers are neutral. The external variants use Intelligence Next as their fixed base and blend rank-normalized scores at 75/25. GDELT measures recent seven-day coverage; GitHub uses repository stars and push recency, not historical star growth. The lexical models do **not** use semantic embeddings: related concepts expressed with different words may not match (the Soft margin method below does). Missing article content falls back to title and RSS summary, so ranking quality depends on the text available. No vote means unknown, not a negative signal.
 
-- **Où** : `server/routes/intelligence.ts`, `src/api/intelligence.ts`, `src/lib/intelligenceRanking.ts`, `src/components/ArticleList/IntelligenceFeedback.tsx`, `src/components/Sidebar/Sidebar.tsx`.
+- **Où** : `server/routes/intelligence.ts`, `server/semanticScoring.ts`, `server/semanticEmbeddings.ts`, `src/api/intelligence.ts`, `src/lib/intelligenceRanking.ts`, `src/components/ArticleList/IntelligenceFeedback.tsx`, `src/components/Sidebar/Sidebar.tsx`.
 - **Routes** :
   - GET `/api/intelligence/feedback`
   - PUT `/api/intelligence/feedback`
   - DELETE `/api/intelligence/feedback/:articleId`
   - POST `/api/intelligence/external-signals`
+  - POST `/api/intelligence/semantic-scores`
 - **Limite connue** : lexical matching is a first implementation, not semantic understanding. Local embeddings and bounded background processing remain follow-up work; do not describe this version as embedding-based.
+
+## Semantic ranking (soft balanced margin)
+
+An opt-in **Soft margin (semantic)** ranking method (plus an optional *Semantic influence* share in Custom, default 0%) scores each candidate article against the reader's own up- and downvotes with **embeddings**, not keywords: each text (`clean(title) + "\n" + clean(summary)`, capped at 5000 characters) is embedded with BAAI/bge-m3, compared by cosine similarity to every voted article, and aggregated by the audited soft balanced margin — a log-mean-exp margin at temperature τ = 0.05 over each class's FULL reference set (one class's size cannot swamp the other; both are judged on their own scale). The server computes the scores (`scores-not-vectors`: the client never sees vectors, and `rankInterestingArticles` stays synchronous and network-free). Vectors are cached per provider/model/preprocessing-version in SQLite (`semantic_embedding_cache`), so restarts reuse them and incompatible configurations never mix. Embedding providers are server-side only: **OpenRouter** is preferred (`OPENROUTER_API_KEY`, model `OPENROUTER_EMBED_MODEL`, default `baai/bge-m3`, endpoint `OPENROUTER_BASE_URL`) with **Ollama** as the optional fallback (`OLLAMA_URL`, `OLLAMA_EMBED_MODEL`); a private Ollama host must be listed in `PROXY_INTERNAL_HOSTS` while `openrouter.ai` is a public host and needs no extra configuration. Requests carry bounded, resumable batches (at most 300 candidates, 128 fresh embeddings per request) with per-key in-flight de-duplication; the client polls until the list is fully scored and reorders progressively. Articles without scores (provider down, feedback with a single class, batches pending) keep the Intelligence Next base ordering — missing data is never read as zero similarity, and Custom at 0% semantic influence is bit-for-bit the previous ranking.
+
+- **Où** : `server/semanticScoring.ts`, `server/semanticEmbeddings.ts`, `server/routes/intelligence.ts`, `src/lib/intelligenceRanking.ts`, `src/components/ArticleList/ArticleList.tsx`, `src/components/Preferences/RankingWeightsTab.tsx`.
+- **Routes** :
+  - POST `/api/intelligence/semantic-scores`
+- **Limite connue** : the first cold batch embeds every reference vote and candidate once (OpenRouter serves a 32-article wave in a few seconds; local CPU Ollama is far slower — that is why OpenRouter is the default path). OpenRouter's hosted `baai/bge-m3` is not bit-identical to a local Ollama `bge-m3` (different inference runtime), so cached vectors are provider-scoped. No background prewarming in v1: the pool is embedded lazily, on view.
