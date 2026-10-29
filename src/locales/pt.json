@@ -805,5 +805,22 @@
     "markAllConfirm": "Marcar como lido",
     "markAboveTitle": "Marcar como lidos os artigos acima?",
     "markBelowTitle": "Marcar como lidos os artigos abaixo?"
+  },
+  "preview": {
+    "badge": "Pré-visualização do feed",
+    "banner": "A pré-visualizar os últimos artigos · Ainda não está subscrito neste feed.",
+    "subscribe": "Subscrever",
+    "back": "Fechar pré-visualização",
+    "retry": "Tentar novamente",
+    "openSite": "Abrir o site",
+    "emptyFeed": "Ainda não há artigos neste feed",
+    "errorLoad": "Não foi possível carregar a pré-visualização do feed",
+    "errorUnresolved": "Não foi possível identificar a editora deste artigo",
+    "errorResolveFailed": "Nenhum feed RSS foi resolvido para esta editora",
+    "existingFeeds": "Já subscrito neste site:",
+    "chooseFeed": "Escolha o feed a pré-visualizar",
+    "waitingForFirst": "Subscrição adicionada — os primeiros artigos estão a chegar",
+    "waitingForFirstHint": "O FreshRSS vai fazer a primeira recolha do feed",
+    "share": "Partilhar"
   }
 }

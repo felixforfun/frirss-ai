@@ -805,5 +805,22 @@
     "markAllConfirm": "标为已读",
     "markAboveTitle": "将上方的文章标为已读？",
     "markBelowTitle": "将下方的文章标为已读？"
+  },
+  "preview": {
+    "badge": "订阅预览",
+    "banner": "正在预览最新文章 · 你还没有订阅此订阅源。",
+    "subscribe": "订阅",
+    "back": "关闭预览",
+    "retry": "重试",
+    "openSite": "打开网站",
+    "emptyFeed": "此订阅源暂无文章",
+    "errorLoad": "无法加载订阅预览",
+    "errorUnresolved": "无法确定这篇文章的原始出版者",
+    "errorResolveFailed": "未能解析出该出版者的 RSS 订阅源",
+    "existingFeeds": "已订阅此网站:",
+    "chooseFeed": "选择要预览的订阅源",
+    "waitingForFirst": "订阅已添加——首批文章即将到来",
+    "waitingForFirstHint": "FreshRSS 将首次抓取此订阅源",
+    "share": "分享"
   }
 }

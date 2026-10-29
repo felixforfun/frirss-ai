@@ -833,5 +833,22 @@
     "markAllConfirm": "Oznacz jako przeczytane",
     "markAboveTitle": "Oznaczyć artykuły powyżej jako przeczytane?",
     "markBelowTitle": "Oznaczyć artykuły poniżej jako przeczytane?"
+  },
+  "preview": {
+    "badge": "Podgląd kanału",
+    "banner": "Podgląd najnowszych artykułów · Nie jesteś jeszcze zapisany do tego kanału.",
+    "subscribe": "Subskrybuj",
+    "back": "Zamknij podgląd",
+    "retry": "Ponów",
+    "openSite": "Otwórz stronę",
+    "emptyFeed": "Na razie brak artykułów w tym kanale",
+    "errorLoad": "Nie udało się wczytać podglądu kanału",
+    "errorUnresolved": "Nie udało się ustalić wydawcy dla tego artykułu",
+    "errorResolveFailed": "Nie udało się ustalić kanału RSS dla tego wydawcy",
+    "existingFeeds": "Już zapisany na tej stronie:",
+    "chooseFeed": "Wybierz kanał do podglądu",
+    "waitingForFirst": "Subskrypcja dodana — pierwsze artykuły są już w drodze",
+    "waitingForFirstHint": "FreshRSS wykona pierwsze pobranie kanału",
+    "share": "Udostępnij"
   }
 }

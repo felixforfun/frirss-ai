@@ -805,5 +805,22 @@
     "markAllConfirm": "Als gelesen markieren",
     "markAboveTitle": "Die Artikel darüber als gelesen markieren?",
     "markBelowTitle": "Die Artikel darunter als gelesen markieren?"
+  },
+  "preview": {
+    "badge": "Feed-Vorschau",
+    "banner": "Vorschau der neuesten Artikel · Du bist diesen Feed noch nicht abonniert.",
+    "subscribe": "Abonnieren",
+    "back": "Vorschau schließen",
+    "retry": "Wiederholen",
+    "openSite": "Site öffnen",
+    "emptyFeed": "Noch keine Artikel in diesem Feed",
+    "errorLoad": "Feed-Vorschau konnte nicht geladen werden",
+    "errorUnresolved": "Kein Verlag für diesen Artikel ermittelt",
+    "errorResolveFailed": "Kein RSS-Feed für diesen Verlag gefunden",
+    "existingFeeds": "Auf dieser Seite schon abonniert:",
+    "chooseFeed": "Zu prüfenden Feed wählen",
+    "waitingForFirst": "Abonnement hinzugefügt — die ersten Artikel kommen gleich",
+    "waitingForFirstHint": "FreshRSS holt den Feed erstmals ab",
+    "share": "Teilen"
   }
 }

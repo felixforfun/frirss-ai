@@ -50,7 +50,7 @@ const BODY_TIMEOUT_MS = 20_000;
 const HTML_TYPES = /^(text\/html|application\/xhtml\+xml)\b/i;
 
 /** Plafond dépassé : échec ordinaire, dont le client doit pouvoir se replier. */
-class BodyTooLargeError extends Error {}
+export class BodyTooLargeError extends Error {}
 
 /**
  * Un dépassement de délai porte le nom qu'`AbortError` porte ailleurs, pour

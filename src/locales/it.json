@@ -805,5 +805,22 @@
     "markAllConfirm": "Segna come letto",
     "markAboveTitle": "Segnare come letti gli articoli sopra?",
     "markBelowTitle": "Segnare come letti gli articoli sotto?"
+  },
+  "preview": {
+    "badge": "Anteprima del feed",
+    "banner": "Anteprima degli ultimi articoli · Non sei ancora iscritto a questo feed.",
+    "subscribe": "Iscriviti",
+    "back": "Chiudi anteprima",
+    "retry": "Riprova",
+    "openSite": "Apri il sito",
+    "emptyFeed": "Ancora nessun articolo in questo feed",
+    "errorLoad": "Impossibile caricare l'anteprima del feed",
+    "errorUnresolved": "Nessun editor risolto per questo articolo",
+    "errorResolveFailed": "Nessun feed RSS risolto per questo editor",
+    "existingFeeds": "Già iscritto a questo sito:",
+    "chooseFeed": "Scegli il feed da visualizzare",
+    "waitingForFirst": "Abbonamento aggiunto — i primi articoli stanno arrivando",
+    "waitingForFirstHint": "FreshRSS eseguirà la prima raccolta del feed",
+    "share": "Condividi"
   }
 }

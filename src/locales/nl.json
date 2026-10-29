@@ -805,5 +805,22 @@
     "markAllConfirm": "Als gelezen markeren",
     "markAboveTitle": "De artikelen hierboven als gelezen markeren?",
     "markBelowTitle": "De artikelen hieronder als gelezen markeren?"
+  },
+  "preview": {
+    "badge": "Feedvoorbeeld",
+    "banner": "Voorbeschouwing van de nieuwste artikelen · Je bent nog niet geabonneerd op deze feed.",
+    "subscribe": "Abonneren",
+    "back": "Voorbeeld sluiten",
+    "retry": "Opnieuw",
+    "openSite": "Site openen",
+    "emptyFeed": "Nog geen artikelen in deze feed",
+    "errorLoad": "Kan de feedvoorbeschouwing niet laden",
+    "errorUnresolved": "Geen uitgever gevonden voor dit artikel",
+    "errorResolveFailed": "Geen RSS-feed gevonden voor deze uitgever",
+    "existingFeeds": "Al geabonneerd op deze site:",
+    "chooseFeed": "Kies de feed om voor te beschouwen",
+    "waitingForFirst": "Abonnement toegevoegd — de eerste artikelen komen eraan",
+    "waitingForFirstHint": "FreshRSS haalt deze feed voor het eerst op",
+    "share": "Delen"
   }
 }

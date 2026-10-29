@@ -8,6 +8,7 @@ import { extractYouTubeId } from '../../lib/youtube';
 import type { RowActionSettings } from '../../lib/rowActions';
 import { ArticleRowActions } from './ArticleActions';
 import Highlighted from './Highlighted';
+import { PublisherSourceButton } from '../PublisherPreview/PublisherSourceButton';
 import { resultSummary } from '../../lib/searchHighlight';
 import { useArticleMenuGestures } from '../../hooks/useArticleMenuGestures';
 import IntelligenceFeedback from './IntelligenceFeedback';
@@ -74,7 +75,15 @@ export default function ArticleCard({
 
       <div className="article-card__body">
         <div className="article-card__meta">
-          {showSource && <span className="article-card__source">{article.source}</span>}
+          {showSource && (
+            <PublisherSourceButton
+              article={article}
+              className="article-card__source"
+              style={{}}
+            >
+              <span className="truncate max-w-[30em]">{article.source}</span>
+            </PublisherSourceButton>
+          )}
           <span className="article-card__time">{timeAgo(article.published, t)}</span>
         </div>
         <h3 className="article-card__title article-title" dir="auto">

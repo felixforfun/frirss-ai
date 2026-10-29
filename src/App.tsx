@@ -24,6 +24,8 @@ import CommandPalette from './components/CommandPalette';
 import { effectiveLayout } from './lib/effectiveLayout';
 import MobileDrawer from './components/MobileDrawer';
 import MobileStack from './components/MobileStack';
+import PublisherPreview from './components/PublisherPreview/PublisherPreview';
+import { usePreviewStore } from './stores/previewStore';
 
 // Preferences is a heavy, rarely-opened panel → load it on demand
 const Preferences = lazy(() => import('./components/Preferences/Preferences'));
@@ -53,6 +55,7 @@ export default function App() {
   const readingFocus = useUiStore((s) => s.readingFocus);
   const setSidebarVisible = useUiStore((s) => s.setSidebarVisible);
   const topbarVisible = useUiStore((s) => s.topbarVisible);
+  const previewActive = usePreviewStore((s) => s.status !== 'idle');
 
   const breakpoint = useBreakpoint();
   const isMobile = breakpoint === 'mobile';
@@ -314,8 +317,13 @@ export default function App() {
     if (prevNavRef.current !== navKey && !isDesktop && sidebarVisible) {
       setSidebarVisible(false);
     }
+    // A normal navigation (sidebar, home entry) leaves the publisher
+    // preview — the view comes back from a click, never afterwards.
+    if (prevNavRef.current !== navKey && previewActive) {
+      usePreviewStore.getState().close();
+    }
     prevNavRef.current = navKey;
-  }, [navKey, isDesktop, sidebarVisible, setSidebarVisible]);
+  }, [navKey, isDesktop, sidebarVisible, setSidebarVisible, previewActive]);
 
   if (!isAuthenticated) {
     return <Login oidcError={oidcError} />;
@@ -334,8 +342,8 @@ export default function App() {
           {topbarVisible && <ServerSwitcher />}
           <div className="flex-1 min-h-0">
             <MobileStack
-              showOverlay={!!selectedArticle}
-              base={<ArticleList />}
+              showOverlay={!previewActive && !!selectedArticle}
+              base={previewActive ? <PublisherPreview /> : <ArticleList />}
               overlay={<ReadingPane showBack />}
             />
           </div>
@@ -374,7 +382,11 @@ export default function App() {
           <div className="safe-area-top" />
           {topbarVisible && <ServerSwitcher />}
           <div className="flex-1 flex overflow-hidden min-h-0">
-            {!readingFocus && (
+            {previewActive ? (
+              <section className="flex-1 overflow-hidden" style={{ minWidth: 0 }}>
+                <PublisherPreview />
+              </section>
+            ) : !readingFocus && (
               <section
                 className="flex-shrink-0 overflow-hidden"
                 style={{
@@ -388,7 +400,7 @@ export default function App() {
                 <ArticleList />
               </section>
             )}
-            {(selectedArticle || readingFocus) && (
+            {!previewActive && (selectedArticle || readingFocus) && (
               <main className="flex-1 overflow-hidden" style={{ minWidth: 0 }}>
                 <ReadingPane showBack={!readingFocus} />
               </main>
@@ -452,28 +464,37 @@ export default function App() {
         {/* Right side: content + shortcut bar */}
         <div className="flex-1 flex flex-col overflow-hidden min-w-0">
           <div className="flex-1 flex overflow-hidden">
-            {/* Article List */}
-            {showArticleList && (
+            {/* Publisher preview: replaces the list + reading columns */}
+            {previewActive ? (
+              <section className="flex-1 overflow-hidden" style={{ minWidth: 0 }}>
+                <PublisherPreview />
+              </section>
+            ) : (
               <>
-                <section
-                  className="flex-shrink-0 overflow-hidden min-w-0"
-                  style={{
-                    width: is2Panel ? undefined : listWidth,
-                    minWidth: is2Panel ? undefined : `${MIN_LIST}px`,
-                    flex: is2Panel ? '1' : undefined,
-                  }}
-                >
-                  <ArticleList />
-                </section>
-                {!is2Panel && <ResizeHandle onResize={resizeList} />}
-              </>
-            )}
+                {/* Article List */}
+                {showArticleList && (
+                  <>
+                    <section
+                      className="flex-shrink-0 overflow-hidden min-w-0"
+                      style={{
+                        width: is2Panel ? undefined : listWidth,
+                        minWidth: is2Panel ? undefined : `${MIN_LIST}px`,
+                        flex: is2Panel ? '1' : undefined,
+                      }}
+                    >
+                      <ArticleList />
+                    </section>
+                    {!is2Panel && <ResizeHandle onResize={resizeList} />}
+                  </>
+                )}
 
-            {/* Reading Pane */}
-            {showReadingPane && (
-              <main className="flex-1 overflow-hidden" style={{ minWidth: 0 }}>
-                <ReadingPane showBack={is2Panel} />
-              </main>
+                {/* Reading Pane */}
+                {showReadingPane && (
+                  <main className="flex-1 overflow-hidden" style={{ minWidth: 0 }}>
+                    <ReadingPane showBack={is2Panel} />
+                  </main>
+                )}
+              </>
             )}
           </div>
 

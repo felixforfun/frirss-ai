@@ -805,5 +805,22 @@
     "markAllConfirm": "Mark as read",
     "markAboveTitle": "Mark the articles above as read?",
     "markBelowTitle": "Mark the articles below as read?"
+  },
+  "preview": {
+    "badge": "Feed preview",
+    "banner": "Previewing latest articles · You are not subscribed to this feed yet.",
+    "subscribe": "Subscribe",
+    "back": "Close preview",
+    "retry": "Retry",
+    "openSite": "Open site",
+    "emptyFeed": "No articles in this feed yet",
+    "errorLoad": "Could not load the feed preview",
+    "errorUnresolved": "Could not resolve a publisher for this article",
+    "errorResolveFailed": "No RSS feed could be resolved for this publisher",
+    "existingFeeds": "Already subscribed to this site:",
+    "chooseFeed": "Choose the feed to preview",
+    "waitingForFirst": "Subscription added — the first articles are on their way",
+    "waitingForFirstHint": "FreshRSS will run the first fetch of this feed",
+    "share": "Share"
   }
 }
