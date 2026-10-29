@@ -3113,7 +3113,7 @@ dialogue d'ajout.
 
 - `GET` sur `/api/publisher/preview` (requête `?feedUrl=…`) — lecture d'un fil RSS/Atom public
   (**JWT requis**). Garde SSRF (`assertTargetSafe` avant le cache,
-  re-vérifiée à chaque saut), 10 s par saut, 2 Mo avant analyse, au plus
+  re-vérifiée à chaque saut), 10 s par saut, 5 Mo avant analyse, au plus
   3 redirections, cache GLOBAL de 15 min (`frirss:pv:<sha1>`, contenu
   identique pour tous les comptes — jamais le statut d'abonnement). Parser
   linkedom, aucun champ renvoyé comme HTML cru sans assainissement côté

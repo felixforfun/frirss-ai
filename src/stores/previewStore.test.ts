@@ -121,6 +121,22 @@ describe('openPublisher', () => {
     await vi.waitFor(() => expect(usePreviewStore.getState().status).toBe('ready'));
   });
 
+  it('auto-selects the article feed when the only extra candidate is a COMMENTS feed (WordPress sites)', async () => {
+    feedStoreState().subscriptions.length = 0;
+    vi.mocked(isTechmemePermalinkUrl).mockReturnValue(true);
+    vi.mocked(resolveCanonicalArticle).mockResolvedValue({ url: 'https://ofdollarsanddata.com/a', publisher: 'ofdollarsanddata.com' } as never);
+    vi.mocked(discoverPublisherFeed).mockResolvedValue([
+      { href: 'https://ofdollarsanddata.com/feed/', type: 'application/rss+xml', title: 'Of Dollars And Data » Feed' },
+      { href: 'https://ofdollarsanddata.com/comments/feed/', type: 'application/rss+xml', title: 'Of Dollars And Data » Comments Feed' },
+    ]);
+
+    await usePreviewStore.getState().openPublisher(article());
+
+    // Not a `choose` state: the only meaningful feed is picked directly.
+    expect(fetchPublisherPreview).toHaveBeenCalledWith('https://ofdollarsanddata.com/feed/');
+    await vi.waitFor(() => expect(usePreviewStore.getState().status).toBe('ready'));
+  });
+
   it('falls back to error (retryable) when the preview fetch fails', async () => {
     feedStoreState().subscriptions.length = 0;
     vi.mocked(isTechmemePermalinkUrl).mockReturnValue(true);

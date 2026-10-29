@@ -158,10 +158,19 @@ export const usePreviewStore = create<PublisherPreviewState>((set, get) => ({
       set({ status: 'error', errorKey: 'preview.errorResolveFailed' });
       return;
     }
+    // Sites like WordPress declare their comments feed alongside the article
+    // feed, with no type difference. A comments feed previews nothing an
+    // article click promises ("what has this site published"), and does not
+    // count as genuine ambiguity either: with exactly one non-comments
+    // candidate it is chosen directly.
+    const COMMENTS = /comments?/i;
+    const notComments = (l: { href: string; title: string }) =>
+      !COMMENTS.test(l.title) && !COMMENTS.test(new URL(l.href).pathname);
     const siteHostOf = (u: string) => { try { return new URL(u).hostname.toLowerCase().replace(/^www\./, ''); } catch { return ''; } };
     const siteHostWanted = siteHostOf(resolved.siteUrl);
     const sameHost = links.filter((l) => siteHostOf(l.href) === siteHostWanted);
-    const chosen = sameHost.length === 1 ? sameHost[0] : links.length === 1 ? links[0] : null;
+    const meaningful = (sameHost.length ? sameHost : links).filter(notComments);
+    const chosen = meaningful.length === 1 ? meaningful[0] : null;
     if (!chosen) {
       if (links.length === 0) {
         // Nothing declared: no fabricated URL — the failure is recoverable.

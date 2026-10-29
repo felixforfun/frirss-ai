@@ -176,8 +176,10 @@ describe('GET /api/publisher/preview', () => {
   });
 
   it('rejects an oversized feed', async () => {
-    // Corps en flux : readBoundedText mesure les octets, pas la chaîne finie.
-    const chunks = Array.from({ length: 4 }, () => new Uint8Array(1_000_000).fill(0x78)); // 'x'
+    // Streamed body: readBoundedText measures bytes, not the finished string.
+    // 7 MB exceeds the 5 MB parse bound (a real substack full-content feed is
+    // ~2.2 MB and must NOT be rejected).
+    const chunks = Array.from({ length: 7 }, () => new Uint8Array(1_000_000).fill(0x78)); // 'x'
     const body = new ReadableStream<Uint8Array>({
       pull(controller) {
         const chunk = chunks.shift();

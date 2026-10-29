@@ -32,12 +32,18 @@ const router = Router();
 
 /**
  * Feature limits (briefing):
- *  - 10 s per network hop, 2 MB before parsing, at most 3 redirects;
+ *  - 10 s per network hop, 5 MB before parsing, at most 3 redirects;
  *  - 25 articles rendered per preview;
  *  - a 15-minute "public feed metadata" cache.
  */
 const PREVIEW_TIMEOUT_MS = 10_000;
-const PREVIEW_MAX_BYTES = 2_000_000;
+/**
+ * 5 MB before parsing: Subscription feeds (Substack, WordPress with full
+ * content) commonly exceed 2 MB — thezvi.substack.com/feed is 2.2 MB and a
+ * tighter cut turned every "feed too large" into a confusing dead preview.
+ * linkedom parses a 5 MB document comfortably.
+ */
+const PREVIEW_MAX_BYTES = 5_000_000;
 const PREVIEW_MAX_REDIRECTS = 3;
 export const PREVIEW_MAX_ARTICLES = 25;
 export const PREVIEW_CACHE_TTL_SECONDS = 15 * 60;
