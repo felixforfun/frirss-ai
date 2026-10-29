@@ -3,7 +3,7 @@ import { useFeedStore } from './feedStore';
 import type { Article, Subscription } from '../types';
 import { sanitizeHtml } from '../utils/sanitizeHtml';
 import { isTechmemePermalinkUrl, resolveCanonicalArticle } from '../lib/canonicalArticle';
-import { matchPublication, normalizeFeedUrl } from '../lib/publisherMatch';
+import { matchPublication, normalizeFeedUrl, feedUrlsEquivalent } from '../lib/publisherMatch';
 import { fetchPublisherPreview, discoverPublisherFeed, type PreviewArticle, type PreviewFeed } from '../api/publisherPreview';
 
 /**
@@ -88,8 +88,16 @@ async function resolvePublisherIdentity(article: Article): Promise<ResolvedPubli
     }
   }
 
-  const sourceUrl = article.sourceId?.startsWith('feed/') ? article.sourceId.slice('feed/'.length) : null;
-  const sourceSub = sourceUrl ? subs.find((s) => s.url === sourceUrl) : undefined;
+  // The article's source is the GReader stream id of the subscription that
+  // served it. FreshRSS uses `feed/<numericId>` — the same value as the
+  // subscription's own `id` — while the original GReader spec used
+  // `feed/<url>`. Support both forms.
+  const sid = article.sourceId ?? '';
+  const sourceSub =
+    subs.find((s) => s.id === sid) ??
+    (sid.startsWith('feed/')
+      ? subs.find((s) => feedUrlsEquivalent(s.url, sid.slice('feed/'.length)))
+      : undefined);
   if (!sourceSub) return null;
   const match = matchPublication(subs, sourceSub.url, sourceSub.htmlUrl);
   return {

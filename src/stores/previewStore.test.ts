@@ -67,6 +67,21 @@ describe('openPublisher', () => {
     expect(fetchPublisherPreview).not.toHaveBeenCalled();
   });
 
+  // FreshRSS GReader stream ids are `feed/<numericId>` — the subscription's
+  // own `id` — not `feed/<url>`. Regression: the URL-only comparison failed
+  // for EVERY non-Techmeme article (source never resolved → errorUnresolved).
+  it('resolves the source feed by STREAM ID (feed/<numericId>), not just by URL', async () => {
+    feedStoreState().subscriptions.length = 0;
+    feedStoreState().subscriptions.push(sub('feed/263', 'https://marginalrevolution.com/feed', 'https://marginalrevolution.com/'));
+    vi.mocked(isTechmemePermalinkUrl).mockReturnValue(false);
+
+    await usePreviewStore.getState().openPublisher(article({ sourceId: 'feed/263', url: 'https://marginalrevolution.com/marginalrevolution/x' }));
+
+    expect(feedStoreState().selectView).toHaveBeenCalledWith(expect.objectContaining({ id: 'feed/263' }));
+    expect(usePreviewStore.getState().status).toBe('idle');
+    expect(fetchPublisherPreview).not.toHaveBeenCalled();
+  });
+
   it('navigates to the SAME-SITE subscription instead of previewing', async () => {
     feedStoreState().subscriptions.length = 0;
     feedStoreState().subscriptions.push(sub('newstack', 'https://thenewstack.io/feed', 'https://thenewstack.io'));
