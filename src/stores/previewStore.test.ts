@@ -164,14 +164,48 @@ describe('openPublisher', () => {
     expect(usePreviewStore.getState().errorKey).toBe('preview.errorLoad');
   });
 
-  it('errors when the article has NO resolvable identity at all', async () => {
+  it('errors when the article has NO resolvable identity at all (no stream id, no URL)', async () => {
     feedStoreState().subscriptions.length = 0;
     vi.mocked(isTechmemePermalinkUrl).mockReturnValue(false);
 
-    await usePreviewStore.getState().openPublisher(article({ sourceId: 'feed/https://unknown.example.org/feed' }));
+    await usePreviewStore.getState().openPublisher(article({ sourceId: 'feed/https://unknown.example.org/feed', url: '' }));
 
     expect(usePreviewStore.getState().status).toBe('error');
     expect(usePreviewStore.getState().errorKey).toBe('preview.errorUnresolved');
+  });
+
+  // Reading-pane linked page: following a link inside a roundup post (e.g. an
+  // Abnormal Returns links post → a Substack article) clears the stream id —
+  // the publisher the label names is the LINKED site, not the serving feed.
+  it('previews the linked page site when the article carries no stream id', async () => {
+    feedStoreState().subscriptions.length = 0;
+    feedStoreState().subscriptions.push(sub('feed/286', 'https://abnormalreturns.com/feed/', 'https://abnormalreturns.com/'));
+    vi.mocked(isTechmemePermalinkUrl).mockReturnValue(false);
+    vi.mocked(discoverPublisherFeed).mockResolvedValue([
+      { href: 'https://thezvi.substack.com/feed', type: 'application/rss+xml', title: "Don't Worry About the Vase" },
+    ]);
+
+    await usePreviewStore.getState().openPublisher(article({ sourceId: '', url: 'https://thezvi.substack.com/p/anthropic-files-its-s-1' }));
+
+    // The serving feed (Abnormal Returns) is NOT the target, even though the
+    // subscriptions contain it.
+    expect(feedStoreState().selectView).not.toHaveBeenCalled();
+    const st = usePreviewStore.getState();
+    expect(st.publisher?.siteUrl).toBe('https://thezvi.substack.com');
+    expect(st.publisher?.name).toBe('thezvi.substack.com');
+    expect(fetchPublisherPreview).toHaveBeenCalledWith('https://thezvi.substack.com/feed');
+    expect(st.status).toBe('ready');
+  });
+
+  it('navigates to the subscription when the linked page site is already subscribed', async () => {
+    feedStoreState().subscriptions.length = 0;
+    feedStoreState().subscriptions.push(sub('thezvi', 'https://thezvi.substack.com/feed', 'https://thezvi.substack.com'));
+    vi.mocked(isTechmemePermalinkUrl).mockReturnValue(false);
+
+    await usePreviewStore.getState().openPublisher(article({ sourceId: '', url: 'https://thezvi.substack.com/p/x' }));
+
+    expect(feedStoreState().selectView).toHaveBeenCalledWith(expect.objectContaining({ id: 'thezvi' }));
+    expect(usePreviewStore.getState().status).toBe('idle');
   });
 });
 

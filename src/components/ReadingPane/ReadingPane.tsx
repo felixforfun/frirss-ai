@@ -1704,7 +1704,13 @@ export default function ReadingPane({ showBack }: ReadingPaneProps) {
             const headerDate = linkedPage ? (linkedPage.content.publishedDate ? formatArticleDate(Date.parse(linkedPage.content.publishedDate)) : '') : date;
             const sourceButton = (
               <PublisherSourceButton
-                article={article as Article}
+                article={(linkedPage
+                  ? // The label names the LINKED publisher — resolution must
+                    // describe the same thing: the linked page's URL, with no
+                    // serving-feed identity (the roundup feed is not the
+                    // publisher the user clicked).
+                    { ...article, url: linkedPage.url, sourceId: '' }
+                  : article) as Article}
                 className="text-xs font-semibold uppercase tracking-wide"
                 style={{ color: 'var(--list-source)' }}
               >

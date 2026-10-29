@@ -60,32 +60,45 @@ interface ResolvedPublisher extends PreviewPublisher {
 }
 
 /**
+ * Publisher for a plain site URL — a Techmeme canonical target or a linked
+ * page followed from inside a roundup post. Name = host without `www.`,
+ * site = origin; subscribed feeds on the same site become candidates.
+ */
+function publisherFromSiteUrl(subs: Subscription[], url: string, name?: string): ResolvedPublisher | null {
+  try {
+    const u = new URL(url);
+    const siteUrl = u.origin;
+    const match = matchPublication(subs, null, siteUrl);
+    return {
+      name: name || u.hostname.replace(/^www\./, ''),
+      siteUrl,
+      feedUrl: null,
+      candidates: match.siteCandidates,
+      exactMatch: match.exact ?? null,
+    };
+  } catch { return null; }
+}
+
+/**
  * Publisher identity for ONE article:
  *  - resolved Techmeme item → the canonical publisher (name = host without
  *    `www.`, site = origin), reusing the existing `resolveCanonicalArticle`
  *    (session memory + in-flight dedup per permalink);
  *  - item of a direct subscription → the source subscription IS the
- *    publisher, its URL already counts as an exact match.
+ *    publisher, its URL already counts as an exact match;
+ *  - no serving-feed identity (the reading pane's linked page: the user
+ *    follows a link inside a roundup post — the publisher is the linked
+ *    article's own site, not the feed that surfaced it) → the URL itself
+ *    names the publisher.
  */
 async function resolvePublisherIdentity(article: Article): Promise<ResolvedPublisher | null> {
   const subs = useFeedStore.getState().subscriptions;
 
   if (isTechmemePermalinkUrl(article.url)) {
     const target = await resolveCanonicalArticle(article.url);
-    if (target) {
-      try {
-        const u = new URL(target.url);
-        const siteUrl = u.origin;
-        const match = matchPublication(subs, null, siteUrl);
-        return {
-          name: target.publisher || u.hostname.replace(/^www\./, ''),
-          siteUrl,
-          feedUrl: null,
-          candidates: match.siteCandidates,
-          exactMatch: match.exact ?? null,
-        };
-      } catch { /* unreadable canonical target — fall back to the feed */ }
-    }
+    const publisher = target ? publisherFromSiteUrl(subs, target.url, target.publisher || undefined) : null;
+    if (publisher) return publisher;
+    // Unreadable canonical target — fall back to the feed below.
   }
 
   // The article's source is the GReader stream id of the subscription that
@@ -98,7 +111,11 @@ async function resolvePublisherIdentity(article: Article): Promise<ResolvedPubli
     (sid.startsWith('feed/')
       ? subs.find((s) => feedUrlsEquivalent(s.url, sid.slice('feed/'.length)))
       : undefined);
-  if (!sourceSub) return null;
+  if (!sourceSub) {
+    // Same resolution as a Techmeme canonical target; an unreadable URL
+    // keeps the recoverable "unresolved" error.
+    return article.url ? publisherFromSiteUrl(subs, article.url) : null;
+  }
   const match = matchPublication(subs, sourceSub.url, sourceSub.htmlUrl);
   return {
     name: sourceSub.title,
