@@ -3100,7 +3100,29 @@ Chaque famille correspond à une zone de l'interface :
 `app` · `sidebar` · `addFeed` · `articleList` · `articleRow` · `swipe` ·
 `emptyState` · `readingPane` · `preferences` · `login` · `admin` · `servers` ·
 `dates` · `time` · `shortcutBar` · `viewMode` · `connection` · `update` ·
-`refresh` · `saved` · `backup` · `toast` · `palette`
+`refresh` · `saved` · `backup` · `toast` · `palette` · `preview`
+
+## Aperçu d'éditeur (publisher preview)
+
+Clic sur le nom d'un éditeur original (étiquette de source de la liste, carte,
+en-tête du volet de lecture) : si l'éditeur correspond à un abonnement (URL de
+fil normalisée, sinon un seul fils de même site) → vue de flux normale ; sinon
+une vue dédiée **en lecture seule** — au plus 25 articles du fil public de
+l'éditeur, sans état lu/favori/vote, avec un bouton S'abonner qui préremplit le
+dialogue d'ajout.
+
+- `GET` sur `/api/publisher/preview` (requête `?feedUrl=…`) — lecture d'un fil RSS/Atom public
+  (**JWT requis**). Garde SSRF (`assertTargetSafe` avant le cache,
+  re-vérifiée à chaque saut), 10 s par saut, 2 Mo avant analyse, au plus
+  3 redirections, cache GLOBAL de 15 min (`frirss:pv:<sha1>`, contenu
+  identique pour tous les comptes — jamais le statut d'abonnement). Parser
+  linkedom, aucun champ renvoyé comme HTML cru sans assainissement côté
+  client.
+- `GET` sur `/api/publisher/discover` (requête `?siteUrl=…`) — fils DÉCLARÉS par le site
+  (`<link rel>` de type connu) ; aucune URL fabriquée.
+- Réconciliation vivante : un flux devenu abonné pendant l'aperçu masque le
+  bouton et le bandeau ; un état vide juste après l'abonnement dit « les
+  premiers articles arrivent ».
 
 ---
 

@@ -805,5 +805,22 @@
     "markAllConfirm": "Marquer lu",
     "markAboveTitle": "Marquer comme lus les articles au-dessus ?",
     "markBelowTitle": "Marquer comme lus les articles en dessous ?"
+  },
+  "preview": {
+    "badge": "Aperçu du flux",
+    "banner": "Prévisualisation des derniers articles — vous n'êtes pas encore abonné à ce flux.",
+    "subscribe": "S'abonner",
+    "back": "Fermer l'aperçu",
+    "retry": "Réessayer",
+    "openSite": "Ouvrir le site",
+    "emptyFeed": "Aucun article dans ce flux pour l'instant",
+    "errorLoad": "Impossible de charger l'aperçu du flux",
+    "errorUnresolved": "Éditeur introuvable pour cet article",
+    "errorResolveFailed": "Aucun flux RSS n'a pu être résolu pour cet éditeur",
+    "existingFeeds": "Déjà abonné à ce site :",
+    "chooseFeed": "Choisissez le flux à prévisualiser",
+    "waitingForFirst": "Abonnement pris — les premiers articles arrivent",
+    "waitingForFirstHint": "FreshRSS va effectuer le premier balayage du flux",
+    "share": "Partager"
   }
 }

@@ -1,16 +1,21 @@
-import { useState, useMemo, type FormEvent } from 'react';
+import { useMemo, useState, type FormEvent } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useFeedStore } from '../../stores/feedStore';
+import { useFeedStore, type AddFeedResult } from '../../stores/feedStore';
 
 interface AddFeedDialogProps {
   onClose: () => void;
+  /** Valeurs pré-remplies d'un flux d'aperçu (briefing §8). */
+  initialUrl?: string;
+  initialTitle?: string;
+  /** Appelé UNIQUEMENT sur un ajout réussi. */
+  onAdded?: () => void;
 }
 
-export default function AddFeedDialog({ onClose }: AddFeedDialogProps) {
+export default function AddFeedDialog({ onClose, initialUrl, initialTitle, onAdded }: AddFeedDialogProps) {
   const { t } = useTranslation();
   const { subscriptions, addFeed } = useFeedStore();
-  const [feedUrl, setFeedUrl] = useState('');
-  const [title, setTitle] = useState('');
+  const [feedUrl, setFeedUrl] = useState(initialUrl ?? '');
+  const [title, setTitle] = useState(initialTitle ?? '');
   const [category, setCategory] = useState('');
   const [newCategory, setNewCategory] = useState('');
   const [loading, setLoading] = useState(false);
@@ -39,10 +44,11 @@ export default function AddFeedDialog({ onClose }: AddFeedDialogProps) {
       ? newCategory.trim()
       : categories.find((c) => c.id === category)?.label || '';
 
-    const result = await addFeed(feedUrl.trim(), title.trim(), catId, catLabel);
+    const result: AddFeedResult = await addFeed(feedUrl.trim(), title.trim(), catId, catLabel);
 
     setLoading(false);
     if (result === 'added') {
+      onAdded?.();
       onClose();
     } else if (result === 'already-subscribed') {
       // The URL is already in the subscriptions — say so plainly instead of

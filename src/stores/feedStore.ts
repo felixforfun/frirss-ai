@@ -834,6 +834,9 @@ export interface FeedState {
    */
   infrequentFeedIds: string[] | null;
   feedErrors: Record<string, number>;
+  /** Flux fraîchement abonné et encore vide — voir l'état vide d'`ArticleList`. */
+  pendingFirstArticlesFeedId: string | null;
+  markAwaitingFirstArticles: (feedId: string) => void;
   // True while the initial subscriptions load is in flight — drives the thin
   // top progress bar so the user sees the app is revalidating (esp. after a
   // service-worker update reload, when every in-memory cache is cold).
@@ -1107,6 +1110,17 @@ export const useFeedStore = create<FeedState>()((set, get) => ({
   offlinePrep: null,
   syncing: false,
   feedErrors: {}, // { [feedId]: timestamp } — tracks feeds that errored on load
+  /**
+   * Just-subscribed feed for which FreshRSS has NEVER reported articles yet:
+   * its view's empty state must say "subscription taken — the first articles
+   * are arriving", not "no articles", not "nonexistent", not "needs a
+   * refresh" — the feed was just created.
+   * Cleared by any navigation that changes the view.
+   */
+  pendingFirstArticlesFeedId: null as string | null,
+  markAwaitingFirstArticles: (feedId: string) => {
+    set({ pendingFirstArticlesFeedId: feedId });
+  },
 
   setFilter: (filter) => {
     closeSearch(set);
@@ -1128,7 +1142,7 @@ export const useFeedStore = create<FeedState>()((set, get) => ({
   selectFeed: (feed) => {
     closeSearch(set);
     const c = memGet(viewKey(feed, get().filter));
-    set({ selectedFeed: feed, articles: c?.articles || [], continuation: c?.continuation || null, selectedArticle: null });
+    set({ selectedFeed: feed, articles: c?.articles || [], continuation: c?.continuation || null, selectedArticle: null, pendingFirstArticlesFeedId: get().pendingFirstArticlesFeedId === feed?.id ? get().pendingFirstArticlesFeedId : null });
     get().loadArticles();
   },
 
@@ -1143,7 +1157,7 @@ export const useFeedStore = create<FeedState>()((set, get) => ({
     // quand la vue non lus est DEMANDÉE ; toute autre vue d'accueil relève de
     // « Tous les flux ». Ouvrir un flux ne la change pas.
     const homeEntry: HomeEntry = feed ? get().homeEntry : filter === 'unread' ? 'unread' : 'all';
-    set({ selectedFeed: feed ?? null, filter: f, homeEntry, articles: c?.articles || [], continuation: c?.continuation || null, selectedArticle: null });
+    set({ selectedFeed: feed ?? null, filter: f, homeEntry, articles: c?.articles || [], continuation: c?.continuation || null, selectedArticle: null, pendingFirstArticlesFeedId: get().pendingFirstArticlesFeedId === (feed?.id ?? '') ? get().pendingFirstArticlesFeedId : null });
     get().loadArticles();
   },
 

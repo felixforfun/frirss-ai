@@ -19,6 +19,7 @@ import ViewModeSwitcher from './ViewModeSwitcher';
 import SwipeableArticleRow from './SwipeableArticleRow';
 import { ArticleRowActions } from './ArticleActions';
 import ArticleCard from './ArticleCard';
+import { PublisherSourceButton } from '../PublisherPreview/PublisherSourceButton';
 import IntelligenceFeedback from './IntelligenceFeedback';
 import FeedFavicon from '../FeedFavicon';
 import BottomSheet from '../BottomSheet';
@@ -1736,6 +1737,8 @@ interface EmptyStateProps {
 
 function EmptyState({ filter, searchQuery, awaitingPage, loadMoreBusy, onLoadMore }: EmptyStateProps) {
   const { t } = useTranslation();
+  const pendingFeedId = useFeedStore((s) => s.pendingFirstArticlesFeedId);
+  const selectedFeedId = useFeedStore((s) => s.selectedFeed?.id);
   let icon: ReactNode;
   let title: string;
   let subtitle: string;
@@ -1790,8 +1793,16 @@ function EmptyState({ filter, searchQuery, awaitingPage, loadMoreBusy, onLoadMor
         <path strokeLinecap="round" strokeLinejoin="round" d="M12 7.5h1.5m-1.5 3h1.5m-7.5 3h7.5m-7.5 3h7.5m3-9h3.375c.621 0 1.125.504 1.125 1.125V18a2.25 2.25 0 01-2.25 2.25M16.5 7.5V18a2.25 2.25 0 002.25 2.25M16.5 7.5V4.875c0-.621-.504-1.125-1.125-1.125H4.125C3.504 3.75 3 4.254 3 4.875V18a2.25 2.25 0 002.25 2.25h13.5M6 7.5h3v3H6v-3z" />
       </svg>
     );
-    title = t('emptyState.noArticles');
-    subtitle = t('emptyState.noArticlesHint');
+    const awaitingFirstArticles = pendingFeedId != null && pendingFeedId === selectedFeedId;
+    if (awaitingFirstArticles) {
+      // Brand-new subscription: FreshRSS has not brought back the first
+      // scan yet. Say "waiting", not "failure".
+      title = t('preview.waitingForFirst');
+      subtitle = t('preview.waitingForFirstHint');
+    } else {
+      title = t('emptyState.noArticles');
+      subtitle = t('emptyState.noArticlesHint');
+    }
   }
 
   const isSuccess = filter === 'unread' && !searchQuery && !awaitingPage;
@@ -1962,13 +1973,13 @@ export function ArticleRow({ article, viewMode, showSource, rowActions, showVoti
           <FeedFavicon iconUrl={favicon ?? undefined} title={article.source} size={14} />
         )}
         {showSource && (
-          <span
+          <PublisherSourceButton
+            article={article}
             className="font-medium uppercase flex-shrink-0"
-            data-theme="list-source"
             style={{ color: 'var(--list-source)', minWidth: '80px', fontSize: 'var(--fs-list-source)' }}
           >
             {article.source}
-          </span>
+          </PublisherSourceButton>
         )}
         <span
           dir="auto"
@@ -2041,13 +2052,13 @@ export function ArticleRow({ article, viewMode, showSource, rowActions, showVoti
             <FeedFavicon iconUrl={favicon ?? undefined} title={article.source} size={16} />
           )}
           {showSource && (
-            <span
-              className="font-semibold uppercase tracking-wide"
-              data-theme="list-source"
+            <PublisherSourceButton
+              article={article}
+              className="font-semibold uppercase tracking-wide flex-shrink-0 min-w-0"
               style={{ color: 'var(--list-source)', fontSize: 'var(--fs-list-source)' }}
             >
-              {article.source}
-            </span>
+              <span className="truncate max-w-[40vw]">{article.source}</span>
+            </PublisherSourceButton>
           )}
           <span className="text-[10px]" data-theme="list-time" style={{ color: 'var(--list-time)' }}>
             {timeAgo(article.published, t)}

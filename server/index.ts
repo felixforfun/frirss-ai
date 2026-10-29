@@ -17,6 +17,7 @@ import infrequentCacheRoutes from './routes/infrequentCache.js';
 import intelligenceRoutes from './routes/intelligence.js';
 import readingStatsRoutes from './routes/readingStats.js';
 import techmemeRoutes from './routes/techmeme.js';
+import publisherRoutes from './routes/publisher.js';
 import { adminBackupRouter, setupBackupRouter } from './routes/backup.js';
 import { migrateEncryptTokens } from './crypto.js';
 import { accessLog } from './accessLog.js';
@@ -53,6 +54,7 @@ app.use('/api/infrequent-cache', infrequentCacheRoutes);
 app.use('/api/intelligence', intelligenceRoutes);
 app.use('/api/reading-stats', readingStatsRoutes);
 app.use('/api/techmeme', techmemeRoutes);
+app.use('/api/publisher', publisherRoutes);
 
 const startedAt = Date.now();
 app.get('/api/health', (req, res) => {

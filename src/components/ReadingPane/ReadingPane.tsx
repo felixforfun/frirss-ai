@@ -10,6 +10,7 @@ import { readingBodyKind, showsSkeleton, showsReadingTime } from '../../lib/read
 import { sanitizeHtml } from '../../utils/sanitizeHtml';
 import { readProgressPercent } from '../../lib/readProgress';
 import type { Article } from '../../types';
+import { PublisherSourceButton } from '../PublisherPreview/PublisherSourceButton';
 import type { ExtractedContent } from '../../utils/extractContent';
 import { peekExtract, getExtract, putExtract, revalidateIfStale } from '../../lib/extractCache';
 import { isFocusToggleTarget } from '../../lib/readingFocus';
@@ -1701,11 +1702,20 @@ export default function ReadingPane({ showBack }: ReadingPaneProps) {
             const displaySource = canonicalPublisher || linkedSource;
             const linkedAuthor = linkedPage ? linkedPage.content.byline : article.author;
             const headerDate = linkedPage ? (linkedPage.content.publishedDate ? formatArticleDate(Date.parse(linkedPage.content.publishedDate)) : '') : date;
+            const sourceButton = (
+              <PublisherSourceButton
+                article={article as Article}
+                className="text-xs font-semibold uppercase tracking-wide"
+                style={{ color: 'var(--list-source)' }}
+              >
+                <span className="truncate max-w-[40vw]">{displaySource}</span>
+              </PublisherSourceButton>
+            );
             return isMobileOrTablet ? (
               <div className="flex items-stretch gap-3 mb-3">
                 <div className="flex-1 min-w-0">
                   <div className="text-xs font-semibold uppercase tracking-wide truncate" style={{ color: 'var(--list-source)' }}>
-                    {displaySource}
+                    {sourceButton}
                   </div>
                   <div className="text-xs truncate mt-0.5" style={{ color: 'var(--reading-meta)' }}>
                     {linkedAuthor ? `${linkedAuthor}${headerDate ? ' · ' : ''}` : ''}{headerDate}
@@ -1720,7 +1730,7 @@ export default function ReadingPane({ showBack }: ReadingPaneProps) {
               </div>
             ) : (
               <div className="flex items-center gap-2 mb-3">
-                <span className="text-xs font-semibold uppercase tracking-wide" style={{ color: 'var(--list-source)' }}>{displaySource}</span>
+                {sourceButton}
                 {linkedAuthor && <><span style={{ color: 'var(--reading-meta)' }}>·</span><span className="text-xs" style={{ color: 'var(--reading-meta)' }}>{linkedAuthor}</span></>}
                 {headerDate && <><span style={{ color: 'var(--reading-meta)' }}>·</span><span className="text-xs" style={{ color: 'var(--reading-meta)' }}>{headerDate}</span></>}
                 {!linkedPage && showReadingTime && <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium" style={{ color: 'var(--accent)', background: 'var(--accent-glow)' }}><svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>{readingTime} min</span>}
