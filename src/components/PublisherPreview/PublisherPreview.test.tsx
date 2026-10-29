@@ -151,4 +151,37 @@ describe('PublisherPreview', () => {
     fireEvent.click(screen.getByLabelText('preview.back'));
     expect(storeState().close).toHaveBeenCalled();
   });
+
+  // Regression: with `publisher: null` (identity not resolvable, e.g. the
+  // article's source feed matches no subscription) the component used to
+  // render null — a blank pane. The error state must stay recoverable.
+  it('renders the recoverable error view even when no publisher was resolved (errorUnresolved)', () => {
+    const s = usePreviewStore.getState() as unknown as { publisher: unknown; status: string; errorKey: string | null };
+    const savedPublisher = s.publisher;
+    s.publisher = null;
+    s.status = 'error';
+    s.errorKey = 'preview.errorUnresolved';
+    render(<PublisherPreview />);
+    expect(screen.getByText('preview.errorUnresolved')).toBeTruthy();
+    fireEvent.click(screen.getByText('preview.retry'));
+    expect(storeState().retry).toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'preview.back' }));
+    expect(storeState().close).toHaveBeenCalled();
+    // restore the shared mock state for the following tests
+    s.publisher = savedPublisher;
+    s.status = 'ready';
+    s.errorKey = null;
+  });
+
+  it('shows a skeleton while resolving (no publisher yet, no error)', () => {
+    const s = usePreviewStore.getState() as unknown as { publisher: unknown; status: string };
+    const savedPublisher = s.publisher;
+    s.publisher = null;
+    s.status = 'resolving';
+    render(<PublisherPreview />);
+    expect(screen.queryByTestId('preview-subscribe')).not.toBeTruthy();
+    expect(screen.queryByText('preview.errorUnresolved')).not.toBeTruthy();
+    s.publisher = savedPublisher;
+    s.status = 'ready';
+  });
 });

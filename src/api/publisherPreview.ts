@@ -10,7 +10,7 @@ export interface PreviewArticle {
   title: string;
   url: string;
   published: number | null;
-  /** HTML fourni par le fil — assainir avec `sanitizeHtml` avant rendu. */
+  /** HTML provided by the feed — sanitize with `sanitizeHtml` before rendering. */
   summary: string;
   author: string;
 }

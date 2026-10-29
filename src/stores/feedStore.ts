@@ -834,7 +834,7 @@ export interface FeedState {
    */
   infrequentFeedIds: string[] | null;
   feedErrors: Record<string, number>;
-  /** Flux fraîchement abonné et encore vide — voir l'état vide d'`ArticleList`. */
+  /** Feed just subscribed and still empty — see the `ArticleList` empty state. */
   pendingFirstArticlesFeedId: string | null;
   markAwaitingFirstArticles: (feedId: string) => void;
   // True while the initial subscriptions load is in flight — drives the thin

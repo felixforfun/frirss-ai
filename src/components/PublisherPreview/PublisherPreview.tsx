@@ -175,7 +175,48 @@ export default function PublisherPreview() {
     if (alreadySubscribed) setSubscribeOpen(false);
   }, [alreadySubscribed]);
 
-  if (!publisher || status === 'idle') return null;
+  if (status === 'idle') return null;
+
+  // The identity has not produced a publisher yet. While resolving, show a
+  // loading state; if the identity cannot be resolved at all (`errorUnresolved`,
+  // publisher never set) show a recoverable error — never a blank pane.
+  if (!publisher) {
+    if (status === 'error') {
+      return (
+        <div className="h-full overflow-y-auto" style={{ background: 'var(--panel-bg)' }}>
+          <div className="px-4 py-10 text-center">
+            <p className="text-sm mb-3" style={{ color: 'var(--reading-meta)' }}>
+              {t(errorKey ?? 'preview.errorLoad')}
+            </p>
+            <div className="flex justify-center gap-2">
+              <button
+                type="button"
+                onClick={retry}
+                className="px-4 py-2 text-sm rounded-lg transition-colors"
+                style={{ border: '1px solid var(--panel-border)', color: 'var(--list-title)' }}
+              >
+                {t('preview.retry')}
+              </button>
+              <button
+                type="button"
+                onClick={close}
+                className="px-4 py-2 text-sm rounded-lg transition-colors"
+                style={{ border: '1px solid var(--panel-border)', color: 'var(--list-title)' }}
+              >
+                {t('preview.back')}
+              </button>
+            </div>
+          </div>
+        </div>
+      );
+    }
+    // resolving (or a transient state without a publisher): skeleton, no flash.
+    return (
+      <div className="h-full overflow-y-auto" style={{ background: 'var(--panel-bg)' }}>
+        <SkeletonRows />
+      </div>
+    );
+  }
 
   return (
     <div className="h-full overflow-y-auto" style={{ background: 'var(--panel-bg)' }}>
@@ -245,7 +286,7 @@ export default function PublisherPreview() {
         )}
       </section>
 
-      {/* ── Bandeau d'information ── */}
+      {/* ── Info banner ── */}
       {status === 'ready' && !alreadySubscribed && (
         <div className="flex items-center gap-2 px-4 py-2.5" style={{ borderBottom: '1px solid var(--panel-border)', background: 'var(--panel-hover)' }}>
           <svg className="w-4 h-4 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} style={{ color: 'var(--reading-meta)' }}>
@@ -300,10 +341,10 @@ export default function PublisherPreview() {
         </div>
       )}
 
-      {/* ── Chargement ── */}
+      {/* ── Loading ── */}
       {status === 'loading' && <SkeletonRows />}
 
-      {/* ── Erreur recoverable ── */}
+      {/* ── Recoverable error ── */}
       {status === 'error' && (
         <div className="px-4 py-10 text-center">
           <p className="text-sm mb-3" style={{ color: 'var(--reading-meta)' }}>
