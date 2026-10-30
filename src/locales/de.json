@@ -45,6 +45,8 @@
     "showReadFeeds": "Alle Feeds anzeigen",
     "feedLayoutDefault": "Standard",
     "feedLayoutThisFeed": "Ansicht für diesen Feed",
+    "menuButton": "Menü",
+    "startPage": "Als Startseite festlegen",
     "expandCategory": "Kategorie ausklappen",
     "collapseCategory": "Kategorie einklappen",
     "starOnGithub": "Auf GitHub mit einem Stern versehen",
@@ -765,6 +767,8 @@
   },
   "toast": {
     "dismiss": "Schließen",
+    "startPageSet": "Startseite festgelegt — FriRSS öffnet hier.",
+    "startPageCleared": "Startseite gelöscht — FriRSS öffnet wieder die zuletzt angesehene Ansicht.",
     "markedRead_one": "{{count}} Artikel als gelesen markiert",
     "markedRead_other": "{{count}} Artikel als gelesen markiert",
     "markedReadAll": "Artikel als gelesen markiert",

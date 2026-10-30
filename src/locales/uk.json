@@ -44,6 +44,8 @@
     "showReadFeeds": "Показати всі канали",
     "feedLayoutDefault": "За умовчанням",
     "feedLayoutThisFeed": "Розташування цього каналу",
+    "menuButton": "Меню",
+    "startPage": "Встановити як початкову сторінку",
     "expandCategory": "Розгорнути категорію",
     "collapseCategory": "Згорнути категорію",
     "starOnGithub": "Поставити зірку на GitHub",
@@ -785,6 +787,8 @@
   },
   "toast": {
     "dismiss": "Закрити",
+    "startPageSet": "Початкову сторінку встановлено — FriRSS відкриватиметься тут.",
+    "startPageCleared": "Початкову сторінку видалено — FriRSS знову відкриває останній переглянутий вигляд.",
     "markedRead_one": "{{count}} статтю позначено прочитаною",
     "markedRead_few": "{{count}} статті позначено прочитаними",
     "markedRead_many": "{{count}} статей позначено прочитаними",

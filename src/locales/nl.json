@@ -44,6 +44,8 @@
     "showReadFeeds": "Alle feeds tonen",
     "feedLayoutDefault": "Standaard",
     "feedLayoutThisFeed": "Indeling voor deze feed",
+    "menuButton": "Menu",
+    "startPage": "Instellen als startpagina",
     "expandCategory": "Categorie uitklappen",
     "collapseCategory": "Categorie inklappen",
     "starOnGithub": "Geef een ster op GitHub",
@@ -765,6 +767,8 @@
   },
   "toast": {
     "dismiss": "Sluiten",
+    "startPageSet": "Startpagina ingesteld — FriRSS opent hier.",
+    "startPageCleared": "Startpagina gewist — FriRSS opent weer de laatst bekeken weergave.",
     "markedRead_one": "{{count}} artikel als gelezen gemarkeerd",
     "markedRead_other": "{{count}} artikelen als gelezen gemarkeerd",
     "markedReadAll": "Artikelen als gelezen gemarkeerd",

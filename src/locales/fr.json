@@ -47,6 +47,8 @@
     "showReadFeeds": "Afficher tous les flux",
     "feedLayoutDefault": "Par défaut",
     "feedLayoutThisFeed": "Disposition de ce flux",
+    "menuButton": "Menu",
+    "startPage": "Définir comme page d’accueil",
     "starOnGithub": "Mettre une étoile sur GitHub",
     "support": "Soutenir le projet"
   },
@@ -765,6 +767,8 @@
   },
   "toast": {
     "dismiss": "Fermer",
+    "startPageSet": "Page d’accueil définie : FriRSS s’ouvrira ici.",
+    "startPageCleared": "Page d’accueil effacée : FriRSS rouvre sur la dernière vue.",
     "markedRead_one": "{{count}} article marqué comme lu",
     "markedRead_other": "{{count}} articles marqués comme lus",
     "markedReadAll": "Articles marqués comme lus",

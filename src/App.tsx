@@ -9,6 +9,7 @@ import { useBreakpoint } from './hooks/useBreakpoint';
 import { hydrateExtractCache } from './lib/extractCache';
 import { hydratePrefs, stopSync } from './lib/prefsSync';
 import { saveLastView, loadLastView } from './lib/lastView';
+import { loadStartPage } from './lib/startPage';
 import Login from './components/Login/Login';
 import LoginTransition from './components/Login/LoginTransition';
 import Sidebar from './components/Sidebar/Sidebar';
@@ -22,6 +23,7 @@ import Toaster from './components/Toaster';
 import ShortcutHelp from './components/ShortcutHelp';
 import CommandPalette from './components/CommandPalette';
 import { effectiveLayout } from './lib/effectiveLayout';
+import type { Subscription } from './types';
 import MobileDrawer from './components/MobileDrawer';
 import MobileStack from './components/MobileStack';
 import PublisherPreview from './components/PublisherPreview/PublisherPreview';
@@ -47,6 +49,7 @@ export default function App() {
   const selectedArticle = useFeedStore((s) => s.selectedArticle);
   const selectedFeedId = useFeedStore((s) => s.selectedFeed?.id);
   const filter = useFeedStore((s) => s.filter);
+  const subscriptions = useFeedStore((s) => s.subscriptions);
   const preferencesOpen = useThemeStore((s) => s.preferencesOpen);
   const panelLayout = useUiStore((s) => s.panelLayout);
   const deviceDisplaySettings = useUiStore((s) => s.deviceDisplaySettings);
@@ -164,17 +167,51 @@ export default function App() {
   // Set once we restore a saved view on startup, so the unread-only
   // reconcile below doesn't override the resumed feed/filter.
   const restoredViewRef = useRef(false);
+  // Feed start page currently to be validated: id of the feed restored at
+  // startup + navigation signature captured right after the restore. The
+  // validation effect below clears it as soon as the destination is confirmed
+  // still subscribed — or when the user has navigated elsewhere meanwhile.
+  const pendingFeedStartPage = useRef<{ id: string; signature: string } | null>(null);
 
   useEffect(() => {
     if (!isAuthenticated) return;
     loadSubscriptions();
-    // Resume the last view (feed/label + filter) for this server, if any.
-    const saved = loadLastView(useAuthStore.getState().activeServerId);
-    if (saved) {
+    // Startup navigation, order of precedence:
+    //   1. an explicitly configured start page (« Set as start page »),
+    //   2. the last view looked at for this server,
+    //   3. the default landing view.
+    // Without a stored start page, the behaviour below is byte for byte the
+    // historical one — this preference must change nothing for those.
+    const startPage = loadStartPage(useAuthStore.getState().activeServerId);
+    if (startPage) {
       restoredViewRef.current = true;
-      useFeedStore.getState().selectView(saved.feed, saved.filter);
+      const fs = useFeedStore.getState();
+      if (startPage.kind === 'feed') {
+        // Navigate immediately with the stored identity (same trick as
+        // `lastView`, whose stream id is stable); the subscription list, when
+        // it arrives, still authenticates the id — fallback below if the feed
+        // has disappeared (deleted, invalid destination).
+        fs.selectView({ id: startPage.id, title: startPage.title } as Subscription);
+        pendingFeedStartPage.current = {
+          id: startPage.id,
+          signature: `${useFeedStore.getState().selectedFeed?.id ?? ''}:${useFeedStore.getState().filter}`,
+        };
+      } else if (startPage.filter === 'all') {
+        // The home « All feeds » entry, not a bare view: the unread-only
+        // scope is resolved the same way as a click on the entry.
+        fs.selectHomeAll();
+      } else {
+        fs.selectView(null, startPage.filter);
+      }
     } else {
-      loadArticles();
+      // Resume the last view (feed/label + filter) for this server, if any.
+      const saved = loadLastView(useAuthStore.getState().activeServerId);
+      if (saved) {
+        restoredViewRef.current = true;
+        useFeedStore.getState().selectView(saved.feed, saved.filter);
+      } else {
+        loadArticles();
+      }
     }
     const timers: ReturnType<typeof setTimeout>[] = [];
     // Warm the offline cache (favorites + read-later) in the background,
@@ -229,6 +266,25 @@ export default function App() {
       }
     });
   }, []);
+
+  // ── Feed start page: validate the destination once subscriptions land ──
+  // A saved feed id that no longer belongs to this FreshRSS server (feed
+  // deleted elsewhere, stale id) would otherwise leave the app on an empty
+  // pseudo-view: fall back to the existing default startup — last viewed
+  // view, else the bare landing view. Never while the user has already
+  // navigated elsewhere after the restore.
+  useEffect(() => {
+    const pending = pendingFeedStartPage.current;
+    if (!isAuthenticated || !pending) return;
+    if (subscriptions.length === 0) return; // list not resolved yet
+    pendingFeedStartPage.current = null;
+    if (subscriptions.some((s) => s.id === pending.id)) return; // real feed: done
+    const fs = useFeedStore.getState();
+    if (`${fs.selectedFeed?.id ?? ''}:${fs.filter}` !== pending.signature) return;
+    const saved = loadLastView(useAuthStore.getState().activeServerId);
+    if (saved) fs.selectView(saved.feed, saved.filter);
+    else fs.loadArticles();
+  }, [isAuthenticated, subscriptions]);
 
   // ── Reload everything when the active FreshRSS server changes ──
   const prevServerRef = useRef(activeServerId);

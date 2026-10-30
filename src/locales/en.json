@@ -47,6 +47,8 @@
     "showReadFeeds": "Show all feeds",
     "feedLayoutDefault": "Default",
     "feedLayoutThisFeed": "Layout for this feed",
+    "menuButton": "Menu",
+    "startPage": "Set as start page",
     "starOnGithub": "Star it on GitHub",
     "support": "Support the project"
   },
@@ -765,6 +767,8 @@
   },
   "toast": {
     "dismiss": "Dismiss",
+    "startPageSet": "Start page set — FriRSS will open here.",
+    "startPageCleared": "Start page cleared — FriRSS reopens on the last view.",
     "markedRead_one": "{{count}} article marked read",
     "markedRead_other": "{{count}} articles marked read",
     "markedReadAll": "Articles marked read",

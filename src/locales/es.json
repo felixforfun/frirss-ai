@@ -44,6 +44,8 @@
     "showReadFeeds": "Mostrar todos los feeds",
     "feedLayoutDefault": "Por defecto",
     "feedLayoutThisFeed": "Disposición de este flujo",
+    "menuButton": "Menú",
+    "startPage": "Fijar como página de inicio",
     "expandCategory": "Desplegar la categoría",
     "collapseCategory": "Plegar la categoría",
     "starOnGithub": "Dar una estrella en GitHub",
@@ -765,6 +767,8 @@
   },
   "toast": {
     "dismiss": "Cerrar",
+    "startPageSet": "Página de inicio fijada — FriRSS abrirá aquí.",
+    "startPageCleared": "Página de inicio borrada — FriRSS vuelve a abrir la última vista.",
     "markedRead_one": "{{count}} artículo marcado como leído",
     "markedRead_other": "{{count}} artículos marcados como leídos",
     "markedReadAll": "Artículos marcados como leídos",
