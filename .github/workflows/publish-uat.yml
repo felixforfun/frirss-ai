@@ -1,11 +1,11 @@
 name: Publish UAT image to GHCR
 
 # UAT (testing) image — NEVER `latest` nor `dev`: the dedicated
-# `uat-publisher-preview` tag is the one the Unraid test container
+# `uat-context-menu-start-page` tag is the one the Unraid test container
 # (`frirss-testing`) pulls. Production deployment remains a manual act.
 on:
   push:
-    branches: ['feat/publisher-preview-subscribe']
+    branches: ['feature/global-context-menu-start-page']
   workflow_dispatch: {}
 
 jobs:
@@ -41,8 +41,8 @@ jobs:
         id: tags
         run: |
           IMAGE=ghcr.io/${GITHUB_REPOSITORY,,}
-          echo "tags=$IMAGE:uat-publisher-preview,$IMAGE:uat-publisher-preview-sha-${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
-          echo "Tags: $IMAGE:uat-publisher-preview,$IMAGE:uat-publisher-preview-sha-${GITHUB_SHA::7}"
+          echo "tags=$IMAGE:uat-context-menu-start-page,$IMAGE:uat-context-menu-start-page-sha-${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+          echo "Tags: $IMAGE:uat-context-menu-start-page,$IMAGE:uat-context-menu-start-page-sha-${GITHUB_SHA::7}"
 
       - name: Build and push
         uses: docker/build-push-action@v7

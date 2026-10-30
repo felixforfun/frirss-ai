@@ -46,6 +46,8 @@
     "showReadFeeds": "显示全部订阅源",
     "feedLayoutDefault": "默认",
     "feedLayoutThisFeed": "此订阅源的布局",
+    "menuButton": "菜单",
+    "startPage": "设为起始页",
     "starOnGithub": "在 GitHub 上标星",
     "support": "支持本项目",
     "infrequent": "低频更新的网站"
@@ -765,6 +767,8 @@
   },
   "toast": {
     "dismiss": "关闭",
+    "startPageSet": "已设为起始页 — FriRSS 将在此打开。",
+    "startPageCleared": "已清除起始页 — FriRSS 恢复为打开上次浏览的视图。",
     "markedRead_one": "{{count}} 篇文章已标为已读",
     "markedRead_other": "{{count}} 篇文章已标为已读",
     "markedReadAll": "全部文章已标为已读",

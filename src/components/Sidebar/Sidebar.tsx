@@ -7,6 +7,8 @@ import { clampToViewport } from '../../lib/clampToViewport';
 import { useAuthStore } from '../../stores/authStore';
 import { useUiStore } from '../../stores/uiStore';
 import { homeEntryActive } from '../../lib/unreadScope';
+import { saveStartPage, clearStartPage, loadStartPage, targetsEqual, type StartPageTarget } from '../../lib/startPage';
+import { useLongPress } from '../../hooks/useLongPress';
 import { useThemeStore } from '../../stores/themeStore';
 import { useBreakpoint } from '../../hooks/useBreakpoint';
 import AddFeedDialog from './AddFeedDialog';
@@ -31,6 +33,21 @@ interface Category {
 type DragItem =
   | { type: 'category'; id: string }
   | { type: 'feed'; id: string; catId: string };
+
+/**
+ * Ce sur quoi le menu contextuel est posé.
+ *
+ * - `feed` : un flux abonné — le menu complet (renommer, ouvrir le site,
+ *   article complet auto, page d'accueil, disposition, se désabonner).
+ * - `view` : une vue globale ou virtuelle (Tous les flux, Non lus,
+ *   Intéressant, Sites rares, Récemment lus, Favoris, À lire plus tard).
+ *   Aucun flux précis n'est derrière elle : proposer une action individuelle
+ *   toucherait un flux arbitraire. Seules les actions qui ont un sens pour
+ *   la vue — « définir comme page d'accueil » — y figurent.
+ */
+export type MenuTarget =
+  | { kind: 'feed'; feed: Subscription }
+  | { kind: 'view'; title: string; target: StartPageTarget };
 
 export default function Sidebar() {
   const { t } = useTranslation();
@@ -91,7 +108,18 @@ export default function Sidebar() {
   const [refreshing, setRefreshing] = useState(false);
   const [dragItem, setDragItem] = useState<DragItem | null>(null);
   const [addFeedOpen, setAddFeedOpen] = useState(false);
-  const [contextMenu, setContextMenu] = useState<{ feed: Subscription; x: number; y: number } | null>(null);
+  const [contextMenu, setContextMenu] = useState<{ target: MenuTarget; x: number; y: number } | null>(null);
+
+  // Fabrique les deux gestes qui ouvrent le menu d'une vue globale : clic
+  // droit (coordonnées du pointeur) et appui long / ⋯ au survol (ancre du
+  // rang). Même destination pour les deux — le menu partagé.
+  const viewMenuProps = (title: string, target: StartPageTarget) => ({
+    onContextMenu: (e: ReactMouseEvent) => {
+      e.preventDefault();
+      setContextMenu({ target: { kind: 'view', title, target }, x: e.clientX, y: e.clientY });
+    },
+    onOpenMenu: (r: DOMRect) => setContextMenu({ target: { kind: 'view', title, target }, x: r.right, y: r.top }),
+  });
 
   const categories = useMemo(() => {
     const map: Record<string, Category> = {};
@@ -440,6 +468,7 @@ export default function Sidebar() {
           active={homeEntryActive('all', { hasFeed: !!selectedFeed, filter, scope: unreadOnlyScope, homeEntry })}
           count={totalUnread}
           onClick={() => selectHomeAll()}
+          {...viewMenuProps(t('sidebar.allFeeds'), { kind: 'filter', filter: 'all' })}
         />
         <FilterItem
           icon={
@@ -452,12 +481,14 @@ export default function Sidebar() {
           active={homeEntryActive('unread', { hasFeed: !!selectedFeed, filter, scope: unreadOnlyScope, homeEntry })}
           count={totalUnread}
           onClick={() => selectView(null, 'unread')}
+          {...viewMenuProps(t('sidebar.unread'), { kind: 'filter', filter: 'unread' })}
         />
         <FilterItem
           icon={<svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M12 3v3m0 12v3M3 12h3m12 0h3M5.64 5.64l2.12 2.12m8.48 8.48 2.12 2.12m0-12.72-2.12 2.12m-8.48 8.48-2.12 2.12" /></svg>}
           label={t('sidebar.interesting')}
           active={filter === 'interesting' && !selectedFeed}
           onClick={() => selectView(null, 'interesting')}
+          {...viewMenuProps(t('sidebar.interesting'), { kind: 'filter', filter: 'interesting' })}
         />
         <FilterItem
           icon={<svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M6 3h12M6 21h12M7 3c0 4 2 6 5 9-3 3-5 5-5 9m10-18c0 4-2 6-5 9 3 3 5 5 5 9" /></svg>}
@@ -470,12 +501,14 @@ export default function Sidebar() {
             useFeedStore.getState().selectView(null, 'infrequent');
             if (isMobile) toggleSidebar();
           }}
+          {...viewMenuProps(t('sidebar.infrequent'), { kind: 'filter', filter: 'infrequent' })}
         />
         <FilterItem
           icon={<svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M4.5 4.5h15v15h-15zM8 8h8M8 12h8M8 16h5" /></svg>}
           label={t('sidebar.recentlyRead')}
           active={filter === 'recentlyread' && !selectedFeed}
           onClick={() => selectView(null, 'recentlyread')}
+          {...viewMenuProps(t('sidebar.recentlyRead'), { kind: 'filter', filter: 'recentlyread' })}
         />
         <FilterItem
           icon={
@@ -492,6 +525,10 @@ export default function Sidebar() {
             if (!article.starred) toggleStar(article);
           }}
           onContextMenu={(e) => { e.preventDefault(); startAdding(STARRED_PREFIX); }}
+          // Le clic droit d'un rang Favoris reste réservé à la création de
+          // catégorie ; le menu de la vue passe par le ⋯ au survol et par
+          // l'appui long au doigt.
+          onOpenMenu={(r) => setContextMenu({ target: { kind: 'view', title: t('sidebar.starred'), target: { kind: 'filter', filter: 'starred' } }, x: r.right, y: r.top })}
           onToggleCollapse={() => toggleSavedCollapsed(STARRED_PREFIX)}
           collapsed={!!savedCollapsed[STARRED_PREFIX]}
           hasChildren
@@ -512,6 +549,9 @@ export default function Sidebar() {
             if (!article.labels?.includes(READ_LATER_LABEL)) toggleReadLater(article);
           }}
           onContextMenu={(e) => { e.preventDefault(); startAdding(READ_LATER_PREFIX); }}
+          // Même partage qu'au-dessus : clic droit = nouvelle catégorie,
+          // menu de la vue = ⋯ au survol ou appui long.
+          onOpenMenu={(r) => setContextMenu({ target: { kind: 'view', title: t('sidebar.readLater'), target: { kind: 'filter', filter: 'readlater' } }, x: r.right, y: r.top })}
           onToggleCollapse={() => toggleSavedCollapsed(READ_LATER_PREFIX)}
           collapsed={!!savedCollapsed[READ_LATER_PREFIX]}
           hasChildren
@@ -608,10 +648,10 @@ export default function Sidebar() {
                     onSelect={() => selectView(feed)}
                     onContextMenu={(e) => {
                       e.preventDefault();
-                      setContextMenu({ feed, x: e.clientX, y: e.clientY });
+                      setContextMenu({ target: { kind: 'feed', feed }, x: e.clientX, y: e.clientY });
                     }}
                     onOpenMenu={(rect) => {
-                      setContextMenu({ feed, x: rect.right, y: rect.top });
+                      setContextMenu({ target: { kind: 'feed', feed }, x: rect.right, y: rect.top });
                     }}
                     onDragStart={(e) => { e.stopPropagation(); handleFeedDragStart(e, feed.id, cat.id); }}
                     onDragOver={(e) => { e.stopPropagation(); e.preventDefault(); }}
@@ -702,8 +742,8 @@ export default function Sidebar() {
 
       {addFeedOpen && <AddFeedDialog onClose={() => setAddFeedOpen(false)} />}
       {contextMenu && (
-        <FeedContextMenu
-          feed={contextMenu.feed}
+        <SidebarContextMenu
+          target={contextMenu.target}
           x={contextMenu.x}
           y={contextMenu.y}
           onRename={renameFeed}
@@ -715,8 +755,8 @@ export default function Sidebar() {
   );
 }
 
-interface FeedContextMenuProps {
-  feed: Subscription;
+export interface SidebarContextMenuProps {
+  target: MenuTarget;
   x: number;
   y: number;
   onRename: (feedId: string, title: string) => Promise<boolean>;
@@ -787,16 +827,41 @@ function FeedLayoutPicker({ value, onChange }: { value: string; onChange: (v: st
   );
 }
 
-function FeedContextMenu({ feed, x, y, onRename, onDelete, onClose }: FeedContextMenuProps) {
+/**
+ * The one context menu of the sidebar — fed a `MenuTarget`:
+ * a subscribed feed (full menu) or a global/home view (start page only).
+ * Individual-feed actions never appear for a view: no single subscription
+ * sits behind it, so one would hit an arbitrary feed.
+ */
+export function SidebarContextMenu({ target, x, y, onRename, onDelete, onClose }: SidebarContextMenuProps) {
   const { t } = useTranslation();
+  const serverId = useAuthStore((s) => s.activeServerId);
+  const isFeed = target.kind === 'feed';
+  // Captured once at open: the identity the menu works with must not shift
+  // when the rename / delete confirmation pages replace the item list.
+  const [startPageTarget] = useState<StartPageTarget>(() =>
+    target.kind === 'feed'
+      ? { kind: 'feed', id: target.feed.id, title: target.feed.title }
+      : target.target,
+  );
+  // Read once at open: only this menu writes the preference, only to close
+  // right after — a live read would add an onChange subscription for nothing.
+  const [startPageActive] = useState(() => targetsEqual(loadStartPage(serverId), startPageTarget));
+  const setStartPage = () => {
+    if (startPageActive) clearStartPage(serverId);
+    else saveStartPage(serverId, startPageTarget);
+    useUiStore.getState().pushToast(t(startPageActive ? 'toast.startPageCleared' : 'toast.startPageSet'));
+    onClose();
+  };
+
   const [mode, setMode] = useState<'rename' | 'confirmDelete' | null>(null);
-  const [renameValue, setRenameValue] = useState(feed.title);
+  const [renameValue, setRenameValue] = useState(isFeed ? target.feed.title : '');
   const menuRef = useRef<HTMLDivElement>(null);
   const feedSettings = useUiStore((s) => s.feedSettings);
   const setFeedAutoExtract = useUiStore((s) => s.setFeedAutoExtract);
   const setFeedLayout = useUiStore((s) => s.setFeedLayout);
-  const isAutoExtract = feedSettings[feed.id]?.autoExtract || false;
-  const feedLayout = feedSettings[feed.id]?.layout || '';
+  const isAutoExtract = isFeed ? (feedSettings[target.feed.id]?.autoExtract || false) : false;
+  const feedLayout = isFeed ? (feedSettings[target.feed.id]?.layout || '') : '';
 
   // Fermeture au clic en dehors. `pointerdown` et non `mousedown` : au doigt,
   // iOS n'émet pas de `mousedown` avant le `click`, si bien qu'une tape à côté
@@ -830,7 +895,11 @@ function FeedContextMenu({ feed, x, y, onRename, onDelete, onClose }: FeedContex
     minWidth: '236px', overflow: 'hidden',
   };
 
-  if (mode === 'rename') {
+  // Pages reduced to the feed menu — rename and unsubscribe a view would
+  // otherwise be individual actions landing on an arbitrary feed.
+  const feed = isFeed ? target.feed : null;
+
+  if (feed && mode === 'rename') {
     return (
       <div ref={menuRef} style={style} className="p-3">
         <form onSubmit={async (e: FormEvent) => {
@@ -877,7 +946,7 @@ function FeedContextMenu({ feed, x, y, onRename, onDelete, onClose }: FeedContex
     );
   }
 
-  if (mode === 'confirmDelete') {
+  if (feed && mode === 'confirmDelete') {
     return (
       <div ref={menuRef} style={style} className="p-3">
         <p className="text-xs mb-3" style={{ color: 'var(--list-title)' }}>
@@ -905,79 +974,103 @@ function FeedContextMenu({ feed, x, y, onRename, onDelete, onClose }: FeedContex
 
   return (
     <div ref={menuRef} style={style} className="py-1">
-      {/* Feed name header — anchors every item below to this feed. */}
+      {/* Name header — anchors every item below to the context (feed or view). */}
       <div
         className="px-3 pt-1 pb-1.5 text-[11px] font-semibold truncate"
         style={{ color: 'var(--list-title)' }}
-        title={feed.title}
+        title={isFeed ? target.feed.title : target.title}
       >
-        {feed.title}
+        {isFeed ? target.feed.title : target.title}
       </div>
       <div className="h-px mx-2 mb-1" style={{ background: 'var(--panel-border)' }} />
+      {feed && (
+        <>
+          <ContextMenuItem
+            icon={
+              <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L6.832 19.82a4.5 4.5 0 01-1.897 1.13l-2.685.8.8-2.685a4.5 4.5 0 011.13-1.897L16.863 4.487z" />
+              </svg>
+            }
+            label={t('sidebar.rename')}
+            onClick={() => setMode('rename')}
+          />
+          <ContextMenuItem
+            icon={
+              <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M13.5 6H5.25A2.25 2.25 0 003 8.25v10.5A2.25 2.25 0 005.25 21h10.5A2.25 2.25 0 0018 18.75V10.5m-10.5 6L21 3m0 0h-5.25M21 3v5.25" />
+              </svg>
+            }
+            label={t('sidebar.openSite')}
+            onClick={() => {
+              openExternal(feedSiteUrl(feed, getSampleArticleUrl(feed.id)));
+              onClose();
+            }}
+          />
+          <ContextMenuItem
+            icon={
+              <svg className="w-3.5 h-3.5" fill={isAutoExtract ? 'currentColor' : 'none'} viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" />
+              </svg>
+            }
+            label={isAutoExtract ? '✓ ' + t('sidebar.autoExtract') : t('sidebar.autoExtract')}
+            onClick={() => {
+              setFeedAutoExtract(feed.id, !isAutoExtract);
+              onClose();
+            }}
+          />
+        </>
+      )}
+
+      {/* Page start — the same action for a feed and for a global view:
+          the destination is the open context, never an arbitrary feed.
+          ✓ = already the start page; click again to clear (the default
+          startup — restoring the last viewed — takes over). */}
       <ContextMenuItem
         icon={
-          <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-            <path strokeLinecap="round" strokeLinejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L6.832 19.82a4.5 4.5 0 01-1.897 1.13l-2.685.8.8-2.685a4.5 4.5 0 011.13-1.897L16.863 4.487z" />
+          <svg className="w-3.5 h-3.5" fill={startPageActive ? 'currentColor' : 'none'} viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 12l8.25-6.75a1.5 1.5 0 011.8 0L20.25 12m-15.75 0v6.75A2.25 2.25 0 006.75 21h10.5a2.25 2.25 0 002.25-2.25V12m-11.25 9v-4.5c0-.621.504-1.125 1.125-1.125h1.5c.621 0 1.125.504 1.125 1.125V21" />
           </svg>
         }
-        label={t('sidebar.rename')}
-        onClick={() => setMode('rename')}
-      />
-      <ContextMenuItem
-        icon={
-          <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-            <path strokeLinecap="round" strokeLinejoin="round" d="M13.5 6H5.25A2.25 2.25 0 003 8.25v10.5A2.25 2.25 0 005.25 21h10.5A2.25 2.25 0 0018 18.75V10.5m-10.5 6L21 3m0 0h-5.25M21 3v5.25" />
-          </svg>
-        }
-        label={t('sidebar.openSite')}
-        onClick={() => {
-          openExternal(feedSiteUrl(feed, getSampleArticleUrl(feed.id)));
-          onClose();
-        }}
-      />
-      <ContextMenuItem
-        icon={
-          <svg className="w-3.5 h-3.5" fill={isAutoExtract ? 'currentColor' : 'none'} viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-            <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" />
-          </svg>
-        }
-        label={isAutoExtract ? '✓ ' + t('sidebar.autoExtract') : t('sidebar.autoExtract')}
-        onClick={() => {
-          setFeedAutoExtract(feed.id, !isAutoExtract);
-          onClose();
-        }}
+        label={startPageActive ? '✓ ' + t('sidebar.startPage') : t('sidebar.startPage')}
+        onClick={setStartPage}
       />
 
-      {/* Per-feed layout override — falls back to the global layout when empty */}
-      <div className="h-px mx-2 my-1" style={{ background: 'var(--panel-border)' }} />
-      {/* `flex-wrap` : à 236 px de menu, le libellé traduit et les quatre
-          boutons ne tiennent pas sur une ligne — les boutons étaient coupés par
-          l'`overflow: hidden` du menu. Ils passent dessous plutôt que d'imposer
-          un menu plus large à tout le monde. */}
-      <div className="px-3 py-2 flex items-center justify-between gap-2 flex-wrap">
-        <span className="text-[13px] font-medium" style={{ color: 'var(--list-title)' }}>
-          {t('sidebar.feedLayoutThisFeed')}
-        </span>
-        <FeedLayoutPicker
-          value={feedLayout}
-          onChange={(v) => {
-            setFeedLayout(feed.id, v);
-            onClose();
-          }}
-        />
-      </div>
+      {/* Per-feed layout override — falls back to the global layout when empty.
+          A global view never carries one: `feedSettings` is keyed by feed id,
+          and "this feed reads better as a grid" has no meaning here. */}
+      {feed && (
+        <>
+          <div className="h-px mx-2 my-1" style={{ background: 'var(--panel-border)' }} />
+          {/* `flex-wrap` : à 236 px de menu, le libellé traduit et les quatre
+              boutons ne tiennent pas sur une ligne — les boutons étaient coupés par
+              l'`overflow: hidden` du menu. Ils passent dessous plutôt que d'imposer
+              un menu plus large à tout le monde. */}
+          <div className="px-3 py-2 flex items-center justify-between gap-2 flex-wrap">
+            <span className="text-[13px] font-medium" style={{ color: 'var(--list-title)' }}>
+              {t('sidebar.feedLayoutThisFeed')}
+            </span>
+            <FeedLayoutPicker
+              value={feedLayout}
+              onChange={(v) => {
+                setFeedLayout(feed.id, v);
+                onClose();
+              }}
+            />
+          </div>
 
-      <div className="h-px mx-2 my-1" style={{ background: 'var(--panel-border)' }} />
-      <ContextMenuItem
-        icon={
-          <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-            <path strokeLinecap="round" strokeLinejoin="round" d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0" />
-          </svg>
-        }
-        label={t('sidebar.unsubscribe')}
-        danger
-        onClick={() => setMode('confirmDelete')}
-      />
+          <div className="h-px mx-2 my-1" style={{ background: 'var(--panel-border)' }} />
+          <ContextMenuItem
+            icon={
+              <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0" />
+              </svg>
+            }
+            label={t('sidebar.unsubscribe')}
+            danger
+            onClick={() => setMode('confirmDelete')}
+          />
+        </>
+      )}
     </div>
   );
 }
@@ -1257,7 +1350,7 @@ function SavedCategoryList({ prefix, adding: forcedAdding, onAddingDone }: { pre
   );
 }
 
-interface FilterItemProps {
+export interface FilterItemProps {
   icon: ReactNode;
   label: string;
   active: boolean;
@@ -1268,15 +1361,41 @@ interface FilterItemProps {
   onArticleDrop?: (article: Article) => void;
   /** Right-click handler — used to manage the saved categories. */
   onContextMenu?: (e: ReactMouseEvent) => void;
+  /**
+   * Affordance of the sidebar context menu (⋯ at hover + long press at the
+   * finger). The click right keeps its own role per row: it opens the menu on
+   * the global views that have no other shortcut, and remains reserved for the
+   * creation of a saved category on Favoris / À lire plus tard.
+   */
+  onOpenMenu?: (r: DOMRect) => void;
   /** Optional chevron to reveal the saved categories underneath. */
   onToggleCollapse?: () => void;
   collapsed?: boolean;
   hasChildren?: boolean;
 }
 
-function FilterItem({ icon, label, active, count, badge, badgeColor, onClick, onArticleDrop, onContextMenu, onToggleCollapse, collapsed, hasChildren }: FilterItemProps) {
+export function FilterItem({ icon, label, active, count, badge, badgeColor, onClick, onArticleDrop, onContextMenu, onOpenMenu, onToggleCollapse, collapsed, hasChildren }: FilterItemProps) {
   const { t } = useTranslation();
   const [dragOver, setDragOver] = useState(false);
+  const [hovered, setHovered] = useState(false);
+  const btnRef = useRef<HTMLButtonElement>(null);
+  // Long press at the finger — the same 500 ms as a feed row
+  // (`FEED_LONG_PRESS_MS`): the ⋯ only appears at hover, and the right click is
+  // not available on touch. Without this gesture, the menu of a virtual view
+  // would be desktop only.
+  const press = useLongPress(() => {
+    const rect = btnRef.current?.getBoundingClientRect();
+    if (rect && onOpenMenu) onOpenMenu(rect);
+  });
+
+  // Same right slot as a feed row: the ⋯ temporarily replaces the unread
+  // count so that one shows the other.
+  const counts = (
+    <>
+      {(count ?? 0) > 0 && <UnreadBadge count={count ?? 0} />}
+      {!count && (badge ?? 0) > 0 && <SpecialBadge count={badge ?? 0} color={badgeColor} />}
+    </>
+  );
 
   function handleDragOver(e: ReactDragEvent) {
     if (!onArticleDrop) return;
@@ -1312,7 +1431,15 @@ function FilterItem({ icon, label, active, count, badge, badgeColor, onClick, on
       onDrop={handleDrop}
     >
       <button
+        ref={btnRef}
         onClick={onClick}
+        onClickCapture={onOpenMenu ? press.onClickCapture : undefined}
+        onMouseEnter={onOpenMenu ? () => setHovered(true) : undefined}
+        onMouseLeave={onOpenMenu ? () => setHovered(false) : undefined}
+        onTouchStart={onOpenMenu ? press.onTouchStart : undefined}
+        onTouchMove={onOpenMenu ? press.onTouchMove : undefined}
+        onTouchEnd={onOpenMenu ? press.onTouchEnd : undefined}
+        onTouchCancel={onOpenMenu ? press.onTouchCancel : undefined}
         onContextMenu={onContextMenu}
         className={`flex-1 min-w-0 flex items-center gap-3 px-4 py-2 transition-all ${
           dragOver ? 'drop-highlight' : active ? 'bg-white/10' : 'hover:bg-white/5'
@@ -1333,8 +1460,30 @@ function FilterItem({ icon, label, active, count, badge, badgeColor, onClick, on
             <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
           </svg>
         )}
-        {!dragOver && (count ?? 0) > 0 && <UnreadBadge count={count ?? 0} />}
-        {!dragOver && !count && (badge ?? 0) > 0 && <SpecialBadge count={badge ?? 0} color={badgeColor} />}
+        {!dragOver && onOpenMenu && (
+          <span className="relative flex-shrink-0 w-6 h-5 flex items-center justify-center">
+            {hovered ? (
+              <span
+                className="absolute inset-0 flex items-center justify-center rounded-md"
+                style={{ background: 'rgba(255,255,255,0.1)' }}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  const rect = btnRef.current?.getBoundingClientRect();
+                  if (rect) onOpenMenu(rect);
+                }}
+                title={t('sidebar.menuButton')}
+                aria-label={t('sidebar.menuButton')}
+              >
+                <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24" style={{ color: 'var(--sidebar-text-active)' }}>
+                  <circle cx="6" cy="12" r="1.5" />
+                  <circle cx="12" cy="12" r="1.5" />
+                  <circle cx="18" cy="12" r="1.5" />
+                </svg>
+              </span>
+            ) : counts}
+          </span>
+        )}
+        {!dragOver && !onOpenMenu && counts}
       </button>
       {/* Chevron sits in the left padding, absolutely positioned: putting it in
           the flow (either side) would shift the icon or the unread count. */}
