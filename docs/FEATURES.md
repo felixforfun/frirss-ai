@@ -3100,7 +3100,7 @@ Chaque famille correspond à une zone de l'interface :
 `app` · `sidebar` · `addFeed` · `articleList` · `articleRow` · `swipe` ·
 `emptyState` · `readingPane` · `preferences` · `login` · `admin` · `servers` ·
 `dates` · `time` · `shortcutBar` · `viewMode` · `connection` · `update` ·
-`refresh` · `saved` · `backup` · `toast` · `palette` · `preview`
+`refresh` · `saved` · `backup` · `toast` · `palette` · `preview` · `hackerNews`
 
 ## Aperçu d'éditeur (publisher preview)
 

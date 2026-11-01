@@ -136,6 +136,9 @@
     "openSource": "Відкрити в джерелі",
     "copyLink": "Копіювати посилання"
   },
+  "hackerNews": {
+    "viewComments": "Переглянути коментарі на Hacker News"
+  },
   "swipe": {
     "read": "Прочитано",
     "unread": "Непрочитано",

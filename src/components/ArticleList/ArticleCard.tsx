@@ -7,6 +7,7 @@ import { timeAgo } from '../../lib/timeAgo';
 import { extractYouTubeId } from '../../lib/youtube';
 import type { RowActionSettings } from '../../lib/rowActions';
 import { ArticleRowActions } from './ArticleActions';
+import HackerNewsDiscussionLink from '../HackerNewsDiscussionLink';
 import Highlighted from './Highlighted';
 import { PublisherSourceButton } from '../PublisherPreview/PublisherSourceButton';
 import { resultSummary } from '../../lib/searchHighlight';
@@ -89,6 +90,12 @@ export default function ArticleCard({
         <h3 className="article-card__title article-title" dir="auto">
           <Highlighted text={article.title} terms={searchTerms} />
         </h3>
+        {/* Article du flux Hacker News : lien discussion sous le titre, avant l'extrait. */}
+        <HackerNewsDiscussionLink
+          article={article}
+          className="inline-flex items-center gap-1.5 mb-1 text-xs font-medium"
+          style={{ color: 'var(--accent)' }}
+        />
         <p className="article-card__summary" dir="auto">
           <Highlighted text={resultSummary(article, searchTerms ?? [])} terms={searchTerms} />
         </p>

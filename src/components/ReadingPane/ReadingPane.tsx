@@ -26,6 +26,7 @@ import { recordArticleOpen } from '../../api/readingStats';
 import { useAuthStore } from '../../stores/authStore';
 import { getAiSummaryConfig, getCachedAiSummary, summarizeArticle, resolveTechmemeArticleUrl, type AiSummaryConfig } from '../../api/backend';
 import { isTechmemePermalinkUrl, canonicalOrSelf, canonicalPathKey } from '../../lib/canonicalArticle';
+import HackerNewsDiscussionLink from '../HackerNewsDiscussionLink';
 import { findTextRanges } from '../../lib/articleFind';
 import MarkdownSummary from './MarkdownSummary';
 import SavedCategoryPicker from '../ArticleList/SavedCategoryPicker';
@@ -1757,6 +1758,17 @@ export default function ReadingPane({ showBack }: ReadingPaneProps) {
             </a>
           ) : (
             <h1 dir="auto" className="font-bold leading-tight mb-4 article-title-target" data-theme="reading-title" style={{ color: 'var(--reading-title)', fontSize: 'var(--fs-reading-title)' }}>{article.title}</h1>
+          )}
+
+          {/* Article du flux Hacker News : lien direct vers la discussion, sous
+              le titre, avant les étiquettes et le corps. Seul le titre du flux
+              est lié ici — une page liée suivie dedans n'est pas l'article HN. */}
+          {!linkedPage && (
+            <HackerNewsDiscussionLink
+              article={article}
+              className="inline-flex items-center gap-1.5 mb-5 text-xs font-medium"
+              style={{ color: 'var(--accent)' }}
+            />
           )}
 
           {linkedPage && (

@@ -18,6 +18,17 @@ la release publiée.
 
 ## Fonctionnalités
 
+- **Les articles du flux Hacker News portent leur lien de discussion.** Sous le
+  titre (volet de lecture, rangées aperçu, vue grille), un petit lien vert
+  « Voir les commentaires sur Hacker News » ouvre directement
+  `news.ycombinator.com/item?id=…` dans un nouvel onglet. L'identifiant HN vient
+  des données déjà reçues du flux — l'`url` de l'article quand elle pointe
+  elle-même vers HN, sinon l'ancre « Comments » de la description du flux — sans
+  appel réseau supplémentaire. Quand l'extraction FreshRSS a remplacé le contenu
+  (extension `af-readability`) et que l'`url` ne pointe pas vers HN,
+  l'identifiant est perdu : le lien n'apparaît tout simplement pas, jamais un
+  lien faux. Les autres flux restent inchangés ; la famille i18n `hackerNews`
+  entre dans les dix langues.
 - **Les résultats de recherche disent pourquoi ils sont là.** Le terme cherché
   est surligné dans le titre et le résumé ; quand il ne figure dans ni l'un ni
   l'autre — la recherche fouille le corps entier des articles, que la liste

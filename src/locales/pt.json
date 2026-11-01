@@ -132,6 +132,9 @@
     "openSource": "Abrir na origem",
     "copyLink": "Copiar ligação"
   },
+  "hackerNews": {
+    "viewComments": "Ver comentários no Hacker News"
+  },
   "swipe": {
     "read": "Lido",
     "unread": "Não lido",

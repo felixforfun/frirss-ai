@@ -136,6 +136,9 @@
     "openSource": "Otwórz u źródła",
     "copyLink": "Kopiuj link"
   },
+  "hackerNews": {
+    "viewComments": "Zobacz komentarze na Hacker News"
+  },
   "swipe": {
     "read": "Przeczytane",
     "unread": "Nieprzeczytane",

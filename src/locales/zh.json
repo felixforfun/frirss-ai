@@ -132,6 +132,9 @@
     "openSource": "打开原文",
     "copyLink": "复制链接"
   },
+  "hackerNews": {
+    "viewComments": "查看 Hacker News 评论"
+  },
   "swipe": {
     "read": "已读",
     "unread": "未读",

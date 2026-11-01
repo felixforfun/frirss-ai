@@ -24,6 +24,7 @@ import IntelligenceFeedback from './IntelligenceFeedback';
 import FeedFavicon from '../FeedFavicon';
 import BottomSheet from '../BottomSheet';
 import ArticleContextMenu from './ArticleContextMenu';
+import HackerNewsDiscussionLink from '../HackerNewsDiscussionLink';
 import NewArticlesBanner from './NewArticlesBanner';
 import SearchScanBar from './SearchScanBar';
 import SearchBar from './SearchBar';
@@ -2073,6 +2074,17 @@ export function ArticleRow({ article, viewMode, showSource, rowActions, showVoti
         >
           <Highlighted text={article.title} terms={searchTerms} />
         </h3>
+
+        {/* Article du flux Hacker News : lien discussion sous le titre, avant
+            l'extrait — uniquement en vue aperçu, les rangées compactes gardent
+            leur ligne unique. */}
+        {viewMode === 'preview' && (
+          <HackerNewsDiscussionLink
+            article={article}
+            className="inline-flex items-center gap-1.5 mb-1 text-xs font-medium"
+            style={{ color: 'var(--accent)' }}
+          />
+        )}
 
         {viewMode !== 'compact' && (
           <p dir="auto" className="line-clamp-2 leading-relaxed" data-theme="list-summary" style={{ color: 'var(--list-summary)', fontSize: 'var(--fs-list-summary)' }}>
