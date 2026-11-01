@@ -1,6 +1,7 @@
 import { useEffect, useId, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useTranslation } from 'react-i18next';
+import { useBodyScrollLock } from '../lib/scrollLock';
 
 /**
  * Le temps pendant lequel la validation refuse de répondre après l'ouverture.
@@ -61,6 +62,10 @@ export default function ConfirmDialog({ open, title, message, confirmLabel, warn
     document.addEventListener('keydown', onKey, true);
     return () => document.removeEventListener('keydown', onKey, true);
   }, [open, onCancel]);
+
+  // A modal must not let the background scroll under it (§4.E: every overlay
+  // takes the shared scroll lock).
+  useBodyScrollLock(open);
 
   if (!open) return null;
 

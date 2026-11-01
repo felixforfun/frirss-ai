@@ -5,6 +5,8 @@ import { useFeedStore, READ_LATER_LABEL } from '../../stores/feedStore';
 import { useThemeStore } from '../../stores/themeStore';
 import { useUiStore } from '../../stores/uiStore';
 import { useBreakpoint } from '../../hooks/useBreakpoint';
+import { useDocScrollMode } from '../../hooks/useDocScrollMode';
+import { useBodyScrollLock } from '../../lib/scrollLock';
 import { buildArticleBody, displayedHtml, reserveImgAspect, readingMinutes } from '../../lib/articleBody';
 import { readingBodyKind, showsSkeleton, showsReadingTime } from '../../lib/readingBody';
 import { sanitizeHtml } from '../../utils/sanitizeHtml';
@@ -254,6 +256,23 @@ export default function ReadingPane({ showBack }: ReadingPaneProps) {
   const [readProgress, setReadProgress] = useState(0);
   const [readSettingsOpen, setReadSettingsOpen] = useState(false); // mobile text-size popover
   const scrollContainerRef = useRef<HTMLDivElement>(null);
+  // Document-scrolling mode hooks (mobile Safari browser tab): the reader's
+  // scroller is the document itself.
+  const docScroll = useDocScrollMode();
+  /** Scroll the reader's scroller to an absolute offset — document or container. */
+  const readerScrollTo = useCallback((top: number) => {
+    if (docScroll) {
+      window.scrollTo({ top });
+      return;
+    }
+    const el = scrollContainerRef.current;
+    if (el) el.scrollTop = top;
+  }, [docScroll]);
+  /** The reader's current scroll offset, from whichever scroller owns it. */
+  const readerScrollTop = useCallback(
+    () => (docScroll ? window.scrollY : scrollContainerRef.current?.scrollTop ?? 0),
+    [docScroll],
+  );
   // Preserve the feed article's position while linked pages temporarily reuse the reader.
   const feedArticleScrollTopRef = useRef<number | null>(null);
   const wasShowingLinkedPageRef = useRef(false);
@@ -316,15 +335,19 @@ export default function ReadingPane({ showBack }: ReadingPaneProps) {
 
   // Restore after React has rendered the original article again. The reader
   // container is reused, so restoring its scrollTop preserves the exact position.
+  // Document mode: the saved offset is a document offset — restore via window.
   useLayoutEffect(() => {
     if (!linkedPage && wasShowingLinkedPageRef.current) {
       const container = scrollContainerRef.current;
       const savedScrollTop = feedArticleScrollTopRef.current;
-      if (container && savedScrollTop !== null) container.scrollTop = savedScrollTop;
+      if (savedScrollTop !== null) {
+        if (docScroll) window.scrollTo(0, savedScrollTop);
+        else if (container) container.scrollTop = savedScrollTop;
+      }
       feedArticleScrollTopRef.current = null;
     }
     wasShowingLinkedPageRef.current = !!linkedPage;
-  }, [linkedPage]);
+  }, [linkedPage, docScroll]);
 
   // Escape first returns from a linked page to its feed article. The global
   // keyboard handler then handles Escape normally on the next press.
@@ -439,12 +462,21 @@ export default function ReadingPane({ showBack }: ReadingPaneProps) {
     const rangeRect = range.getBoundingClientRect();
     const containerRect = container.getBoundingClientRect();
     if (rangeRect.top < containerRect.top + 16 || rangeRect.bottom > containerRect.bottom - 16) {
-      container.scrollTo({
-        top: container.scrollTop + rangeRect.top - containerRect.top - 64,
-        behavior: 'smooth',
-      });
+      if (docScroll) {
+        // Document mode: scroll = current offset + the delta between the hit
+        // and the (non-scrolling) content area.
+        window.scrollTo({
+          top: window.scrollY + rangeRect.top - containerRect.top - 64,
+          behavior: 'smooth',
+        });
+      } else {
+        container.scrollTo({
+          top: container.scrollTop + rangeRect.top - containerRect.top - 64,
+          behavior: 'smooth',
+        });
+      }
     }
-  }, [articleFindMatches, articleFindIndex]);
+  }, [articleFindMatches, articleFindIndex, docScroll]);
 
   const closeArticleFind = useCallback(() => {
     setArticleFindOpen(false);
@@ -505,11 +537,11 @@ export default function ReadingPane({ showBack }: ReadingPaneProps) {
         void el.offsetWidth; // force reflow to re-trigger animation
         el.classList.add('article-enter');
       }
-      if (scrollContainerRef.current) scrollContainerRef.current.scrollTop = 0;
+      readerScrollTo(0);
     }
     prevArticleIdRef.current = selectedArticle.id;
     // Swipe: scroll + animation handled by the swipe handler
-  }, [selectedArticle?.id]);
+  }, [selectedArticle?.id, readerScrollTo]);
 
   // Auto-extract for feeds with autoExtract enabled
   useEffect(() => {
@@ -605,6 +637,27 @@ export default function ReadingPane({ showBack }: ReadingPaneProps) {
   // Ce n'est PAS ce qui causait le clignotement — voir `articleBody.ts` — mais
   // c'est du travail que personne ne voyait.
   useEffect(() => {
+    if (docScroll) {
+      // Document mode: the reader's scroll lives on the document. Same
+      // image-coalesced measuring as below (`requestAnimationFrame` once per
+      // frame), bound to the window and measured on the scrolling element.
+      let frame = 0;
+      const scroller = document.scrollingElement ?? document.documentElement;
+      const measure = () => {
+        frame = 0;
+        setReadProgress(readProgressPercent(scroller.scrollTop, scroller.scrollHeight, scroller.clientHeight));
+      };
+      function handleScroll() {
+        if (frame) return;
+        frame = requestAnimationFrame(measure);
+      }
+      measure();
+      window.addEventListener('scroll', handleScroll, { passive: true });
+      return () => {
+        window.removeEventListener('scroll', handleScroll);
+        if (frame) cancelAnimationFrame(frame);
+      };
+    }
     const container = scrollContainerRef.current;
     if (!container) return;
     let frame = 0;
@@ -622,7 +675,7 @@ export default function ReadingPane({ showBack }: ReadingPaneProps) {
       container.removeEventListener('scroll', handleScroll);
       if (frame) cancelAnimationFrame(frame);
     };
-  }, [selectedArticle?.id]);
+  }, [selectedArticle?.id, docScroll]);
 
   const breakpoint = useBreakpoint();
   const isMobileOrTablet = breakpoint !== 'desktop';
@@ -869,7 +922,8 @@ export default function ReadingPane({ showBack }: ReadingPaneProps) {
             requestAnimationFrame(() => {
               const el2 = scrollContainerRef.current;
               if (el2) {
-                el2.scrollTop = 0;
+                if (docScroll) window.scrollTo(0, 0);
+                else el2.scrollTop = 0;
                 el2.style.transition = 'none';
                 el2.style.transform = '';
               }
@@ -970,7 +1024,7 @@ export default function ReadingPane({ showBack }: ReadingPaneProps) {
       const t = swipeTouchRef.current;
       cleanupPreview(t);
     };
-  }, [isMobileOrTablet, selectNextArticle, selectPrevArticle]);
+  }, [isMobileOrTablet, selectNextArticle, selectPrevArticle, docScroll]);
 
   const handleLinkedPageBack = useCallback(() => {
     setLinkedPageStack((stack) => {
@@ -1054,11 +1108,11 @@ export default function ReadingPane({ showBack }: ReadingPaneProps) {
       // Capture the feed article position only when entering the linked-page
       // stack. Nested linked pages must not overwrite the original position.
       if (!linkedPage && feedArticleScrollTopRef.current === null) {
-        feedArticleScrollTopRef.current = scrollContainerRef.current?.scrollTop ?? 0;
+        feedArticleScrollTopRef.current = readerScrollTop();
       }
       setLinkedPageStack((stack) => [...stack, ...(linkedPage ? [linkedPage] : [])]);
       setLinkedPage({ url: url.href, content });
-      if (scrollContainerRef.current) scrollContainerRef.current.scrollTop = 0;
+      readerScrollTo(0);
     } catch {
       // Don't rely on window.open after an async wait: mobile browsers may block it.
       // Offer a normal, user-initiated link instead, and always clear the spinner.
@@ -1069,7 +1123,7 @@ export default function ReadingPane({ showBack }: ReadingPaneProps) {
       if (timeoutId !== undefined) clearTimeout(timeoutId);
       setLinkedPageLoading(false);
     }
-  }, [linkedPage, selectedArticle?.id, selectedArticle?.url]);
+  }, [linkedPage, selectedArticle?.id, selectedArticle?.url, readerScrollTo, readerScrollTop]);
 
   const handleReadingBodyAuxClick = useCallback((event: ReactMouseEvent<HTMLDivElement>) => {
     if (event.button !== 1) return;
@@ -1363,16 +1417,28 @@ export default function ReadingPane({ showBack }: ReadingPaneProps) {
 
   return (
     <div
-      className="reading-pane h-full flex flex-col relative"
+      className={
+        docScroll
+          // Document mode: in flow — the wrapper inside MobileStackDoc
+          // stretches to the viewport, this column fills it, and the
+          // document (not this pane) scrolls.
+          ? 'reading-pane flex flex-1 flex-col relative'
+          : 'reading-pane h-full flex flex-col relative'
+      }
       style={{ background: 'var(--panel-bg)' }}
       onDoubleClick={(e) => { if (isFocusToggleTarget(e.target as Element)) toggleReadingFocus(); }}
     >
       {/* Mobile: no top toolbar — actions live in the bottom bar. Just a thin
-          progress line at the very top. */}
+          progress line at the very top. Document mode: the line is pinned
+          under the app chrome (same var the list header sticks to). */}
       {isMobileOrTablet && readProgress > 0 && (
         <div
-          className="reading-progress absolute top-0 left-0 z-10"
-          style={{ width: `${readProgress}%` }}
+          className="reading-progress z-20"
+          style={
+            docScroll
+              ? { width: `${readProgress}%`, position: 'fixed', top: 'var(--frirss-chrome-top-h, 0px)', left: 0 }
+              : { width: `${readProgress}%`, position: 'absolute', top: 0, left: 0 }
+          }
         />
       )}
 
@@ -1672,13 +1738,32 @@ export default function ReadingPane({ showBack }: ReadingPaneProps) {
           rendered article and the swipe-preview ghost use the mobile size. */}
       <div
         ref={contentWrapperRef}
-        className="flex-1 relative overflow-hidden min-h-0"
+        className={
+          docScroll
+            // Document mode: no clipping — the wrapper must grow with the
+            // article (horizontal overflow is clipped globally by
+            // `overflow-x: clip` on html/body).
+            ? 'flex-1 relative min-h-0'
+            : 'flex-1 relative overflow-hidden min-h-0'
+        }
         style={isMobileOrTablet ? ({ '--fs-reading-body': mobileReadingFontSize + 'px' } as CSSProperties) : undefined}
       >
         <div
           ref={scrollContainerRef}
-          className="absolute inset-0 overflow-y-auto nice-scroll"
-          style={isMobileOrTablet ? { touchAction: 'pan-y', overscrollBehaviorX: 'none', paddingBottom: '52px' } : undefined}
+          className={
+            docScroll
+              // Document mode: no inner scroller — content flows into the
+              // document, which grows; the app chrome stays pinned above.
+              ? 'relative'
+              : 'absolute inset-0 overflow-y-auto nice-scroll'
+          }
+          style={isMobileOrTablet ? {
+            touchAction: 'pan-y',
+            overscrollBehaviorX: 'none',
+            // Document mode: the bottom bar is a sticky flow child, so no
+            // reserved gutter here; container mode keeps the exact old one.
+            ...(docScroll ? { paddingBottom: 'env(safe-area-inset-bottom, 0px)' } : { paddingBottom: '52px' }),
+          } : undefined}
         >
           <article
             data-linked-page-url={linkedPage?.url}
@@ -1914,10 +1999,20 @@ export default function ReadingPane({ showBack }: ReadingPaneProps) {
       {/* ── Mobile: bottom action bar (thumb-reachable) + ⋯ menu ── */}
       {isMobileOrTablet && (
         <div
-          className="reading-bottombar absolute bottom-0 inset-x-0 z-10 flex items-stretch"
+          className={
+            docScroll
+              // Document mode: sticky flow child at the end of the column —
+              // pins to the viewport bottom while the document scrolls and
+              // rests at the content end on the last screen.
+              ? 'reading-bottombar sticky bottom-0 z-20 flex items-stretch'
+              // Container mode: unchanged pinned bar (the reader's shell
+              // reserves 52px for it).
+              : 'reading-bottombar absolute bottom-0 inset-x-0 z-10 flex items-stretch'
+          }
           style={{
             background: 'var(--panel-header-bg)',
             borderTop: '1px solid var(--panel-border)',
+            ...(docScroll ? { paddingBottom: 'env(safe-area-inset-bottom, 0px)' } : {}),
           }}
         >
           {showBack && (
@@ -2200,11 +2295,11 @@ function LabelMenu({ article, variant }: LabelMenuProps) {
     return () => document.removeEventListener('mousedown', handleClick);
   }, [open, isMobile]);
 
-  // Lock body scroll when mobile sheet is open
-  useEffect(() => {
-    if (open && isMobile) document.body.style.overflow = 'hidden';
-    return () => { document.body.style.overflow = ''; };
-  }, [open, isMobile]);
+  // Lock body scroll when mobile sheet is open (document mode: `overflow:
+  // hidden` is ignored by iOS while gestures scroll, so use the shared
+  // fixed-freeze lock; container mode: same visual result).
+  const labelsSheetOpen = open && isMobile;
+  useBodyScrollLock(labelsSheetOpen);
 
   // Exclude feed categories and Read Later from article labels
   const articleLabels = (article.labels || []).filter(

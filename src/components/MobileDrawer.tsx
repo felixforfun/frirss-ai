@@ -1,5 +1,6 @@
 import { useRef, useEffect, useState, useCallback, type ReactNode, type TouchEvent as ReactTouchEvent } from 'react';
 import { prefersReducedMotion } from '../lib/reducedMotion';
+import { useBodyScrollLock } from '../lib/scrollLock';
 
 interface DrawerTouch {
   startX?: number;
@@ -28,11 +29,9 @@ export default function MobileDrawer({ open, onClose, children, width = 280 }: M
   const [dragging, setDragging] = useState(false);
   const touchRef = useRef<DrawerTouch>({});
 
-  // Lock body scroll
-  useEffect(() => {
-    if (open) document.body.style.overflow = 'hidden';
-    return () => { document.body.style.overflow = ''; };
-  }, [open]);
+  // Lock body scroll — shared fixed-freeze lock, reliable on iOS where
+  // `overflow: hidden` on a gesture-held body is ignored (§4.E of the brief).
+  useBodyScrollLock(open);
 
   // Reset drag on open/close
   useEffect(() => {

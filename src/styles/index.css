@@ -16,12 +16,27 @@ body {
   background-color: var(--panel-bg);
   color: var(--reading-text);
   /* Dynamic viewport height: never taller than the *visible* area on iOS
-     Safari (avoids the body scrolling behind the dynamic toolbar). */
+     Safari (avoids the body scrolling behind the dynamic toolbar).
+     Document-scroll mode uses `svh` instead (see gate rule below): `dvh`
+     resizes the layout while Safari's toolbars animate (§4.D). */
   min-height: 100dvh;
   /* Kill horizontal jitter and the elastic rubber-band / pull-to-refresh
-     that makes the mobile layout feel like it "moves everywhere". */
+     that makes the mobile layout feel like it "moves everywhere".
+     `clip` preserves that role WITHOUT making the body a nested scroller on
+     iOS the way `hidden` does once the document is the scroller (§4.D);
+     browsers without `clip` keep the `hidden` above. */
   overflow-x: hidden;
+  overflow-x: clip;
   overscroll-behavior: none;
+}
+
+/* Document-scrolling mode (mobile Safari browser tab) — gated by the
+   `data-scroll="doc"` attribute App publishes from the same decision the
+   components use. Everything below is a no-op in the PWA / desktop. */
+html[data-scroll="doc"] body {
+  /* vh fallback first — engines without svh keep the full-screen floor. */
+  min-height: 100vh;
+  min-height: 100svh;
 }
 
 /* User-configurable typefaces, applied from the active theme. */
@@ -92,6 +107,9 @@ html {
   scrollbar-width: thin;
   scrollbar-color: var(--scrollbar) transparent;
   overflow-x: hidden;
+  /* Same rationale as on body: `clip` does not create a scroller, so the
+     document (the root scroller) keeps a single scrolling axis in every mode. */
+  overflow-x: clip;
   overscroll-behavior: none;
   -webkit-text-size-adjust: 100%; /* no font resize on rotate */
 }
@@ -2361,6 +2379,12 @@ summary:focus-visible,
   top: 0;
   z-index: 15;
   height: 0;
+}
+/* Document mode: the slot sticks under the PINNED app chrome (the sticky
+   list header, z-30, covers its own strip behind the banner exactly the way
+   the container-mode scroller positioned it under its header). */
+html[data-scroll="doc"][data-layout="mobile"] .new-articles-slot {
+  top: var(--frirss-chrome-top-h, 0px);
 }
 .new-articles-banner {
   display: flex;

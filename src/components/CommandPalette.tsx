@@ -8,6 +8,7 @@ import { useAuthStore } from '../stores/authStore';
 import { displayServers, hostnameOf } from '../lib/serverList';
 import { switchToServer } from '../lib/switchServer';
 import { rankCommands, type Command } from '../lib/commandPalette';
+import { useBodyScrollLock } from '../lib/scrollLock';
 
 /**
  * Entrée unique : aller à un flux, une étiquette, une vue, ou lancer une
@@ -23,6 +24,8 @@ export default function CommandPalette() {
   const setOpen = useUiStore((s) => s.setCommandPaletteOpen);
   const setPanelLayout = useUiStore((s) => s.setPanelLayout);
   const openPreferences = useThemeStore((s) => s.openPreferences);
+  // Modal overlay: take the shared scroll lock while open.
+  useBodyScrollLock(open);
 
   const servers = useAuthStore((s) => s.servers);
   const activeServerId = useAuthStore((s) => s.activeServerId);
