@@ -1,4 +1,5 @@
 import type { Article } from '../types';
+import { resolveHackerNewsDiscussionUrl } from '../api/backend';
 
 /**
  * Lien de discussion Hacker News d'un article.
@@ -52,9 +53,74 @@ export function isHackerNewsArticle(article: Pick<Article, 'source' | 'url'>): b
  * URL officielle de la discussion HN (`https://news.ycombinator.com/item?id=…`),
  * jamais dérivée d'une autre URL ni devinée : hors du flux HN, ou sans
  * identifiant fiable, `null` — l'appelant ne rend alors RIEN.
+ *
+ * L'identifiant peut aussi avoir été RÉSOLU par le serveur (mapping persistant
+ * URL éditeur → item HN, voir `resolveDiscussion`) : le store l'écrit alors
+ * dans `article.hnDiscussionUrl`, qui prime ici.
  */
-export function hackerNewsDiscussionUrl(article: Pick<Article, 'source' | 'url' | 'content'>): string | null {
+export function hackerNewsDiscussionUrl(article: Pick<Article, 'source' | 'url' | 'content' | 'hnDiscussionUrl'>): string | null {
   if (!isHackerNewsArticle(article)) return null;
   const id = hackerNewsItemIdFromUrl(article.url) ?? hackerNewsItemIdFromContent(article.content);
-  return id ? `https://news.ycombinator.com/item?id=${id}` : null;
+  if (id) return `https://news.ycombinator.com/item?id=${id}`;
+  return article.hnDiscussionUrl ?? null;
+}
+
+// ── Résolution serveur (URL éditeur → discussion HN) ─────────────────
+//
+// L'ancre « Comments » porteuse de l'identifiant est perdue dès que
+// `af-readability` a extrait la page éditeur à l'insertion — la majorité des
+// items du flux. Le store résout alors ces articles une fois (voir
+// `primeHackerNewsDiscussion`), le serveur répond depuis son mapping
+// persistant, et le résultat est écrit sur `article.hnDiscussionUrl`.
+
+/** Résolutions déjà obtenues, par URL story — jamais deux appels réseau. */
+const resolved = new Map<string, string | null>();
+const inFlight = new Map<string, Promise<string | null>>();
+
+function storyKey(raw: string): string | null {
+  try {
+    const url = new URL(raw);
+    if (url.protocol !== 'http:' && url.protocol !== 'https:') return null;
+    const host = url.hostname.toLowerCase().replace(/^www\./, '');
+    const path = url.pathname.replace(/\/+$/, '') || '/';
+    // Paramètres de suivi ignorés (voir le même filtre côté serveur) : pure
+    // tracking, jamais porteurs d'identité de story.
+    const pairs = [...url.searchParams.entries()]
+      .filter(([name]) => !/^(?:utm|gclid|fbclid|mc_cid|mc_eid|ref_src|igshid|spm)/i.test(name))
+      .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
+    const search = pairs.map(([k, v]) => `${k}=${v}`).join('&');
+    return `${host}${path}${search ? `?${search}` : ''}`;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Résolution partagée : un appel réseau par story, quel que soit le nombre de
+ * composants qui demandent l'URL. Un échec reste mémorisé pour la session —
+ * l'utilisateur force la main en rechargeant la page.
+ */
+export function resolveDiscussion(
+  url: string,
+  fetchDiscussion: (u: string) => Promise<string | null> = resolveHackerNewsDiscussionUrl,
+): Promise<string | null> {
+  const key = storyKey(url);
+  if (!key) return Promise.resolve(null);
+  if (resolved.has(key)) return Promise.resolve(resolved.get(key)!);
+  const pending = inFlight.get(key);
+  if (pending) return pending;
+  const attempt = (async () => {
+    try {
+      const discussion = await fetchDiscussion(url);
+      resolved.set(key, discussion);
+      return discussion;
+    } catch {
+      resolved.set(key, null);
+      return null; // l'article reste lisible ; l'échec n'écrit rien
+    } finally {
+      inFlight.delete(key);
+    }
+  })();
+  inFlight.set(key, attempt);
+  return attempt;
 }

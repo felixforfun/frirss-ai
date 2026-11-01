@@ -346,3 +346,27 @@ export async function resolveTechmemeArticleUrl(url: string): Promise<string | n
     return null;
   }
 }
+
+// Resolve the Hacker News discussion of a story whose feed item carries no HN
+// item id (af-readability replaced the description). The server answers from a
+// persistent (publisher URL → item id) mapping; a miss or transient failure
+// returns null and the UI simply renders no discussion link.
+export async function resolveHackerNewsDiscussionUrl(url: string): Promise<string | null> {
+  let parsed: URL;
+  try { parsed = new URL(url); } catch { return null; }
+  if (/(^|\.)news\.ycombinator\.com$/i.test(parsed.hostname)) return null;
+  try {
+    const { data } = await backend.get<{ url: string | null }>('/hacker-news/resolve', {
+      params: { url: parsed.toString() },
+      timeout: 6500,
+    });
+    if (typeof data.url !== 'string') return null;
+    const resolved = new URL(data.url);
+    return resolved.hostname === 'news.ycombinator.com'
+      && resolved.pathname === '/item'
+      && /^\d+$/.test(resolved.searchParams.get('id') ?? '')
+      ? resolved.toString() : null;
+  } catch {
+    return null;
+  }
+}

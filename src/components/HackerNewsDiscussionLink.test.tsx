@@ -37,6 +37,12 @@ describe('HackerNewsDiscussionLink', () => {
     expect(container.querySelector('a')).toBeNull();
   });
 
+  it('rend le lien discussion quand le serveur a résolu l’identifiant (hnDiscussionUrl)', () => {
+    const resolved = { ...hnSelfPost, url: 'https://lagomor.ph/post/', content: '<p>article extrait</p>', hnDiscussionUrl: 'https://news.ycombinator.com/item?id=50330000' };
+    const { getByRole } = render(<HackerNewsDiscussionLink article={resolved} className="inline-flex" />);
+    expect(getByRole('link').getAttribute('href')).toBe('https://news.ycombinator.com/item?id=50330000');
+  });
+
   it('rend le lien discussion pour un article dont le contenu porte l’ancre du flux', () => {
     const { getByRole } = render(<HackerNewsDiscussionLink article={hnItemArticle} className="inline-flex" />);
     const link = getByRole('link');

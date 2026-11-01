@@ -171,6 +171,24 @@ db.exec(`
   );
 `);
 
+// ── Hacker News discussion resolutions ──────────────────────────────
+//
+// The HN feed publishes items without an explicit item id: FreshRSS serves the
+// publisher link as `url`, and the « Comments » anchor that carried the item id
+// is LOST whenever af-readability has extracted the publisher page at insert
+// time. The (publisher URL → HN item id) mapping is stable though, so it is
+// resolved once via the Algolia HN Search API (exact URL match only — never a
+// guess) and written here: every later request (any client, any day) is
+// answered from this table. `item_id` NULL marks a negative result — the story
+// has no HN discussion YET; those expire so a later submission is found.
+db.exec(`
+  CREATE TABLE IF NOT EXISTS hn_discussions (
+    url TEXT PRIMARY KEY,
+    item_id TEXT,
+    resolved_at TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+`);
+
 // ── AI article summaries ────────────────────────────────────────────
 // API keys reuse the application's AES-256-GCM encryption key. Only summaries
 // are cached; article content remains in FriRSS's existing content pipeline.

@@ -30,6 +30,13 @@ export interface Article {
    * source d'enregistrement).
    */
   canonicalUrl?: string;
+  /**
+   * Discussion HN résolue par le serveur (mapping URL éditeur → item HN) pour
+   * les items du flux Hacker News dont l'identifiant a été perdu avec
+   * `af-readability`. Écrit par le store (`applyHackerNewsDiscussionUrl`),
+   * jamais déduit d'une autre URL — sans résolution, absent.
+   */
+  hnDiscussionUrl?: string;
   /** Timestamp en millisecondes */
   published: number;
   /**

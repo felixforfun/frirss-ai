@@ -52,6 +52,7 @@ import { listCanScroll } from '../lib/listOverflow';
 import { planRowRestore } from '../lib/rollbackRow';
 import { writeFailureNotice } from '../lib/writeFailureNotice';
 import { isTechmemePermalinkUrl, canonicalTargetFor, canonicalPathKey, resolveCanonicalArticle } from '../lib/canonicalArticle';
+import { isHackerNewsArticle, hackerNewsItemIdFromUrl, hackerNewsItemIdFromContent, resolveDiscussion } from '../lib/hackerNews';
 import { canLoadMore, shouldReportInvisibleProgress } from '../lib/listPagination';
 import { createWarmRunner } from '../lib/warmSchedule';
 import { startActualize, getActualizeStatus, getInfrequentFeedCache, saveInfrequentFeedCache, type ActualizeJob } from '../api/backend';
@@ -883,6 +884,19 @@ export interface FeedState {
    * (une session attend ; l'utilisateur force la main via le plein-texte).
    */
   primeCanonicalArticle: (article: Article) => void;
+  /**
+   * Écrit la discussion HN résolue sur l'article (liste, sélection, corpus,
+   * vue persistée). Aucun effet pour un article déjà à jour.
+   */
+  applyHackerNewsDiscussionUrl: (articleId: string, discussionUrl: string) => void;
+  /**
+   * Déclenche (fire-and-forget) la résolution serveur de la discussion HN pour
+   * un item du flux Hacker News dont l'identifiant n'est porté ni par l'`url`
+   * ni par le contenu (ancre « Comments » perdue avec af-readability), puis
+   * l'écrit via `applyHackerNewsDiscussionUrl`. No-op pour tout article qui
+   * porte déjà son identifiant, déjà résolu, ou hors flux HN.
+   */
+  primeHackerNewsDiscussion: (article: Article) => void;
   loadSubscriptions: () => Promise<void>;
   loadSpecialCounts: () => Promise<void>;
   loadArticles: () => Promise<void>;
@@ -1179,7 +1193,10 @@ export const useFeedStore = create<FeedState>()((set, get) => ({
   selectArticle: (article) => {
     if (!article || article.read) {
       set({ selectedArticle: article });
-      if (article) get().primeCanonicalArticle(article);
+      if (article) {
+        get().primeCanonicalArticle(article);
+        get().primeHackerNewsDiscussion(article);
+      }
       return;
     }
     // Optimistic update — mark read instantly in the UI, sync in the background.
@@ -1191,6 +1208,7 @@ export const useFeedStore = create<FeedState>()((set, get) => ({
       unreadCounts: updateCount(state.unreadCounts, article, -1),
     }));
     get().primeCanonicalArticle(article);
+    get().primeHackerNewsDiscussion(article);
     bumpCountsEpoch(); // écriture locale — voir la garde en tête de fichier
     memMarkRead(article.id, true);
     persistCurrentView(get);
@@ -1258,6 +1276,37 @@ export const useFeedStore = create<FeedState>()((set, get) => ({
     canonicalAttempted.add(key);
     void resolveCanonicalArticle(article.url).then((target) => {
       if (target) get().applyCanonicalUrl(article.id, target.url);
+    }).catch(() => { /* la lecture ne dépend jamais de la résolution */ });
+  },
+
+  applyHackerNewsDiscussionUrl: (articleId, discussionUrl) => {
+    let changed = false;
+    set((state) => {
+      const articles = state.articles.map((a) => {
+        if (a.id !== articleId || a.hnDiscussionUrl === discussionUrl) return a;
+        changed = true;
+        return { ...a, hnDiscussionUrl: discussionUrl };
+      });
+      const selectedArticle = state.selectedArticle?.id === articleId
+        ? { ...state.selectedArticle, hnDiscussionUrl: discussionUrl }
+        : state.selectedArticle;
+      if (selectedArticle !== state.selectedArticle) changed = true;
+      return { articles, selectedArticle };
+    });
+    if (!changed) return;
+    persistCurrentView(get);
+    patchSearchCorpus(articleId, { hnDiscussionUrl: discussionUrl });
+  },
+
+  primeHackerNewsDiscussion: (article) => {
+    if (!article?.url || !isHackerNewsArticle(article) || article.hnDiscussionUrl) return;
+    // Identifiant déjà porté par le flux (url item HN ou ancre « Comments ») :
+    // rien à résoudre côté serveur.
+    if (hackerNewsItemIdFromUrl(article.url) || hackerNewsItemIdFromContent(article.content)) return;
+    // Résolution partagée (mémoire + appel réseau unique par story) ; le
+    // serveur répond depuis son mapping persistant URL éditeur → item HN.
+    void resolveDiscussion(article.url).then((discussionUrl) => {
+      if (discussionUrl) get().applyHackerNewsDiscussionUrl(article.id, discussionUrl);
     }).catch(() => { /* la lecture ne dépend jamais de la résolution */ });
   },
 

@@ -1,6 +1,19 @@
-import { describe, it, expect } from 'vitest';
-import { hackerNewsDiscussionUrl, hackerNewsItemIdFromContent, hackerNewsItemIdFromUrl, isHackerNewsArticle } from './hackerNews';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { hackerNewsDiscussionUrl, hackerNewsItemIdFromContent, hackerNewsItemIdFromUrl, isHackerNewsArticle, resolveDiscussion } from './hackerNews';
 import type { Article } from '../types';
+
+// `hackerNews.ts` importe le client backend (résolution serveur) : doublé ici
+// pour que ce test tourne hors navigateur, comme `canonicalArticle.test.ts`.
+vi.mock('../api/backend', () => ({
+  resolveHackerNewsDiscussionUrl: vi.fn(),
+}));
+
+import { resolveHackerNewsDiscussionUrl } from '../api/backend';
+const fetchDiscussion = vi.mocked(resolveHackerNewsDiscussionUrl);
+
+beforeEach(() => {
+  fetchDiscussion.mockReset();
+});
 
 const article = (over: Partial<Article>): Article => ({
   id: 'a1', title: 'Titre', summary: '', content: '', source: 'Hacker News',
@@ -103,5 +116,47 @@ describe('hackerNewsDiscussionUrl', () => {
   it('canonicalise une URL item triviale (www, http)', () => {
     const a = article({ url: 'http://www.news.ycombinator.com/item?id=1' });
     expect(hackerNewsDiscussionUrl(a)).toBe('https://news.ycombinator.com/item?id=1');
+  });
+});
+
+describe('resolveDiscussion', () => {
+  it('résout un article du flux HN dont l’identifiant a été perdu', async () => {
+    fetchDiscussion.mockResolvedValueOnce('https://news.ycombinator.com/item?id=50330000');
+    const url = await resolveDiscussion('https://lagomor.ph/2026/10/the-ground-beneath-them-was-dry/', fetchDiscussion);
+    expect(url).toBe('https://news.ycombinator.com/item?id=50330000');
+    expect(fetchDiscussion).toHaveBeenCalledTimes(1);
+  });
+
+  it('ne résout jamais deux fois le même story (mémoire partagée)', async () => {
+    fetchDiscussion.mockResolvedValue('https://news.ycombinator.com/item?id=50330001');
+    await resolveDiscussion('https://lagomor.ph/2026/10/another-story/', fetchDiscussion);
+    const second = await resolveDiscussion('https://lagomor.ph/2026/10/another-story/', fetchDiscussion);
+    expect(second).toBe('https://news.ycombinator.com/item?id=50330001');
+    expect(fetchDiscussion).toHaveBeenCalledTimes(1);
+  });
+
+  it('partage un appel en vol entre appels concurrents', async () => {
+    fetchDiscussion.mockImplementation(() => new Promise((resolve) => setTimeout(() => resolve('https://news.ycombinator.com/item?id=42'), 10)));
+    const [a, b] = await Promise.all([
+      resolveDiscussion('https://concurrent.example/post', fetchDiscussion),
+      resolveDiscussion('https://concurrent.example/post', fetchDiscussion),
+    ]);
+    expect(a).toBe('https://news.ycombinator.com/item?id=42');
+    expect(b).toBe('https://news.ycombinator.com/item?id=42');
+    expect(fetchDiscussion).toHaveBeenCalledTimes(1);
+  });
+
+  it('ignore les variantes www/fragment/tracking d’une même story', async () => {
+    fetchDiscussion.mockResolvedValue('https://news.ycombinator.com/item?id=7');
+    await resolveDiscussion('https://www.example.com/post', fetchDiscussion);
+    await resolveDiscussion('https://example.com/post?utm_source=rss', fetchDiscussion);
+    expect(fetchDiscussion).toHaveBeenCalledTimes(1);
+  });
+
+  it('mémorise un échec pour la session (pas de boucle de retries)', async () => {
+    fetchDiscussion.mockRejectedValueOnce(new Error('network down'));
+    expect(await resolveDiscussion('https://failing.example/post', fetchDiscussion)).toBeNull();
+    expect(await resolveDiscussion('https://failing.example/post', fetchDiscussion)).toBeNull();
+    expect(fetchDiscussion).toHaveBeenCalledTimes(1);
   });
 });

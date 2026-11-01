@@ -18,6 +18,7 @@ import intelligenceRoutes from './routes/intelligence.js';
 import readingStatsRoutes from './routes/readingStats.js';
 import techmemeRoutes from './routes/techmeme.js';
 import publisherRoutes from './routes/publisher.js';
+import hackerNewsRoutes from './routes/hackerNews.js';
 import { adminBackupRouter, setupBackupRouter } from './routes/backup.js';
 import { migrateEncryptTokens } from './crypto.js';
 import { accessLog } from './accessLog.js';
@@ -55,6 +56,7 @@ app.use('/api/intelligence', intelligenceRoutes);
 app.use('/api/reading-stats', readingStatsRoutes);
 app.use('/api/techmeme', techmemeRoutes);
 app.use('/api/publisher', publisherRoutes);
+app.use('/api/hacker-news', hackerNewsRoutes);
 
 const startedAt = Date.now();
 app.get('/api/health', (req, res) => {

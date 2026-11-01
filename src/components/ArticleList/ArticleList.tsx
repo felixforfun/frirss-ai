@@ -13,6 +13,7 @@ import { listOverflows, publishListCanScroll, resetListCanScroll } from '../../l
 import { extractImageFromContent } from '../../lib/articleThumbnail';
 import { openArticleAtSource } from '../../lib/openArticleAtSource';
 import { isTechmemePermalinkUrl } from '../../lib/canonicalArticle';
+import { isHackerNewsArticle, hackerNewsItemIdFromUrl, hackerNewsItemIdFromContent } from '../../lib/hackerNews';
 import type { RowActionSettings } from '../../lib/rowActions';
 import { timeAgo } from '../../lib/timeAgo';
 import ViewModeSwitcher from './ViewModeSwitcher';
@@ -390,6 +391,21 @@ export default function ArticleList() {
       }
     }
   }, [techmemeUrls, articles]);
+  // Résolution de la discussion HN pour les items du flux Hacker News dont
+  // l'identifiant n'est porté ni par l'`url` ni par le contenu (ancre
+  // « Comments » perdue avec af-readability). Même schéma fire-and-forget :
+  // une fois résolue, le store écrit `hnDiscussionUrl` et la liste re-rend.
+  const hnPendingKey = useMemo(
+    () => articles.filter((a) => isHackerNewsArticle(a) && !a.hnDiscussionUrl && !hackerNewsItemIdFromUrl(a.url) && !hackerNewsItemIdFromContent(a.content)).map((a) => a.id).join('\u0000'),
+    [articles],
+  );
+  useEffect(() => {
+    for (const article of articles) {
+      if (isHackerNewsArticle(article) && !article.hnDiscussionUrl && !hackerNewsItemIdFromUrl(article.url) && !hackerNewsItemIdFromContent(article.content)) {
+        useFeedStore.getState().primeHackerNewsDiscussion(article);
+      }
+    }
+  }, [hnPendingKey, articles]);
   const seenRowsRef = useRef<{ key: string; memo: Map<string, number | null> }>({
     key: scrollKey,
     memo: new Map(),
