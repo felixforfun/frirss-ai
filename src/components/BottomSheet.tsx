@@ -1,5 +1,6 @@
 import { useEffect, useRef, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
+import { useBodyScrollLock } from '../lib/scrollLock';
 
 interface BottomSheetProps {
   open: boolean;
@@ -66,6 +67,8 @@ if (typeof document !== 'undefined') {
  */
 export default function BottomSheet({ open, onClose, title, children }: BottomSheetProps) {
   const armed = useRef(false);
+  // A sheet slides over the document: lock the background while it is open.
+  useBodyScrollLock(open);
 
   useEffect(() => {
     armed.current = false;

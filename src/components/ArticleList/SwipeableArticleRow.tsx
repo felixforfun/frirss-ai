@@ -108,6 +108,7 @@ export default function SwipeableArticleRow({
     <div
       ref={rowRef}
       className="relative overflow-hidden"
+      style={{ touchAction: 'pan-y' }}
       onTouchStart={handleTouchStart}
       onTouchEnd={handleTouchEnd}
     >

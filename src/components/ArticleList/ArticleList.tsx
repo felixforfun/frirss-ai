@@ -36,6 +36,8 @@ import { copyLink } from '../../lib/copyLink';
 import { useAuthStore } from '../../stores/authStore';
 import { loadSearchHistory, rememberSearch, forgetSearch } from '../../lib/searchHistory';
 import { scrolledPastTop, shouldMark, shouldProcessReadObserver, MARK_READ_DELAY_MS } from '../../lib/markReadOnScroll';
+import { useDocScrollMode } from '../../hooks/useDocScrollMode';
+import { chromeTopHeight, isMobileStackReading, scrollToScroller } from '../../lib/docScrollMode';
 import { canMorph, withMorph } from '../../lib/viewTransition';
 import { noFocusOnPointer } from '../../lib/pointerFocus';
 import { prefersReducedMotion } from '../../lib/reducedMotion';
@@ -138,6 +140,10 @@ export default function ArticleList() {
   const breakpoint = useBreakpoint();
   const isDesktop = breakpoint === 'desktop';
   const isMobile = breakpoint === 'mobile';
+  // Document scrolling (mobile Safari browser tab): the list itself stops
+  // scrolling; the document does. Container mode (PWA, tablet, desktop) keeps
+  // every behaviour below on `listRef` unchanged (§4.H of the brief).
+  const docScroll = useDocScrollMode();
   // A feed can override the global layout (set from its sidebar context menu).
   const activeDisplaySettings = deviceDisplaySettings[isMobile ? 'mobile' : 'desktop'];
   const editableDisplaySettings = deviceDisplaySettings[settingsProfile];
@@ -414,12 +420,25 @@ export default function ArticleList() {
   // `useAutoLoadMore` retiré le 2026-09-01 — la mesure ne se rappelle jamais
   // elle-même.
   const measureOverflow = useCallback(() => {
+    // While the reader owns the document, the (hidden) list has no metrics of
+    // its own and the document's metrics belong to the reader — publishing
+    // either would corrupt the catch-up decision. Keep the last known state.
+    if (docScroll && isMobileStackReading()) return;
+    // Document mode measures the viewport scroll metrics; container mode
+    // measures the list's own overflow channel as before.
+    if (docScroll) {
+      const scroller = document.scrollingElement ?? document.documentElement;
+      publishListCanScroll(
+        listOverflows({ scrollHeight: scroller.scrollHeight, clientHeight: scroller.clientHeight })
+      );
+      return;
+    }
     const el = listRef.current;
     if (!el) return;
     publishListCanScroll(
       listOverflows({ scrollHeight: el.scrollHeight, clientHeight: el.clientHeight })
     );
-  }, []);
+  }, [docScroll]);
 
   // Après CHAQUE rendu : c'est le rendu qui retire la ligne, donc le seul
   // moment où la liste vient peut-être de cesser de déborder.
@@ -470,37 +489,44 @@ export default function ArticleList() {
   }, []);
 
   const handleScroll = useCallback(() => {
-    const el = listRef.current;
-    if (!el) return;
+    // Document mode: while the reader owns the document, a window scroll
+    // event is the READER scrolling — never record it as list scrolling
+    // (it would corrupt the list's saved position).
+    if (docScroll && isMobileStackReading()) return;
+    // The scroller that owns the event: document in doc mode, the list
+    // element in container mode.
+    const scroller = docScroll
+      ? (document.scrollingElement ?? document.documentElement)
+      : listRef.current;
+    if (!scroller) return;
+    const { scrollTop: top, scrollHeight: height, clientHeight: client } = scroller;
     const previousTop = lastScrollTopRef.current;
-    if (previousTop !== null && el.scrollTop !== previousTop && userScrollIntentRef.current) {
-      userScrollDirectionRef.current = el.scrollTop > previousTop ? 'down' : 'up';
+    if (previousTop !== null && top !== previousTop && userScrollIntentRef.current) {
+      userScrollDirectionRef.current = top > previousTop ? 'down' : 'up';
       userScrollEpochRef.current += 1;
       userScrollIntentRef.current = false;
       if (userScrollIntentTimerRef.current) clearTimeout(userScrollIntentTimerRef.current);
       userScrollIntentTimerRef.current = null;
     }
-    lastScrollTopRef.current = el.scrollTop;
-    listScrollMem.set(scrollKeyRef.current, el.scrollTop);
+    lastScrollTopRef.current = top;
+    listScrollMem.set(scrollKeyRef.current, top);
     // Les images qui finissent de charger changent `scrollHeight` sans aucun
     // rendu React : le défilement est la meilleure occasion de se remettre à
     // jour, et les hauteurs sont déjà lues juste en dessous.
-    publishListCanScroll(
-      listOverflows({ scrollHeight: el.scrollHeight, clientHeight: el.clientHeight })
-    );
+    publishListCanScroll(listOverflows({ scrollHeight: height, clientHeight: client }));
     if (
       shouldLoadMore({
         hasContinuation,
         loading,
         loadingMore,
-        scrollTop: el.scrollTop,
-        scrollHeight: el.scrollHeight,
-        clientHeight: el.clientHeight,
+        scrollTop: top,
+        scrollHeight: height,
+        clientHeight: client,
       })
     ) {
       loadMore();
     }
-  }, [hasContinuation, loading, loadingMore, loadMore]);
+  }, [hasContinuation, loading, loadingMore, loadMore, docScroll]);
 
   // Restore the saved scroll position once, after the list has content
   // (covers remounts; on mobile the list stays mounted so position persists).
@@ -513,8 +539,26 @@ export default function ArticleList() {
     didRestoreRef.current = true;
   }, [loading, articles.length, scrollKey]);
 
+  // Document mode: the saved coordinates are DOCUMENT offsets (identical to
+  // the old container scrollTop — the pinned chrome holds the same flow space
+  // and sticks, so content offset S sits at scrollY S). Restore tracks every
+  // view switch: when the view changes without a stack push, this brings the
+  // new view back where it was.
+  useLayoutEffect(() => {
+    if (!docScroll || loading || articles.length === 0) return;
+    const saved = listScrollMem.get(scrollKey);
+    // Same guard as container mode: only restore a position that was
+    // actually remembered for this view.
+    if (saved) window.scrollTo(0, saved);
+  }, [docScroll, loading, articles.length, scrollKey]);
+
   // Pull-to-refresh — custom gesture (mobile/tablet). Native touchmove with
   // passive:false so we can preventDefault while pulling at the top.
+  // Document mode: "at the top" is the document being at scroll 0.
+  const atScrollTop = useCallback(
+    () => (docScroll ? window.scrollY <= 0 && !isMobileStackReading() : (listRef.current?.scrollTop ?? 0) <= 0),
+    [docScroll],
+  );
   useEffect(() => {
     if (isDesktop) return;
     const el = listRef.current;
@@ -523,7 +567,7 @@ export default function ArticleList() {
 
     function onStart(e: TouchEvent) {
       st.startY = e.touches[0].clientY;
-      st.atTop = el!.scrollTop <= 0;
+      st.atTop = atScrollTop();
       st.pulling = false;
       st.dist = 0;
     }
@@ -531,7 +575,7 @@ export default function ArticleList() {
       if (refreshingRef.current) return;
       const y = e.touches[0].clientY;
       if (!st.atTop) {
-        if (el!.scrollTop <= 0) { st.atTop = true; st.startY = y; } else return;
+        if (atScrollTop()) { st.atTop = true; st.startY = y; } else return;
       }
       const dy = y - (st.startY ?? 0);
       if (dy <= 0) {
@@ -569,26 +613,32 @@ export default function ArticleList() {
       el.removeEventListener('touchmove', onMove);
       el.removeEventListener('touchend', onEnd);
     };
-  }, [isDesktop, silentRefresh]);
+  }, [isDesktop, silentRefresh, atScrollTop]);
 
   useEffect(() => {
     const el = listRef.current;
     if (!el) return;
     // Seed the baseline after scroll restoration, so mounting a list at a saved
     // position is not mistaken for user scrolling.
-    lastScrollTopRef.current = el.scrollTop;
+    lastScrollTopRef.current = docScroll
+      ? document.scrollingElement?.scrollTop ?? 0
+      : el.scrollTop;
     const onKeyDown = (event: KeyboardEvent) => {
       if (['ArrowDown', 'ArrowUp', 'PageDown', 'PageUp', 'Home', 'End', ' '].includes(event.key)) {
         noteUserScrollIntent();
       }
     };
-    el.addEventListener('scroll', handleScroll);
+    // Document mode: the scroll event never fires on an inner element — it is
+    // a window event. Intent listeners stay on the list element (they bubble,
+    // and they must not fire from the reader — see the reader guard above).
+    const scrollTarget: EventTarget = docScroll ? window : el;
+    scrollTarget.addEventListener('scroll', handleScroll);
     el.addEventListener('wheel', noteUserScrollIntent, { passive: true });
     el.addEventListener('touchmove', noteUserScrollIntent, { passive: true });
     el.addEventListener('pointerdown', noteUserScrollIntent, { passive: true });
     el.addEventListener('keydown', onKeyDown);
     return () => {
-      el.removeEventListener('scroll', handleScroll);
+      scrollTarget.removeEventListener('scroll', handleScroll);
       el.removeEventListener('wheel', noteUserScrollIntent);
       el.removeEventListener('touchmove', noteUserScrollIntent);
       el.removeEventListener('pointerdown', noteUserScrollIntent);
@@ -597,7 +647,7 @@ export default function ArticleList() {
       userScrollIntentTimerRef.current = null;
       userScrollIntentRef.current = false;
     };
-  }, [handleScroll, noteUserScrollIntent]);
+  }, [handleScroll, noteUserScrollIntent, docScroll]);
 
   // ── Marquer lu au défilement (optionnel) ──────────────────────────
   // Éteint par défaut. Jamais pendant une recherche : on parcourt alors des
@@ -616,11 +666,20 @@ export default function ArticleList() {
   const timersRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
 
   useEffect(() => {
-    const root = listRef.current;
+    // Document mode: the viewport is the intersection root; the pinned app
+    // chrome overlaying the top is excluded with a matching top rootMargin
+    // so "scrolled past the top" stays exactly where it was in container
+    // mode (rows vanishing behind the pinned header).
+    const docMode = docScroll && typeof document !== 'undefined'
+      ? document.documentElement.dataset.scroll === 'doc'
+      : false;
+    const chromeH = docMode ? chromeTopHeight() : 0;
+    const root = docMode ? null : listRef.current;
     const timers = timersRef.current;
     const seen = seenRef.current;
     const active = markReadOnScroll && !searchQuery;
-    if (!active || !root || typeof IntersectionObserver === 'undefined') {
+    const canObserve = docMode ? root === null : !!root;
+    if (!active || !canObserve || typeof IntersectionObserver === 'undefined') {
       observerRef.current?.disconnect();
       observerRef.current = null;
       timers.forEach(clearTimeout);
@@ -677,11 +736,16 @@ export default function ArticleList() {
           processedScrollEpochRef.current = scrollEpoch;
         }
       },
-      { root, threshold: 0 }
+      {
+        root,
+        threshold: 0,
+        ...(chromeH > 0 ? { rootMargin: `${-chromeH}px 0px 0px 0px` } : {}),
+      }
     );
     observerRef.current = observer;
 
-    root.querySelectorAll('[data-article-id]').forEach((node) => observer.observe(node));
+    const rowsRoot: ParentNode = root ?? document;
+    rowsRoot.querySelectorAll('[data-article-id]').forEach((node) => observer.observe(node));
 
     return () => {
       observer.disconnect();
@@ -689,7 +753,7 @@ export default function ArticleList() {
       timers.forEach(clearTimeout);
       timers.clear();
     };
-  }, [markReadOnScroll, searchQuery, articles.length]);
+  }, [markReadOnScroll, searchQuery, articles.length, docScroll]);
 
   // Changer de vue repart d'une page blanche : les lignes de la vue
   // précédente ne doivent pas compter comme « déjà vues ».
@@ -960,7 +1024,17 @@ export default function ArticleList() {
   const loadMoreBusy = !canLoadMore({ hasContinuation, loadingMore, revalidating });
 
   return (
-    <div className="article-list h-full flex flex-col overflow-x-hidden" style={{ background: 'var(--panel-bg)' }}>
+    <div
+      className="article-list flex flex-col overflow-x-hidden"
+      style={{
+        background: 'var(--panel-bg)',
+        // Document mode: the list is in flow — grow with content but keep
+        // the shell painted down to the viewport bottom.
+        ...(docScroll
+          ? { minHeight: 'calc(100svh - var(--frirss-chrome-top-h, 0px))' }
+          : { height: '100%' }),
+      }}
+    >
       {menuArticle && articleMenu && (
         <ArticleContextMenu
           article={menuArticle}
@@ -988,10 +1062,12 @@ export default function ArticleList() {
       )}
       {/* Header */}
       <div
-        className="article-list-header flex-shrink-0"
+        className={`article-list-header flex-shrink-0${docScroll ? ' sticky z-30' : ''}`}
         style={{
           background: 'var(--panel-header-bg)',
           borderBottom: '1px solid var(--panel-border)',
+          // Document mode: sticks just below the pinned app chrome.
+          ...(docScroll ? { top: 'var(--frirss-chrome-top-h, 0px)' } : {}),
         }}
       >
         {isMobile ? (
@@ -1372,7 +1448,14 @@ export default function ArticleList() {
       <div
         ref={listRef}
         tabIndex={-1}
-        className="flex-1 overflow-y-auto overflow-x-hidden nice-scroll relative outline-none"
+        className={
+          docScroll
+            // Document mode: this div is no longer a scroller — the document
+            // grows with it. Keep `relative` for the pull-to-refresh spinner.
+            ? 'relative outline-none'
+            : 'flex-1 overflow-y-auto overflow-x-hidden nice-scroll relative outline-none'
+        }
+        style={docScroll ? { touchAction: 'pan-y' } : undefined}
       >
         <NewArticlesBanner
           enabled={showNewArticlesPill}
@@ -1387,7 +1470,7 @@ export default function ArticleList() {
             // retombe sur `<body>` (M1, revue finale). `preventScroll` — le
             // `scrollTo` juste après fait déjà remonter la liste.
             listRef.current?.focus({ preventScroll: true });
-            listRef.current?.scrollTo({ top: 0, behavior: prefersReducedMotion() ? 'auto' : 'smooth' });
+            scrollToScroller(listRef.current, docScroll, 0, prefersReducedMotion() ? 'auto' : 'smooth');
           }}
           onDismiss={dismissNewArticles}
         />

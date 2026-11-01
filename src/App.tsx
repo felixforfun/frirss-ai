@@ -26,6 +26,9 @@ import { effectiveLayout } from './lib/effectiveLayout';
 import type { Subscription } from './types';
 import MobileDrawer from './components/MobileDrawer';
 import MobileStack from './components/MobileStack';
+import MobileStackDoc from './components/MobileStackDoc';
+import { useDocScrollMode } from './hooks/useDocScrollMode';
+import { observeChromeTopHeight } from './lib/docScrollMode';
 import PublisherPreview from './components/PublisherPreview/PublisherPreview';
 import { usePreviewStore } from './stores/previewStore';
 
@@ -65,6 +68,17 @@ export default function App() {
   const isTablet = breakpoint === 'tablet';
   const isDesktop = breakpoint === 'desktop';
   const containerRef = useRef<HTMLDivElement>(null);
+  // Document-scrolling entitlement: mobile in a Safari browser tab only —
+  // the PWA and desktop/tablet keep the container architecture unchanged.
+  const docScrollMode = useDocScrollMode();
+  // The pinned mobile chrome (safe-area strip + server switcher). Its height
+  // is published as --frirss-chrome-top-h so sticky offsets, the mark-as-read
+  // rootMargin and the reading progress line can stay viewport-anchored.
+  const docChromeRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!docScrollMode) return;
+    return observeChromeTopHeight(() => docChromeRef.current);
+  }, [docScrollMode]);
 
   // Expose the effective layout to CSS (responsive rules key off this instead
   // of raw width, so a forced layout styles correctly). On <html> so portals
@@ -391,6 +405,50 @@ export default function App() {
   // MOBILE — single column, one view at a time, sidebar drawer
   // ═══════════════════════════════════════════════════════════════════
   if (isMobile) {
+    if (docScrollMode) {
+      // ── Document-scrolling mobile shell (Safari browser tab) ─────
+      // The shell is normal flow: the document grows with content and
+      // Safari's toolbars collapse on scroll. The app chrome is a sticky
+      // block pinned to the top; there is no bottom strip (the document
+      // flows to the bottom edge like a normal website — the reader's
+      // bottom bar carries the safe-area padding itself).
+      return (
+        <>
+          <div className="flex flex-col" style={{ minHeight: '100svh' }}>
+            <div ref={docChromeRef} className="sticky top-0 z-40" style={{ background: 'var(--panel-bg)' }}>
+              <div className="safe-area-top" />
+              {topbarVisible && <ServerSwitcher />}
+            </div>
+            <div className="flex-1 flex flex-col">
+              <MobileStackDoc
+                showOverlay={!previewActive && !!selectedArticle}
+                base={previewActive ? <PublisherPreview /> : <ArticleList />}
+                overlay={<ReadingPane showBack />}
+              />
+            </div>
+          </div>
+
+          <MobileDrawer
+            open={sidebarVisible}
+            onClose={closeSidebar}
+            width={Math.min(360, Math.round(window.innerWidth * 0.85))}
+          >
+            <Sidebar />
+          </MobileDrawer>
+
+          {preferencesOpen && (
+            <Suspense fallback={null}>
+              <Preferences />
+            </Suspense>
+          )}
+          {transitionLayer}
+        <OfflineBanner />
+        <Toaster />
+        <ShortcutHelp />
+        <CommandPalette />
+        </>
+      );
+    }
     return (
       <>
         <div ref={containerRef} className="app-shell overflow-hidden flex flex-col">

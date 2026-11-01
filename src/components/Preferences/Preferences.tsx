@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { useThemeStore } from '../../stores/themeStore';
 import { useAuthStore } from '../../stores/authStore';
 import { useBreakpoint } from '../../hooks/useBreakpoint';
+import { useBodyScrollLock } from '../../lib/scrollLock';
 import FeedsTab from './FeedsTab';
 import AdminTab from './AdminTab';
 import OfflineTab from './OfflineTab';
@@ -56,6 +57,10 @@ export default function Preferences() {
   useEffect(() => {
     setVisited((cur) => (cur.has(tab) ? cur : new Set(cur).add(tab)));
   }, [tab]);
+
+  // Preferences is a modal overlay: take the shared scroll lock — required in
+  // document mode, and free of consequence in container mode.
+  useBodyScrollLock(true);
 
   // A11y: move focus into the dialog when it opens (keyboard / screen readers)
   useEffect(() => {

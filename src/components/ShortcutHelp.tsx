@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { useTranslation } from 'react-i18next';
 import { useUiStore, shortcutGroups } from '../stores/uiStore';
+import { useBodyScrollLock } from '../lib/scrollLock';
 import { useThemeStore } from '../stores/themeStore';
 
 const KEY_NAMES: Record<string, string> = {
@@ -38,6 +39,8 @@ export default function ShortcutHelp() {
   const shortcuts = useUiStore((s) => s.shortcuts);
   const openPreferences = useThemeStore((s) => s.openPreferences);
   const panelRef = useRef<HTMLDivElement>(null);
+  // Modal overlay: take the shared scroll lock while open.
+  useBodyScrollLock(open);
 
   useEffect(() => {
     if (!open) return;
