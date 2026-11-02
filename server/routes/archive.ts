@@ -7,6 +7,14 @@ import { cacheEnabled, cacheGet, cacheSet, cacheKey } from '../cache.js';
 const router = Router();
 router.use(requireAuth);
 if (proxyRateLimiter) router.use(proxyRateLimiter);
+// Resolve verdicts are per-click decisions with their own server-side cache.
+// Express's default ETag lets the browser cache a verdict and revalidate it
+// with 304s, which pins a transient failure in the browser long after the
+// server would have recovered.
+router.use((_req, res, next) => {
+  res.setHeader('Cache-Control', 'no-store');
+  next();
+});
 
 const DEFAULT_DOMAINS = [
   'wsj.com', 'ft.com', 'bloomberg.com', 'economist.com',
@@ -21,10 +29,18 @@ const MAX_REDIRECTS = 5;
 const MAX_TIMEMAP_BYTES = 64 * 1024;
 const MAX_PROBE_BYTES = 32 * 1024;
 const MAX_SNAPSHOT_CHECKS = 5;
-const TIMEMAP_TIMEOUT_MS = 7_000;
+const TIMEMAP_TIMEOUT_MS = 5_000;
 const TIMEMAP_BODY_TIMEOUT_MS = 2_000;
 const SNAPSHOT_TIMEOUT_MS = 4_000;
 const PROBE_BODY_TIMEOUT_MS = 2_000;
+// archive.is is canonical but unreachable from some networks while the other
+// hostnames serve the same snapshots from different edges. The resolver fails
+// over down this order instead of hard-failing on the first hostname.
+const MIRROR_HOSTS = [
+  'archive.is', 'archive.ph', 'archive.today', 'archive.md', 'archive.li',
+  'archive.fo', 'archive.vn', 'archive.st', 'archive.gs',
+] as const;
+const TIMEMAP_MIRROR_ATTEMPTS = 3;
 
 export type ArchiveResolveResult =
   | { status: 'ok'; url: string; timestamp: string }
@@ -83,11 +99,6 @@ export function normalizeArticleUrl(raw: string): string | null {
     if (k.startsWith('utm_') || k === 'mod') url.searchParams.delete(key);
   }
   return url.toString();
-}
-
-function timeMapUrl(originalUrl: string): string {
-  // TimeMap expects the original URL appended to the endpoint, including its query.
-  return `https://archive.is/timemap/${originalUrl}`;
 }
 
 /** Parse RFC 7089 link-format; rel values can contain several whitespace-separated tokens. */
@@ -152,6 +163,27 @@ async function fetchArchive(
       continue;
     }
     return { response, url: current };
+  }
+  return null;
+}
+
+/**
+ * Try the timemap on several archive mirrors in order. All hostnames serve the
+ * same backend, but their reachability differs per network — archive.is in
+ * particular hangs from some vantage points while archive.ph/archive.today
+ * respond. Returns the first mirror that answers, or null when none does
+ * (the caller turns that into soft_block, as before).
+ */
+async function fetchTimeMapWithFailover(
+  originalUrl: string,
+  headers: Record<string, string>,
+): Promise<{ response: Response; url: string } | null> {
+  for (const host of MIRROR_HOSTS.slice(0, TIMEMAP_MIRROR_ATTEMPTS)) {
+    let result: { response: Response; url: string } | null = null;
+    try {
+      result = await fetchArchive(`https://${host}/timemap/${originalUrl}`, headers, TIMEMAP_TIMEOUT_MS);
+    } catch { result = null; }
+    if (result) return result;
   }
   return null;
 }
@@ -255,29 +287,50 @@ export function looksLikeChallengePage(html: string, publisherHostname: string):
   return false;
 }
 
-async function snapshotLooksUsable(snapshotUrl: string, publisherHostname: string): Promise<boolean> {
-  try {
-    const result = await fetchArchive(snapshotUrl, {
-      Accept: 'text/html',
-      'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36',
-      Range: `bytes=0-${MAX_PROBE_BYTES - 1}`,
-    }, SNAPSHOT_TIMEOUT_MS);
-    if (!result) return false;
-    const { response, url } = result;
-    if (!isArchiveHost(new URL(url).hostname) || !response.ok) {
-      await cancelBody(response);
-      return false;
+// DIAGNOSTIC (temporary) cleanup: earlier builds recorded resolver decision
+// traces in this bounded table for /api/archive/debug. That instrumentation is
+// gone again; drop the table and its disposable contents.
+db.exec('DROP TABLE IF EXISTS archive_resolve_debug');
+
+async function snapshotLooksUsable(
+  snapshotUrl: string,
+  publisherHostname: string,
+): Promise<boolean> {
+  // The snapshot URL is normalized to archive.is by parseTimeMap, but that
+  // hostname hangs from some networks; try the other mirrors in order.
+  let target = snapshotUrl;
+  for (let attempt = 0; attempt < TIMEMAP_MIRROR_ATTEMPTS; attempt++) {
+    if (attempt > 0) {
+      try {
+        const next = new URL(target);
+        next.hostname = MIRROR_HOSTS[attempt];
+        target = next.toString();
+      } catch { break; }
     }
-    const contentType = response.headers.get('content-type') || '';
-    if (!contentType.toLowerCase().includes('text/html')) {
-      await cancelBody(response);
-      return false;
+    try {
+      const result = await fetchArchive(target, {
+        Accept: 'text/html',
+        'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36',
+        Range: `bytes=0-${MAX_PROBE_BYTES - 1}`,
+      }, SNAPSHOT_TIMEOUT_MS);
+      if (!result) continue;
+      const { response, url } = result;
+      const contentType = response.headers.get('content-type');
+      if (!isArchiveHost(new URL(url).hostname) || !response.ok) {
+        await cancelBody(response);
+        return false;
+      }
+      if (!(contentType || '').toLowerCase().includes('text/html')) {
+        await cancelBody(response);
+        return false;
+      }
+      const html = await readPrefixText(response, MAX_PROBE_BYTES, PROBE_BODY_TIMEOUT_MS);
+      return html !== null && !looksLikeChallengePage(html, publisherHostname);
+    } catch {
+      if (attempt === TIMEMAP_MIRROR_ATTEMPTS - 1) return false;
     }
-    const html = await readPrefixText(response, MAX_PROBE_BYTES, PROBE_BODY_TIMEOUT_MS);
-    return html !== null && !looksLikeChallengePage(html, publisherHostname);
-  } catch {
-    return false;
   }
+  return false;
 }
 
 const memoryCache = new Map<string, { expiresAt: number; value: ArchiveResolveResult }>();
@@ -432,15 +485,21 @@ async function resolveForUser(userId: number, rawUrl: string, domains: string[])
   if (inFlight.size >= 64) return { status: 'error' };
 
   const work = (async (): Promise<ArchiveResolveResult> => {
-    // WELT is special: archive only articles explicitly marked paywalled in
-    // the matching NewsArticle JSON-LD. Free articles and unknown metadata
-    // keep the normal direct-to-publisher behavior.
-    if (isWelt && !(await isWeltPremiumArticle(normalisedUrl))) {
-      return { status: 'not_allowed' };
-    }
-    const effectiveDomains = isWelt ? [...domains, 'welt.de'] : domains;
-    const publisherUrl = await resolvePublisherUrl(normalisedUrl, effectiveDomains);
-    if (!publisherUrl) return { status: 'not_allowed' };
+    try {
+      // WELT is special: archive only articles explicitly marked paywalled in
+      // the matching NewsArticle JSON-LD. Free articles and unknown metadata
+      // keep the normal direct-to-publisher behavior.
+      if (isWelt) {
+        const premium = await isWeltPremiumArticle(normalisedUrl);
+        if (!premium) {
+          return { status: 'not_allowed' };
+        }
+      }
+      const effectiveDomains = isWelt ? [...domains, 'welt.de'] : domains;
+      const publisherUrl = await resolvePublisherUrl(normalisedUrl, effectiveDomains);
+      if (!publisherUrl) {
+        return { status: 'not_allowed' };
+      }
     // The original target was already DNS-checked before this cache lookup.
     // Re-check only when a wrapper resolved to a different publisher URL.
     if (publisherUrl !== normalisedUrl) {
@@ -448,22 +507,47 @@ async function resolveForUser(userId: number, rawUrl: string, domains: string[])
     }
     const publisher = new URL(publisherUrl);
 
-    const lookup = await fetchArchive(timeMapUrl(publisherUrl), {
+    // All archive mirrors serve the same timemap; archive.is hangs from some
+    // networks, so try mirrors in order instead of betting on one hostname.
+    // A URL carrying share-tracking query parameters (wsj.com ?st=…&reflink=…,
+    // washingtonpost.com ?linkNumber=…) gets an explicit timemap 404 although
+    // snapshots exist — they are indexed under the bare URL — so any failed
+    // lookup (unreachable mirror or non-OK response) is retried without the
+    // query.
+    const timemapHeaders = {
       Accept: 'application/link-format',
       'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36',
-    }, TIMEMAP_TIMEOUT_MS);
-    if (!lookup) return { status: 'soft_block' };
-    const { response } = lookup;
-    if (!response.ok) { await cancelBody(response); return { status: 'error' }; }
-    const contentType = response.headers.get('content-type') || '';
-    if (!contentType.toLowerCase().includes('application/link-format')) {
-      await cancelBody(response);
+    };
+    const initialLookup = await fetchTimeMapWithFailover(publisherUrl, timemapHeaders);
+    let lookup = initialLookup && initialLookup.response.ok ? initialLookup : null;
+    if (initialLookup && !initialLookup.response.ok) await cancelBody(initialLookup.response);
+    if (!lookup && new URL(publisherUrl).search) {
+      const bare = normalizeArticleUrl(new URL(publisherUrl).origin + new URL(publisherUrl).pathname);
+      if (bare && bare !== publisherUrl) {
+        lookup = await fetchTimeMapWithFailover(bare, timemapHeaders);
+      }
+    }
+    if (!lookup) {
       return { status: 'soft_block' };
     }
-    const timeMap = await readLimitedText(response, MAX_TIMEMAP_BYTES, TIMEMAP_BODY_TIMEOUT_MS);
-    if (timeMap === null) return { status: 'soft_block' };
+    const { response: lookupResponse } = lookup;
+    const lookupContentType = lookupResponse.headers.get('content-type');
+    if (!lookupResponse.ok) {
+      await cancelBody(lookupResponse);
+      return { status: 'error' };
+    }
+    if (!(lookupContentType || '').toLowerCase().includes('application/link-format')) {
+      await cancelBody(lookupResponse);
+      return { status: 'soft_block' };
+    }
+    const timeMap = await readLimitedText(lookupResponse, MAX_TIMEMAP_BYTES, TIMEMAP_BODY_TIMEOUT_MS);
+    if (timeMap === null) {
+      return { status: 'soft_block' };
+    }
     const snapshots = parseTimeMap(timeMap).slice(0, 100);
-    if (!snapshots.length) return { status: 'no_snapshot' };
+    if (!snapshots.length) {
+      return { status: 'no_snapshot' };
+    }
 
     // Probe a small fixed number concurrently so one broken snapshot does not
     // leave the new tab blank for a long serial chain of timeouts. Preserve the
@@ -472,9 +556,13 @@ async function resolveForUser(userId: number, rawUrl: string, domains: string[])
     const usable = await Promise.all(candidates.map((candidate) =>
       snapshotLooksUsable(candidate.url, publisher.hostname)));
     const winner = candidates.find((candidate, index) => usable[index]);
-    return winner
-      ? { status: 'ok', url: winner.url, timestamp: winner.timestamp }
-      : { status: 'no_good_snapshot' };
+    const outcome = winner
+      ? { status: 'ok' as const, url: winner.url, timestamp: winner.timestamp }
+      : { status: 'no_good_snapshot' as const };
+    return outcome;
+    } catch {
+      return { status: 'error' };
+    }
   })();
 
   inFlight.set(key, work);
