@@ -228,7 +228,9 @@ describe('POST /api/intelligence/semantic-scores', () => {
     try {
       const failed = await postScores(token, cold);
       expect(failed.status).toBe(200);
-      expect(failed.body.status).toBe('no-scores');
+      // With embedMode = 'fail' every reference embedding fails too, so the
+      // route answers with the retryable outage status, not 'no-scores'.
+      expect(failed.body.status).toBe('reference-unavailable');
       expect(failed.body.scores).toEqual({});
       expect(failed.body.missing).toEqual([]);
       expect(countRows([keyOf('Analog filter design deep dive\nResonance and envelopes'), keyOf('Mulching blades compared\nThe best mower attachments')])).toBe(0);

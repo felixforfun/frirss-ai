@@ -538,12 +538,37 @@
     "rankingWeights": {
       "title": "排序权重",
       "intro": "调整外部关注度对“感兴趣”视图的影响。这些设置仅适用于自定义算法，现有预设保持不变。",
-      "externalInfluence": "外部影响",
-      "externalInfluenceHelp": "最终排序分数中由外部信号决定的比例。",
+      "discoveryInfluence": "Discovery influence",
+      "discoveryInfluenceHelp": "The share of the final ranking score driven by discovery evidence. Absent evidence is neutral: an article never drops because a provider was unreachable.",
+      "discoveryZero": "0% · Personal relevance only",
+      "discoveryFull": "100% · Discovery only",
       "semanticInfluence": "语义影响",
       "semanticInfluenceHelp": "最终排序得分中由与您投票的语义相似度驱动的比例。0% 表示排序保持完全不变。",
-      "sourcesTitle": "外部来源权重",
+      "semanticZero": "0% · No semantic influence",
+      "semanticFull": "100% · Semantic scores only",
+      "sourcesTitle": "Discovery source weights",
       "sourcesHelp": "这些权重决定各来源的相对比例，并会自动归一化，因此总和无需达到 100%。将来源设为 0% 即可排除该来源。",
+      "source": {
+        "consensus": "Publisher consensus",
+        "googleTrends": "Google Trends",
+        "wikipedia": "Wikipedia",
+        "github": "GitHub",
+        "hackerNews": "Hacker News",
+        "lobsters": "Lobsters",
+        "gdelt": "GDELT"
+      },
+      "sourceHelp": {
+        "consensus": "How many independent publishers report the same story.",
+        "googleTrends": "Current search trends that match an article.",
+        "wikipedia": "Unusual Wikipedia pageview spikes for a topic.",
+        "github": "Repository traction and recent activity.",
+        "hackerNews": "Interest in the Hacker News community.",
+        "lobsters": "Interest in the Lobsters community.",
+        "gdelt": "Breadth of recent news coverage."
+      },
+      "sourceNotConnected": "Not connected yet — ignored until it ships.",
+      "coverage": "{{measured}} of {{candidates}} candidates measured",
+      "coverageNone": "No measured evidence in the current cohort yet.",
       "savedAutomatically": "更改会自动保存到你的账户。选择“感兴趣”视图中的“自定义”算法即可使用。",
       "reset": "重置"
     }

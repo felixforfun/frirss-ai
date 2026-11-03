@@ -538,12 +538,37 @@
     "rankingWeights": {
       "title": "Pesos de clasificación",
       "intro": "Ajusta cuánto influye la atención externa en la vista Interesante. Estos ajustes se aplican al algoritmo Personalizado. Los ajustes predefinidos existentes no cambian.",
-      "externalInfluence": "Influencia externa",
-      "externalInfluenceHelp": "Parte de la puntuación final determinada por señales externas.",
+      "discoveryInfluence": "Discovery influence",
+      "discoveryInfluenceHelp": "The share of the final ranking score driven by discovery evidence. Absent evidence is neutral: an article never drops because a provider was unreachable.",
+      "discoveryZero": "0% · Personal relevance only",
+      "discoveryFull": "100% · Discovery only",
       "semanticInfluence": "Influencia semántica",
       "semanticInfluenceHelp": "La parte de la puntuación final de clasificación que procede de la similitud semántica con tus votos. El 0 % mantiene la clasificación tal cual.",
-      "sourcesTitle": "Pesos de fuentes externas",
+      "semanticZero": "0% · No semantic influence",
+      "semanticFull": "100% · Semantic scores only",
+      "sourcesTitle": "Discovery source weights",
       "sourcesHelp": "Estos pesos definen la proporción relativa entre fuentes. Se normalizan automáticamente y no necesitan sumar 100 %. Asigna 0 % a una fuente para excluirla.",
+      "source": {
+        "consensus": "Publisher consensus",
+        "googleTrends": "Google Trends",
+        "wikipedia": "Wikipedia",
+        "github": "GitHub",
+        "hackerNews": "Hacker News",
+        "lobsters": "Lobsters",
+        "gdelt": "GDELT"
+      },
+      "sourceHelp": {
+        "consensus": "How many independent publishers report the same story.",
+        "googleTrends": "Current search trends that match an article.",
+        "wikipedia": "Unusual Wikipedia pageview spikes for a topic.",
+        "github": "Repository traction and recent activity.",
+        "hackerNews": "Interest in the Hacker News community.",
+        "lobsters": "Interest in the Lobsters community.",
+        "gdelt": "Breadth of recent news coverage."
+      },
+      "sourceNotConnected": "Not connected yet — ignored until it ships.",
+      "coverage": "{{measured}} of {{candidates}} candidates measured",
+      "coverageNone": "No measured evidence in the current cohort yet.",
       "savedAutomatically": "Los cambios se guardan automáticamente en tu cuenta. Selecciona Personalizado en la vista Interesante para utilizarlos.",
       "reset": "Restablecer"
     }

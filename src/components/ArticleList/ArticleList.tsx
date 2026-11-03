@@ -44,8 +44,17 @@ import { prefersReducedMotion } from '../../lib/reducedMotion';
 import { staggerIndexes, rememberStagger } from '../../lib/rowStagger';
 import type { Article, Filter } from '../../types';
 import { useIntelligenceFeedback } from '../../hooks/useIntelligenceFeedback';
-import { externalSourcesForAlgorithm, needsSemanticScores, rankInterestingArticles, type IntelligenceContext, type SemanticScoresByUrl } from '../../lib/intelligenceRanking';
-import { getExternalSignals, getSemanticScores, type ExternalSignalsByUrl } from '../../api/intelligence';
+import {
+  externalSourcesForAlgorithm, legacySignalsToEvidence, needsSemanticScores, rankInterestingArticles,
+  type ExternalEvidenceByUrl, type ExternalSignalsByUrl, type IntelligenceContext, type SemanticScoresByUrl,
+} from '../../lib/intelligenceRanking';
+import { getCoverage, getExternalSignals, getSemanticScores, type CoverageEntry, type ExternalSignalArticle, type ExternalSignalsV2 } from '../../api/intelligence';
+import {
+  acquisitionKey, cohortKey as evidenceCohortKey, coverageCounts, mergeEvidence, missingPairs, timedEvidenceFromStates,
+  type TimedEvidenceByUrl,
+} from '../../lib/discoveryEvidence';
+import { feedPublisher } from '../../lib/intelligenceNext';
+import { useDiscoveryCoverageStore } from '../../stores/discoveryCoverageStore';
 import { useInterestingAlgorithm } from '../../hooks/useInterestingAlgorithm';
 import InterestingAlgorithmSelect from './InterestingAlgorithmSelect';
 
@@ -70,6 +79,17 @@ const NO_RANKED_KEYS: string[] = [];
 /** Bounded resumable polling for pending semantic embedding batches. */
 const SEMANTIC_POLL_LIMIT = 12;
 const SEMANTIC_POLL_DELAY_MS = 2000;
+/** Reference-embedding outages are retryable with backoff, but capped. */
+const SEMANTIC_REFERENCE_RETRY_LIMIT = 5;
+
+/**
+ * Contract v2 polling: 3 s, then 10 s, then 30 s, while the view stays open;
+ * an acquisition gives up after 10 minutes (the server caches for next time).
+ */
+const EXTERNAL_POLL_DELAYS_MS = [3000, 10000, 30000];
+const EXTERNAL_POLL_TOTAL_MS = 10 * 60 * 1000;
+/** The acquisition layer asks for at most 300 candidates per cycle (rework §5 Phase 1.2). */
+const ACQUISITION_CAP = 300;
 
 // Per-view scroll position, kept across remounts (e.g. returning from an
 // article in 2-panel desktop, or any re-mount of the list).
@@ -88,7 +108,8 @@ export default function ArticleList() {
   const intelligenceFeedback = useIntelligenceFeedback();
   const [interestingAlgorithm, setInterestingAlgorithm] = useInterestingAlgorithm();
   const interestingRankingWeights = useUiStore((s) => s.interestingRankingWeights);
-  const [externalSignals, setExternalSignals] = useState<ExternalSignalsByUrl>({});
+  const [externalEvidence, setExternalEvidence] = useState<TimedEvidenceByUrl>({});
+  const [articleCoverage, setArticleCoverage] = useState<Record<string, CoverageEntry>>({});
   const [semanticScores, setSemanticScores] = useState<SemanticScoresByUrl>({});
 
   const {
@@ -880,62 +901,181 @@ export default function ArticleList() {
     ].join('\\u001f')).join('\\u001e') : ''),
     [articles, isInterestingView],
   );
-  // External-signal variants fetch scores only when selected. The server caches
-  // each article/source lookup; failures leave the current Intelligence Next
-  // ordering intact rather than blocking the Interesting view.
+  // ── Layer A: discovery evidence acquisition ──────────────────────────
+  // Independent of ranking and slider state. One acquisition per (algorithm,
+  // cohort, active-source set); only pairs lacking fresh evidence are
+  // requested; previous evidence is kept until replaced, never cleared on
+  // refetch. Weight moves that do not cross zero never hit the network.
   const externalSignalSources = useMemo(() => externalSourcesForAlgorithm(interestingAlgorithm, interestingRankingWeights), [interestingAlgorithm, interestingRankingWeights]);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const externalSignalSourcesKey = useMemo(() => [...externalSignalSources].sort().join('+'), [externalSignalSources]);
+  // Cohort identity is URL-based: a background content refresh must not
+  // trigger provider requests, only a genuinely different candidate set.
+  const interestingCohortKey = useMemo(
+    () => (isInterestingView ? evidenceCohortKey(articles.slice(0, ACQUISITION_CAP)) : ''),
+    [articles, isInterestingView],
+  );
+  const acquisition = useMemo(
+    () => (isInterestingView && externalSignalSources.length ? acquisitionKey(interestingAlgorithm, interestingCohortKey, externalSignalSources) : ''),
+    [isInterestingView, interestingAlgorithm, interestingCohortKey, externalSignalSources.length], // eslint-disable-line react-hooks/exhaustive-deps
+  );
+  const evidenceRunRef = useRef(0);
+  const acquisitionControllerRef = useRef<AbortController | null>(null);
+  const pollTimerRef = useRef<number | undefined>(undefined);
+  const lastCohortRef = useRef('');
+  // Mirrors for the async request loop: always the latest values, readable
+  // without re-subscribing the effect to every render.
+  const latestArticlesRef = useRef(articles);
+  const evidenceRef = useRef<TimedEvidenceByUrl>({});
+  const applyEvidence = useRef((updater: (prev: TimedEvidenceByUrl) => TimedEvidenceByUrl) => {
+    evidenceRef.current = updater(evidenceRef.current);
+    setExternalEvidence(evidenceRef.current);
+  });
+  const publishedByUrlRef = useRef(new Map<string, number>());
   useEffect(() => {
-    if (!isInterestingView || externalSignalSources.length === 0) {
-      setExternalSignals((current) => Object.keys(current).length ? {} : current);
+    latestArticlesRef.current = articles;
+    publishedByUrlRef.current = new Map(articles.map((article) => [article.url, article.publishedMissing ? article.published : article.published]));
+  }, [articles]);
+  // Publisher identity for the consensus source: the same normalization
+  // Intelligence Next uses (site-URL host, feeds of one host count once).
+  const publisherByFeedRef = useRef(new Map<string, string>());
+  useEffect(() => {
+    const map = new Map<string, string>();
+    for (const subscription of subscriptions) {
+      if (!subscription?.id || map.has(subscription.id)) continue;
+      try { map.set(subscription.id, feedPublisher(subscription)); } catch { /* no usable URL: falls back inside feedPublisher */ }
+    }
+    publisherByFeedRef.current = map;
+  }, [subscriptions]);
+
+  useEffect(() => {
+    if (!isInterestingView || !externalSignalSourcesKey) {
+      // Algorithm without external signals (or left the view): drop evidence,
+      // it will be refetched when a signal-carrying algorithm returns.
+      if (evidenceRef.current && Object.keys(evidenceRef.current).length) {
+        applyEvidence.current(() => ({}));
+        setArticleCoverage((current) => Object.keys(current).length ? {} : current);
+        useDiscoveryCoverageStore.getState().clear();
+      }
+      lastCohortRef.current = '';
       return;
     }
-    let cancelled = false;
-    setExternalSignals((current) => Object.keys(current).length ? {} : current);
-    const candidates = articles.slice(0, 80).map(({ url, title, summary, content }) => ({ url, title, summary, content }));
-    void getExternalSignals(candidates, externalSignalSources).then((signals) => {
-      if (!cancelled) setExternalSignals(signals);
-    }).catch(() => {
-      if (!cancelled) setExternalSignals((current) => Object.keys(current).length ? {} : current);
-    });
-    return () => { cancelled = true; };
-  // The ranking key captures meaningful article changes without reacting to
-  // unrelated feed-store object identity changes.
-  }, [isInterestingView, interestingAlgorithm, interestingRankingKey, externalSignalSources]);
-  // Semantic scores (soft balanced margin) are fetched only when the selected
-  // ranking uses them. The server embeds bounded batches per request and
-  // reports the remainder as `missing`; polling continues until the list is
-  // fully scored, reordering progressively as scores arrive. A vote refetches
-  // the feedback and with it the scores, so new votes take effect immediately.
+    // A wholly replaced cohort invalidates every per-article slot.
+    if (lastCohortRef.current && lastCohortRef.current !== interestingCohortKey) {
+      applyEvidence.current(() => ({}));
+      setArticleCoverage({});
+    }
+    lastCohortRef.current = interestingCohortKey;
+
+    const run = ++evidenceRunRef.current;
+    const controller = new AbortController();
+    // Supersede the previous acquisition and its pending polls.
+    acquisitionControllerRef.current?.abort();
+    acquisitionControllerRef.current = controller;
+    window.clearTimeout(pollTimerRef.current);
+
+    const request = async (attempt: number, startedAt: number): Promise<void> => {
+      if (controller.signal.aborted || evidenceRunRef.current !== run) return;
+      const candidates = missingPairs(latestArticlesRef.current.slice(0, ACQUISITION_CAP), externalSignalSources, evidenceRef.current, Date.now());
+      const consensusWanted = externalSignalSources.includes('consensus');
+      if (!candidates.length && attempt > 0) return;
+      const byUrl = new Map(latestArticlesRef.current.map((article) => [article.url, article]));
+      const toSignalRequest = ({ url, title, summary, content, published }: Article): ExternalSignalArticle => ({
+        url, title, summary, content, published: published || undefined,
+      });
+      const toCoverageRequest = ({ url, title, summary }: Article) => ({
+        url, title, summary,
+        publisher: publisherByFeedRef.current.get(byUrl.get(url)?.sourceId ?? '') ?? '',
+        published: byUrl.get(url)?.published ?? 0,
+      });
+      try {
+        const [signals, coverage] = await Promise.all([
+          candidates.length
+            ? getExternalSignals(candidates.map(toSignalRequest), externalSignalSources, controller.signal)
+            : Promise.resolve(null),
+          consensusWanted
+            ? getCoverage(candidates.map(toCoverageRequest), controller.signal).catch(() => null)
+            : Promise.resolve(null),
+        ]);
+        if (controller.signal.aborted || evidenceRunRef.current !== run) return;
+        const fetchedAt = Date.now();
+        if (signals) {
+          // The server may still be a v1 image (rolling swap): convert legacy
+          // slots; otherwise contract v2 states arrive directly.
+          const incoming = signals.version === 2
+            ? timedEvidenceFromStates(signals.signals as ExternalSignalsV2, fetchedAt)
+            : timedEvidenceFromStates(legacySignalsToEvidence(signals.signals as ExternalSignalsByUrl), fetchedAt);
+          // An outage must not erase a fresh measurement.
+          applyEvidence.current((previous) => mergeEvidence(previous, incoming, fetchedAt, publishedByUrlRef.current));
+        }
+        if (coverage) {
+          setArticleCoverage(coverage.coverage);
+          const counts = coverageCounts(latestArticlesRef.current.slice(0, ACQUISITION_CAP), externalSignalSources, evidenceRef.current);
+          useDiscoveryCoverageStore.getState().set(counts.measured, counts.candidates);
+        }
+        const pending = signals?.pending ?? [];
+        if (pending.length && Date.now() - startedAt < EXTERNAL_POLL_TOTAL_MS) {
+          const delay = EXTERNAL_POLL_DELAYS_MS[Math.min(attempt, EXTERNAL_POLL_DELAYS_MS.length - 1)];
+          pollTimerRef.current = window.setTimeout(() => { void request(attempt + 1, startedAt); }, delay);
+        }
+      } catch {
+        // Aborted or network failure: the current evidence stands.
+      }
+    };
+    void request(0, Date.now());
+    return () => {
+      controller.abort();
+      window.clearTimeout(pollTimerRef.current);
+    };
+  // The acquisition key (algorithm + cohort + active sources) is the only
+  // trigger; slider moves and content refreshes never reach the network here.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isInterestingView, acquisition, externalSignalSourcesKey, interestingCohortKey]);
+
+  // ── Semantic scores (soft balanced margin) ───────────────────────────
+  // Fetched only when the selected ranking uses them AND the feedback or the
+  // cohort changed. Scores are kept when the influence slider goes back to 0
+  // (raising it again is instant), never cleared on refetch. The server
+  // embeds bounded batches per request and reports the remainder as
+  // `missing`; polling continues until the list is fully scored, reordering
+  // progressively as scores arrive. A vote refetches the feedback and with
+  // it the scores, so new votes take effect immediately.
   const semanticNeeded = useMemo(
     () => needsSemanticScores(interestingAlgorithm, interestingRankingWeights),
     [interestingAlgorithm, interestingRankingWeights],
   );
   useEffect(() => {
-    if (!isInterestingView || !semanticNeeded) {
-      setSemanticScores((current) => Object.keys(current).length ? {} : current);
-      return;
-    }
+    if (!isInterestingView || !semanticNeeded) return;
     let cancelled = false;
     let pollTimer: number | undefined;
-    setSemanticScores((current) => Object.keys(current).length ? {} : current);
-    const request = (attempt: number) => {
-      const candidates = articles.slice(0, 300).map(({ url, title, summary }) => ({ url, title, summary }));
-      void getSemanticScores(candidates).then((response) => {
+    const request = (attempt: number, delay: number): void => {
+      pollTimer = window.setTimeout(() => {
         if (cancelled) return;
-        // No usable scores yet: the fallback ordering stands, keep polling in
-        // case feedback or the provider becomes available.
-        if (response.status === 'insufficient-feedback' || response.status === 'provider-unavailable') {
-          if (attempt < SEMANTIC_POLL_LIMIT) pollTimer = window.setTimeout(() => request(attempt + 1), SEMANTIC_POLL_DELAY_MS);
-          return;
-        }
-        setSemanticScores(response.scores);
-        if (response.missing.length && attempt < SEMANTIC_POLL_LIMIT) {
-          pollTimer = window.setTimeout(() => request(attempt + 1), SEMANTIC_POLL_DELAY_MS);
-        }
-      }).catch(() => { /* network or server failure: the fallback ordering stands */ });
+        const candidates = latestArticlesRef.current.slice(0, 300).map(({ url, title, summary }) => ({ url, title, summary }));
+        void getSemanticScores(candidates).then((response) => {
+          if (cancelled) return;
+          // Reference embeddings failed on the server (provider outage):
+          // retryable with backoff, capped — the fallback ordering stands.
+          if (response.status === 'reference-unavailable') {
+            if (attempt < SEMANTIC_REFERENCE_RETRY_LIMIT) {
+              request(attempt + 1, Math.min(SEMANTIC_POLL_DELAY_MS * 2 ** attempt, 30000));
+            }
+            return;
+          }
+          // No usable scores yet: the fallback ordering stands, keep polling
+          // in case feedback or the provider becomes available.
+          if (response.status === 'insufficient-feedback' || response.status === 'provider-unavailable') {
+            if (attempt < SEMANTIC_POLL_LIMIT) request(attempt + 1, SEMANTIC_POLL_DELAY_MS);
+            return;
+          }
+          // Merge: scores already known stay known; new ones are adopted.
+          setSemanticScores((current) => ({ ...current, ...response.scores }));
+          if (response.missing.length && attempt < SEMANTIC_POLL_LIMIT) {
+            request(attempt + 1, SEMANTIC_POLL_DELAY_MS);
+          }
+        }).catch(() => { /* network or server failure: the fallback ordering stands */ });
+      }, delay);
     };
-    request(0);
+    request(0, 0);
     return () => {
       cancelled = true;
       if (pollTimer !== undefined) window.clearTimeout(pollTimer);
@@ -943,7 +1083,7 @@ export default function ArticleList() {
   // The ranking key captures meaningful article changes; the feedback array
   // identity changes only when the votes change.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isInterestingView, interestingAlgorithm, semanticNeeded, interestingRankingKey, intelligenceFeedback]);
+  }, [isInterestingView, semanticNeeded, interestingRankingKey, intelligenceFeedback]);
   // Intelligence Next also reads the subscriptions (id, title, folder labels,
   // feed and site URL) and the starred / read-later snapshot. A refresh rebuilds the subscription
   // array even when nothing changed, so the context is keyed by those fields
@@ -989,10 +1129,10 @@ export default function ArticleList() {
   );
   const rankedArticleKeys = useMemo(
     () => (isInterestingView
-      ? rankInterestingArticles(articles, intelligenceFeedback, Date.now(), interestingAlgorithm, intelligenceContext, externalSignals, interestingRankingWeights, semanticScores)
+      ? rankInterestingArticles(articles, intelligenceFeedback, Date.now(), interestingAlgorithm, intelligenceContext, externalEvidence, interestingRankingWeights, semanticScores)
         .map(rankingIdentity)
       : NO_RANKED_KEYS),
-    [interestingRankingKey, intelligenceFeedback, interestingAlgorithm, intelligenceContext, externalSignals, interestingRankingWeights, semanticScores, rankingIdentity, isInterestingView],
+    [interestingRankingKey, intelligenceFeedback, interestingAlgorithm, intelligenceContext, externalEvidence, interestingRankingWeights, semanticScores, rankingIdentity, isInterestingView],
   );
   const rankedArticles = useMemo(() => {
     if (!isInterestingView) return articles;
