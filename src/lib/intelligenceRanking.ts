@@ -5,37 +5,115 @@ import { rankIntelligenceNext, type IntelligenceContext } from './intelligenceNe
 
 export type { IntelligenceContext, SavedArticleSignal } from './intelligenceNext';
 
-export type ExternalSignalSource = 'gdelt' | 'github' | 'hackerNews' | 'lobsters';
+export type ExternalSignalSource = 'gdelt' | 'github' | 'hackerNews' | 'lobsters' | 'consensus' | 'googleTrends' | 'wikipedia';
+/** Slider order in the preferences UI: high-value sources first, legacy last. */
+export const EXTERNAL_SOURCE_ORDER: ExternalSignalSource[] = ['consensus', 'googleTrends', 'wikipedia', 'github', 'hackerNews', 'lobsters', 'gdelt'];
+
 export interface CustomInterestingWeights {
   externalInfluence: number;
   /** Share of the final score driven by server-side semantic scores. 0 keeps Custom exactly as before. */
   semanticInfluence: number;
   sources: Record<ExternalSignalSource, number>;
+  /** Preferences revision: v2 introduces the discovery sources and the boost blend. */
+  v?: 2;
 }
+
+/**
+ * Discovery rework defaults (preference revision 2). Relative weights between
+ * sources only — they do not need to sum to 100. GDELT is demoted to 0
+ * (measured lift is poor and its API throttles hard); its code path stays
+ * available for calibrated reactivation in the evaluation phase.
+ */
 export const DEFAULT_CUSTOM_INTERESTING_WEIGHTS: CustomInterestingWeights = {
+  v: 2,
   externalInfluence: 25,
   semanticInfluence: 0,
-  sources: { gdelt: 40, github: 20, hackerNews: 25, lobsters: 15 },
+  sources: { consensus: 40, googleTrends: 25, wikipedia: 15, github: 8, hackerNews: 7, lobsters: 5, gdelt: 0 },
 };
+
+/** The pre-rework defaults: exactly these stored values mean "user never touched the sliders". */
+const LEGACY_DEFAULT_WEIGHTS = {
+  externalInfluence: 25,
+  semanticInfluence: 0,
+  sources: { gdelt: 40, github: 20, hackerNews: 25, lobsters: 15 } as Partial<Record<ExternalSignalSource, number>>,
+};
+
+/**
+ * Sources implemented on the server. A source outside this set (googleTrends
+ * until its own phase ships) is absent from the discovery denominator and
+ * never requested, whatever its slider says.
+ */
+export const REGISTERED_EXTERNAL_SOURCES: Set<ExternalSignalSource> = new Set(['gdelt', 'github', 'hackerNews', 'lobsters', 'consensus', 'wikipedia']);
+
+const isLegacyDefaultWeights = (sources: Partial<Record<ExternalSignalSource, unknown>>, semanticInfluence: number, externalInfluence: number): boolean => {
+  return externalInfluence === LEGACY_DEFAULT_WEIGHTS.externalInfluence
+    && semanticInfluence === LEGACY_DEFAULT_WEIGHTS.semanticInfluence
+    && Object.entries(LEGACY_DEFAULT_WEIGHTS.sources).every(([key, value]) => sources[key as ExternalSignalSource] === value);
+};
+
 export function normalizeCustomInterestingWeights(value: unknown): CustomInterestingWeights {
   const input = value && typeof value === 'object' ? value as Partial<CustomInterestingWeights> : {};
   const sources: Partial<Record<ExternalSignalSource, unknown>> = input.sources && typeof input.sources === 'object'
     ? input.sources as Partial<Record<ExternalSignalSource, unknown>> : {};
   const clamp = (v: unknown, fallback: number) => typeof v === 'number' && Number.isFinite(v)
     ? Math.max(0, Math.min(100, Math.round(v))) : fallback;
+  const external = clamp(input.externalInfluence, DEFAULT_CUSTOM_INTERESTING_WEIGHTS.externalInfluence);
+  // Weights saved before this field existed (no semanticInfluence key) fall
+  // back to 0: existing setups keep their exact previous behavior.
+  const semantic = clamp(input.semanticInfluence, DEFAULT_CUSTOM_INTERESTING_WEIGHTS.semanticInfluence);
+  // Preference revision 2 migration: stored weights without `v` that match the
+  // pre-rework defaults exactly belong to readers who never customised, and are
+  // moved onto the new defaults. Customised weights keep their values; missing
+  // source keys are filled with the new defaults.
+  const migrated = input.v === undefined && isLegacyDefaultWeights(sources, semantic, external)
+    ? DEFAULT_CUSTOM_INTERESTING_WEIGHTS.sources
+    : undefined;
+  const filled = migrated ?? DEFAULT_CUSTOM_INTERESTING_WEIGHTS.sources;
   return {
-    externalInfluence: clamp(input.externalInfluence, DEFAULT_CUSTOM_INTERESTING_WEIGHTS.externalInfluence),
-    // Weights saved before this field existed (no semanticInfluence key) fall
-    // back to 0: existing setups keep their exact previous behavior.
-    semanticInfluence: clamp(input.semanticInfluence, DEFAULT_CUSTOM_INTERESTING_WEIGHTS.semanticInfluence),
-    sources: {
-      gdelt: clamp(sources.gdelt, DEFAULT_CUSTOM_INTERESTING_WEIGHTS.sources.gdelt),
-      github: clamp(sources.github, DEFAULT_CUSTOM_INTERESTING_WEIGHTS.sources.github),
-      hackerNews: clamp(sources.hackerNews, DEFAULT_CUSTOM_INTERESTING_WEIGHTS.sources.hackerNews),
-      lobsters: clamp(sources.lobsters, DEFAULT_CUSTOM_INTERESTING_WEIGHTS.sources.lobsters),
+    externalInfluence: external,
+    semanticInfluence: semantic,
+    // Migration replaces the whole map; otherwise user values stand and the
+    // fallback fills only the source keys a stored object is missing.
+    sources: migrated ?? {
+      consensus: clamp(sources.consensus, filled.consensus),
+      googleTrends: clamp(sources.googleTrends, filled.googleTrends),
+      wikipedia: clamp(sources.wikipedia, filled.wikipedia),
+      github: clamp(sources.github, filled.github),
+      hackerNews: clamp(sources.hackerNews, filled.hackerNews),
+      lobsters: clamp(sources.lobsters, filled.lobsters),
+      gdelt: clamp(sources.gdelt, filled.gdelt),
     },
+    v: 2,
   };
 }
+
+/**
+ * Evidence states per (article, source). Distinctness matters: only
+ * `measured` yields a discovery boost — `none` (provider answered, nothing
+ * applicable) and `not-applicable` (for example no repository link) are honest
+ * zeros rather than failures, and `unavailable` (error, throttled, pending)
+ * must never be mistaken for evidence.
+ *
+ * A `measured` value 0 is real: for Hacker News, Lobsters and publisher
+ * consensus, "looked, nothing found" is informative, while null/`unavailable`
+ * is an outage.
+ */
+export type ExternalEvidenceState = 'measured' | 'none' | 'not-applicable' | 'unavailable';
+export interface ExternalEvidence {
+  state: ExternalEvidenceState;
+  /** Only meaningful for `measured`: provider computed value in 0..1. */
+  value?: number;
+  /** When `unavailable`, suggested wait before asking again. */
+  retryAfterMs?: number;
+}
+/** Per url, per source evidence, exactly one state (or absent while pending). */
+export type ExternalEvidenceByUrl = Record<string, Partial<Record<ExternalSignalSource, ExternalEvidence>>>;
+
+/**
+ * Legacy v1 signal shapes, accepted while an older server image may still be
+ * serving. Mapping rules: number = measured; Hacker News / Lobsters 0 = none;
+ * null = unavailable for GDELT, not-applicable for GitHub; GDELT 0 = measured 0.
+ */
 export interface ExternalArticleSignals {
   /** Successful lookup with no meaningful coverage is 0; unavailable/not applicable is null. */
   gdelt: number | null;
@@ -44,6 +122,28 @@ export interface ExternalArticleSignals {
   lobsters: number | null;
 }
 export type ExternalSignalsByUrl = Record<string, ExternalArticleSignals>;
+
+const LEGACY_SOURCE_IDS = ['gdelt', 'github', 'hackerNews', 'lobsters'] as const;
+
+/** Convert a v1 response (four numeric-or-null slots) into evidence states. */
+export function legacySignalsToEvidence(signals: ExternalSignalsByUrl): ExternalEvidenceByUrl {
+  const evidence: ExternalEvidenceByUrl = {};
+  for (const [url, entry] of Object.entries(signals)) {
+    const slots: Partial<Record<ExternalSignalSource, ExternalEvidence>> = {};
+    for (const source of LEGACY_SOURCE_IDS) {
+      const raw = entry?.[source];
+      if (raw === null || raw === undefined) {
+        slots[source] = source === 'github' ? { state: 'not-applicable' } : { state: 'unavailable' };
+      } else if (raw === 0 && (source === 'hackerNews' || source === 'lobsters')) {
+        slots[source] = { state: 'none' };
+      } else {
+        slots[source] = { state: 'measured', value: raw };
+      }
+    }
+    evidence[url] = slots;
+  }
+  return evidence;
+}
 
 export type InterestingAlgorithm = 'current' | 'weighted-idf' | 'synonyms' | 'topics' | 'combined' | 'microsoft-news' | 'personal-news' | 'intelligence-next'
   | 'gdelt' | 'gdelt-github' | 'gdelt-hn' | 'hn-lob' | 'all-four' | 'custom' | 'soft-balanced-margin';
@@ -445,21 +545,35 @@ function rankMicrosoftNews(articles: Article[], feedback: ArticleFeedback[], now
 }
 
 /**
- * External-signal experiments all use Intelligence Next as the fixed base.
- * Both sides are converted to within-cohort rank scores before blending, since
- * the legacy rankers do not share a common score scale. Missing/unavailable
- * signals are neutral; a successful lookup with no popularity is a real zero.
+ * External-signal experiments all use Intelligence Next as the fixed base and
+ * the shared discovery blend. Weights are relative to each other.
  */
-const EXTERNAL_SIGNAL_WEIGHTS: Partial<Record<InterestingAlgorithm, Partial<Record<ExternalSignalSource, number>>>> = {
+export const EXTERNAL_SIGNAL_WEIGHTS: Partial<Record<InterestingAlgorithm, Partial<Record<ExternalSignalSource, number>>>> = {
   gdelt: { gdelt: 1 },
   'gdelt-github': { gdelt: 0.6, github: 0.4 },
   'gdelt-hn': { gdelt: 0.6, hackerNews: 0.4 },
   'hn-lob': { hackerNews: 0.6, lobsters: 0.4 },
   'all-four': { gdelt: 0.4, github: 0.2, hackerNews: 0.24, lobsters: 0.16 },
 };
+/**
+ * Sources an algorithm asks for: the sources carrying weight for the algorithm
+ * that are also registered server-side. UCS/others… "Sources not yet
+ * implemented are absent from the denominator": an unregistered source's
+ * slider value neither causes requests nor changes the scale.
+ */
 export function externalSourcesForAlgorithm(algorithm: InterestingAlgorithm, customWeights: CustomInterestingWeights = DEFAULT_CUSTOM_INTERESTING_WEIGHTS): ExternalSignalSource[] {
-  if (algorithm === 'custom') return customWeights.externalInfluence === 0 ? [] : (Object.keys(customWeights.sources) as ExternalSignalSource[]).filter((source) => customWeights.sources[source] > 0);
-  return Object.keys(EXTERNAL_SIGNAL_WEIGHTS[algorithm] ?? {}) as ExternalSignalSource[];
+  const weights = algorithm === 'custom'
+    ? customWeights.sources
+    : (EXTERNAL_SIGNAL_WEIGHTS[algorithm] ?? {});
+  return EXTERNAL_SOURCE_ORDER.filter((source) => (weights[source] ?? 0) > 0 && REGISTERED_EXTERNAL_SOURCES.has(source));
+}
+
+/** Per-source weight for the blend, active only over registered sources. */
+function activeWeightsFor(algorithm: InterestingAlgorithm, customWeights: CustomInterestingWeights): Array<[ExternalSignalSource, number]> {
+  const weights = algorithm === 'custom' ? customWeights.sources : (EXTERNAL_SIGNAL_WEIGHTS[algorithm] ?? {});
+  return EXTERNAL_SOURCE_ORDER
+    .filter((source) => (weights[source] ?? 0) > 0 && REGISTERED_EXTERNAL_SOURCES.has(source))
+    .map((source) => [source, weights[source] as number]);
 }
 
 /** Semantic soft-margin scores by article url, as computed by the server. */
@@ -472,6 +586,12 @@ export type SemanticScoresByUrl = Record<string, number>;
  */
 export function needsSemanticScores(algorithm: InterestingAlgorithm, customWeights: CustomInterestingWeights = DEFAULT_CUSTOM_INTERESTING_WEIGHTS): boolean {
   return algorithm === 'soft-balanced-margin' || (algorithm === 'custom' && customWeights.semanticInfluence > 0);
+}
+
+/** Discovery boost for one (article, source) pair: only measured evidence contributes. */
+function evidenceBoost(evidence: ExternalEvidence | undefined): number {
+  if (!evidence || evidence.state !== 'measured') return 0;
+  return Math.max(0, Math.min(1, evidence.value ?? 0));
 }
 
 function rankWithSemanticScores(
@@ -520,62 +640,70 @@ function semanticRankScores(base: Article[], semanticScores: SemanticScoresByUrl
   return ranks;
 }
 
-function rankWithExternalSignals(
+/**
+ * The discovery blend (normative, rework §4.3).
+ *
+ * Layer separation: this is a pure function of (base ranking, semantic ranks,
+ * cached evidence, weights). No network, no cache clearing, deterministic.
+ *
+ *   p = 1 - e - s (rescaled proportionally when e + s > 1)
+ *   D(a) = Σ w_src · boost_src(a) / Σ w_src  over enabled + registered sources
+ *   Final(a) = p·P(a) + s·Sem(a) + e·D(a)
+ *
+ * The denominator is fixed across the cohort — the enabled, registered sources
+ * — so missing evidence cannot change the scale from article to article, and
+ * boost 0 (an honest zero or absent evidence) can only ever be neutral, never
+ * a penalty.
+ */
+function rankWithDiscoverySignals(
   articles: Article[],
   feedback: ArticleFeedback[],
   now: number,
   algorithm: InterestingAlgorithm,
   context: IntelligenceContext,
-  externalSignals: ExternalSignalsByUrl,
+  externalEvidence: ExternalEvidenceByUrl = {},
   customWeights: CustomInterestingWeights = DEFAULT_CUSTOM_INTERESTING_WEIGHTS,
   semanticScores: SemanticScoresByUrl = {},
 ): Article[] {
   const base = rankIntelligenceNext(articles, feedback, now, context);
   if (base.length < 2) return base;
   const baseScore = new Map(base.map((article, index) => [article, (base.length - index - 1) / (base.length - 1)]));
-  const weights: Partial<Record<ExternalSignalSource, number>> = algorithm === 'custom'
-    ? customWeights.sources
-    : (EXTERNAL_SIGNAL_WEIGHTS[algorithm] ?? {});
-  // Custom only: external and semantic influence shares, rescaled proportionally
-  // when together they exceed 100% so the base keeps the remainder.
-  const externalInfluence = algorithm === 'custom' ? customWeights.externalInfluence / 100 : 0.25;
+  const active = activeWeightsFor(algorithm, customWeights);
+  // Custom only: discovery and semantic influence shares, rescaled
+  // proportionally when together they exceed 100%.
+  const discoveryInfluence = algorithm === 'custom' ? customWeights.externalInfluence / 100 : 0.25;
   // A missing semanticInfluence (weights saved before the field existed and
   // passed directly, bypassing the store's normalisation) means no semantic
   // share, never NaN.
   const semanticInfluence = algorithm === 'custom' && Number.isFinite(customWeights.semanticInfluence) ? customWeights.semanticInfluence / 100 : 0;
-  const totalInfluence = externalInfluence + semanticInfluence;
+  const totalInfluence = discoveryInfluence + semanticInfluence;
   const scale = totalInfluence > 1 ? 1 / totalInfluence : 1;
-  const externalShare = externalInfluence * scale;
+  const discoveryShare = discoveryInfluence * scale;
   const semanticShare = semanticInfluence * scale;
-  // With zero semantic influence this is exactly the previous blend:
-  // (1 - externalShare) * personal + externalShare * external.
+  const personalShare = 1 - discoveryShare - semanticShare;
+  // Denominator fixed over enabled + registered sources, for every article alike.
+  const denominator = active.reduce((sum, [, weight]) => sum + weight, 0);
   const semanticRanks = semanticShare > 0 ? semanticRankScores(base, semanticScores) : null;
   return [...base].map((article, baseIndex) => {
     const personal = baseScore.get(article) ?? 0;
-    const signals = externalSignals[article.url];
-    // Articles with neither external signals nor a semantic rank keep the base
-    // score bit-for-bit, exactly as before the semantic blend existed.
-    if (!signals && !(semanticRanks && semanticRanks.has(article))) {
-      return { article, score: personal, baseIndex };
-    }
-    let external = personal;
-    if (signals) {
+    // D for all candidates, not only the fetched slice: a candidate without a
+    // fetched cohort (older than the acquisition cap, here to be re-fetched on
+    // the next page load) keeps its personal score — evidence absence is neutral.
+    let discovery = 0;
+    if (denominator > 0) {
+      const slots = externalEvidence[article.url];
       let weighted = 0;
-      let totalWeight = 0;
-      for (const [source, weight] of Object.entries(weights) as Array<[ExternalSignalSource, number]>) {
-        const value = signals[source];
-        if (value === null || value === undefined || !Number.isFinite(value)) continue;
-        weighted += weight * Math.max(0, Math.min(1, value));
-        totalWeight += weight;
+      if (slots) {
+        for (const [source, weight] of active) {
+          weighted += weight * evidenceBoost(slots[source]);
+        }
       }
-      // If every requested provider failed or was inapplicable, preserve the
-      // base rank exactly. Do not turn missing data into a popularity penalty.
-      external = totalWeight > 0 ? weighted / totalWeight : personal;
+      discovery = weighted / denominator;
     }
     // Missing semantic scores are neutral (the personal score), like missing
-    // external signals; a scored article's rank within the scored cohort is real.
+    // evidence states; a scored article's rank within the scored cohort is real.
     const semantic = semanticRanks?.get(article) ?? personal;
-    const score = (1 - externalShare - semanticShare) * personal + externalShare * external + semanticShare * semantic;
+    const score = personalShare * personal + semanticShare * semantic + discoveryShare * discovery;
     return { article, score, baseIndex };
   }).sort((a, b) => b.score - a.score || a.baseIndex - b.baseIndex).map(({ article }) => article);
 }
@@ -592,7 +720,7 @@ export function rankInterestingArticles(
   now = Date.now(),
   algorithm: InterestingAlgorithm = DEFAULT_INTERESTING_ALGORITHM,
   context: IntelligenceContext = {},
-  externalSignals: ExternalSignalsByUrl = {},
+  externalEvidence: ExternalEvidenceByUrl = {},
   customWeights: CustomInterestingWeights = DEFAULT_CUSTOM_INTERESTING_WEIGHTS,
   semanticScores: SemanticScoresByUrl = {},
 ): Article[] {
@@ -600,7 +728,7 @@ export function rankInterestingArticles(
     return rankWithSemanticScores(articles, feedback, now, context, semanticScores);
   }
   if (EXTERNAL_SIGNAL_WEIGHTS[algorithm] || algorithm === 'custom') {
-    return rankWithExternalSignals(articles, feedback, now, algorithm, context, externalSignals, customWeights, semanticScores);
+    return rankWithDiscoverySignals(articles, feedback, now, algorithm, context, externalEvidence, customWeights, semanticScores);
   }
   if (algorithm === 'current') return rankCurrent(articles, feedback, now);
   if (algorithm === 'intelligence-next') return rankIntelligenceNext(articles, feedback, now, context);
