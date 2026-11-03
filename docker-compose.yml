@@ -25,6 +25,11 @@ services:
       # - CACHE_SYNC_INTERVAL=15
       # Reach FreshRSS directly over the internal network instead of its public URL
       # - PROXY_REWRITES=https://rss.example.com=http://freshrss:80
+      # Opt-in external-signal experiments (see README, "External signals"):
+      # - GITHUB_TOKEN=ghp_xxx        # classic token, NO scopes; 60 → 5,000 req/h on api.github.com
+      # - GDELT_LANGUAGE_GUARD=on     # default; `off` disables the English-only guard
+      # - WIKIMEDIA_CONTACT=you@example.com  # Wikimedia etiquette identity; without it the
+      #                               #   Wikipedia pageviews signal stays unavailable
     volumes:
       - ./frirss-data:/app/data  # SQLite DB persisted here
     restart: unless-stopped
