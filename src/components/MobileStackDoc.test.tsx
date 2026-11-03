@@ -102,18 +102,25 @@ describe('MobileStackDoc (document-scrolling navigation stack)', () => {
     expect(hiddenBase).toBeTruthy();
     expect(scrollCalls.at(-1)).toEqual([0, 0]);
 
-    // Pop: capture the reader offset, freeze both layers, then restore.
+    // Pop: the base returns to live flow AT POP START — the list becomes the
+    // scrollable surface immediately, under the still-covering reader — and
+    // the saved position is restored in the same synchronous commit.
     window.scrollY = 311;
     view.rerender(<MobileStackDoc {...props} showOverlay={false} />);
 
-    // During 'popping' both layers are fixed; the base becomes a frozen
-    // snapshot at its saved offset.
-    expect(fixedAncestor(screen.getByTestId('base'))).toBeTruthy();
-    expect(fixedAncestor(screen.getByTestId('overlay'))).toBeTruthy();
+    // Base in flow (live), overlay fixed at the reader's own document offset.
+    expect(fixedAncestor(screen.getByTestId('base'))).toBeNull();
+    const poppingOverlay = fixedAncestor(screen.getByTestId('overlay'));
+    expect(poppingOverlay).toBeTruthy();
+    expect(poppingOverlay!.getAttribute('style')).toContain('calc(var(--frirss-chrome-top-h, 0px) - 311px)');
+    expect(poppingOverlay!.getAttribute('style')).not.toContain('overflow: clip');
+    // Restore happened synchronously with the pop render, not after a commit.
+    expect(scrollCalls.at(-1)).toEqual([0, 742]);
 
     await new Promise((r) => setTimeout(r, COMMIT_MS));
 
-    // List is back in flow, overlay unmounted, saved position restored.
+    // Slide end: overlay unmounted, base untouched in flow, nothing else
+    // re-scrolls (the list is already live where the user left it).
     expect(screen.getByTestId('base')).toBeTruthy();
     expect(fixedAncestor(screen.getByTestId('base'))).toBeNull();
     expect(screen.queryByTestId('overlay')).toBeNull();
@@ -133,6 +140,34 @@ describe('MobileStackDoc (document-scrolling navigation stack)', () => {
     view.rerender(<MobileStackDoc {...props} showOverlay={false} />);
     await new Promise((r) => setTimeout(r, COMMIT_MS));
     expect(document.documentElement.dataset.mobileStack).toBe('list');
+  });
+
+  it('keeps one stable DOM node per layer across phases (commits never re-mount subtrees)', async () => {
+    stageWindowScroll();
+    const props = stackProps();
+    const view = render(<MobileStackDoc {...props} showOverlay={false} />);
+
+    // The wrappers are style-hosts only — their identity must survive push,
+    // reading, pop and slide-out, or a commit would rebuild whole subtrees.
+    const baseBoxBefore = view.container.querySelector('[data-testid="base"]')!.parentElement!;
+
+    window.scrollY = 900;
+    view.rerender(<MobileStackDoc {...props} showOverlay />);
+    await new Promise((r) => setTimeout(r, COMMIT_MS));
+    const overlayBoxDuringRead = screen.getByTestId('overlay').parentElement!;
+
+    // A fast push→pop cycle wraps around before the slide ends: the reader
+    // wrapper keeps animating out while a new push begins on the same nodes.
+    window.scrollY = 120;
+    view.rerender(<MobileStackDoc {...props} showOverlay={false} />);
+    const overlayBoxDuringPop = screen.getByTestId('overlay').parentElement!;
+
+    await new Promise((r) => setTimeout(r, COMMIT_MS));
+    const baseBoxAfter = view.container.querySelector('[data-testid="base"]')!.parentElement!;
+
+    expect(baseBoxAfter).toBe(baseBoxBefore);
+    expect(baseBoxBefore.getAttribute('style')).not.toContain('display: none');
+    expect(overlayBoxDuringPop).toBe(overlayBoxDuringRead);
   });
 
   it('respects prefers-reduced-motion: same commits, no transition styles', async () => {
