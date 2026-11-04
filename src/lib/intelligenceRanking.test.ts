@@ -3,12 +3,16 @@ import type { Article } from '../types';
 import type { ArticleFeedback } from '../api/intelligence';
 import {
   DEFAULT_CUSTOM_INTERESTING_WEIGHTS,
+  externalSourcesForAlgorithm,
   DEFAULT_INTERESTING_ALGORITHM,
   INTERESTING_ALGORITHMS,
   isInterestingAlgorithm,
+  legacySignalsToEvidence,
   needsSemanticScores,
   normalizeCustomInterestingWeights,
   rankInterestingArticles,
+  type CustomInterestingWeights,
+  type ExternalEvidenceByUrl,
   type ExternalSignalSource,
   type SemanticScoresByUrl,
 } from './intelligenceRanking';
@@ -25,32 +29,38 @@ const feedback = (title: string, summary: string, vote: 1 | -1): ArticleFeedback
   articleId: 'voted', url: '', title, summary, content: '', sourceId: 'feed/1', vote,
 });
 
+/** Evidence builder: measured boosts for the given sources, nothing elsewhere. */
+function measured(evidence: Record<string, Partial<Record<ExternalSignalSource, number>>>): ExternalEvidenceByUrl {
+  return Object.fromEntries(Object.entries(evidence).map(([url, slots]) => [url,
+    Object.fromEntries(Object.entries(slots).map(([source, value]) => [source, { state: 'measured', value }]))]));
+}
+
 describe('rankInterestingArticles', () => {
   it('recognizes the Custom algorithm', () => {
     expect(isInterestingAlgorithm('custom')).toBe(true);
     expect(INTERESTING_ALGORITHMS.some((item) => item.value === 'custom')).toBe(true);
   });
 
-  it('keeps the Intelligence Next order when custom external influence is zero', () => {
+  it('keeps the Intelligence Next order when custom discovery influence is zero', () => {
     const first = article('first', 'AI systems', 'Research on AI');
     const second = article('second', 'Gardening', 'Growing vegetables');
-    const weights = { externalInfluence: 0, semanticInfluence: 0, sources: { gdelt: 100, github: 0, hackerNews: 0, lobsters: 0 } };
+    const weights = { externalInfluence: 0, semanticInfluence: 0, sources: { consensus: 100, googleTrends: 0, wikipedia: 0, gdelt: 0, github: 0, hackerNews: 0, lobsters: 0 } };
     const base = rankInterestingArticles([first, second], [], Date.now(), 'intelligence-next');
-    const custom = rankInterestingArticles([first, second], [], Date.now(), 'custom', {}, {
-      [first.url]: { gdelt: 0, github: null, hackerNews: null, lobsters: null },
-      [second.url]: { gdelt: 1, github: null, hackerNews: null, lobsters: null },
-    }, weights);
+    const custom = rankInterestingArticles([first, second], [], Date.now(), 'custom', {}, measured({
+      [first.url]: { consensus: 0 },
+      [second.url]: { consensus: 1 },
+    }), weights);
     expect(custom.map((item) => item.id)).toEqual(base.map((item) => item.id));
   });
 
-  it('allows external signals to fully determine the custom ranking at 100 percent', () => {
+  it('lets measured evidence fully determine the custom ranking at 100 percent', () => {
     const first = article('first', 'AI systems', 'Research on AI');
     const second = article('second', 'Gardening', 'Growing vegetables');
-    const weights = { externalInfluence: 100, semanticInfluence: 0, sources: { gdelt: 100, github: 0, hackerNews: 0, lobsters: 0 } };
-    const custom = rankInterestingArticles([first, second], [], Date.now(), 'custom', {}, {
-      [first.url]: { gdelt: 0, github: null, hackerNews: null, lobsters: null },
-      [second.url]: { gdelt: 1, github: null, hackerNews: null, lobsters: null },
-    }, weights);
+    const weights = { externalInfluence: 100, semanticInfluence: 0, sources: { consensus: 100, googleTrends: 0, wikipedia: 0, gdelt: 0, github: 0, hackerNews: 0, lobsters: 0 } };
+    const custom = rankInterestingArticles([first, second], [], Date.now(), 'custom', {}, measured({
+      [first.url]: { consensus: 0 },
+      [second.url]: { consensus: 1 },
+    }), weights);
     expect(custom[0].id).toBe('second');
   });
 
@@ -348,31 +358,27 @@ describe('algorithm registry and selection contract', () => {
     for (const value of ['', 'Current', 'intelligence', null, undefined, 3]) expect(isInterestingAlgorithm(value)).toBe(false);
   });
 
-  it('uses Intelligence Next as the base and lets available external evidence change nearby ranks', () => {
+  it('uses Intelligence Next as the base and lets measured evidence change nearby ranks (I5)', () => {
     const now = Date.UTC(2026, 9, 15);
     const items = Array.from({ length: 10 }, (_, index) =>
       article(String(index), `Article ${index}`, `Distinct topic ${index}`, now));
     const baseline = rankInterestingArticles(items, [], now, 'intelligence-next').map((item) => item.id);
     const boostedId = baseline[5];
     const neighborId = baseline[4];
-    const signals = Object.fromEntries(items.map((item) => [item.url, {
-      gdelt: item.id === boostedId ? 1 : 0,
-      github: null,
-      hackerNews: null,
-      lobsters: null,
-    }]));
-    const ranked = rankInterestingArticles(items, [], now, 'gdelt', {}, signals).map((item) => item.id);
+    const evidence = measured({ [items.find((item) => item.id === boostedId)!.url]: { gdelt: 1 } });
+    const ranked = rankInterestingArticles(items, [], now, 'gdelt', {}, evidence).map((item) => item.id);
     expect(ranked.indexOf(boostedId)).toBeLessThan(ranked.indexOf(neighborId));
   });
 
-  it('treats unavailable external providers as neutral', () => {
+  it('treats unavailable external providers as neutral (I1/I4)', () => {
     const now = Date.UTC(2026, 9, 15);
     const items = [article('a', 'First article', 'Topic A', now), article('b', 'Second article', 'Topic B', now)];
     const baseline = rankInterestingArticles(items, [], now, 'intelligence-next').map((item) => item.id);
-    const signals = Object.fromEntries(items.map((item) => [item.url, {
-      gdelt: null, github: null, hackerNews: null, lobsters: null,
-    }]));
-    expect(rankInterestingArticles(items, [], now, 'all-four', {}, signals).map((item) => item.id)).toEqual(baseline);
+    const unavailable = Object.fromEntries(items.map((item) => [item.url, {
+      gdelt: { state: 'unavailable' }, github: { state: 'not-applicable' },
+      hackerNews: { state: 'none' }, lobsters: { state: 'unavailable' },
+    }])) as ExternalEvidenceByUrl;
+    expect(rankInterestingArticles(items, [], now, 'all-four', {}, unavailable).map((item) => item.id)).toEqual(baseline);
   });
 
   it('existing algorithms ignore the Intelligence Next context entirely', () => {
@@ -448,35 +454,39 @@ describe('soft-balanced-margin (semantic) method', () => {
   });
 });
 
-describe('semantic influence in Custom', () => {
+describe('discovery blend in Custom', () => {
   const now = Date.parse('2026-01-15T12:00:00Z');
   const context: IntelligenceContext = {};
 
-  /** Verbatim replica of the pre-change Custom blend, for the regression proof. */
+  /**
+   * Verbatim replica of the pre-rework Custom blend. With the rework the
+   * blend is boost-space with a fixed denominator (§4.3), which differs from
+   * the legacy behaviour exactly where evidence is missing or inapplicable —
+   * the two agree when every requested source is measured on every article.
+   */
   function legacyCustomRank(
     input: Article[],
-    feedback: ArticleFeedback[],
-    externalSignals: Record<string, { gdelt: number | null; github: number | null; hackerNews: number | null; lobsters: number | null }>,
-    customWeights: { externalInfluence: number; sources: Record<string, number> },
+    rankingFeedback: ArticleFeedback[],
+    evidenceValues: Record<string, Record<ExternalSignalSource, number>>,
+    customWeights: { externalInfluence: number; sources: Record<ExternalSignalSource, number> },
   ): Article[] {
-    const base = rankIntelligenceNext(input, feedback, now, context);
+    const base = rankIntelligenceNext(input, rankingFeedback, now, context);
     if (base.length < 2) return base;
-    const baseScore = new Map(base.map((article, index) => [article, (base.length - index - 1) / (base.length - 1)]));
-    return [...base].map((article, baseIndex) => {
-      const personal = baseScore.get(article) ?? 0;
-      const signals = externalSignals[article.url];
-      if (!signals) return { article, score: personal, baseIndex };
+    const baseScore = new Map(base.map((entry, index) => [entry, (base.length - index - 1) / (base.length - 1)]));
+    return [...base].map((entry, baseIndex) => {
+      const personal = baseScore.get(entry) ?? 0;
+      const values = evidenceValues[entry.url];
       let weighted = 0;
       let totalWeight = 0;
       for (const [source, weight] of Object.entries(customWeights.sources) as Array<[ExternalSignalSource, number]>) {
-        const value = signals[source];
+        const value = values?.[source];
         if (value === null || value === undefined || !Number.isFinite(value)) continue;
         weighted += weight * Math.max(0, Math.min(1, value));
         totalWeight += weight;
       }
       const external = totalWeight > 0 ? weighted / totalWeight : personal;
       const influence = customWeights.externalInfluence / 100;
-      return { article, score: (1 - influence) * personal + influence * external, baseIndex };
+      return { article: entry, score: (1 - influence) * personal + influence * external, baseIndex };
     }).sort((a, b) => b.score - a.score || a.baseIndex - b.baseIndex).map(({ article }) => article);
   }
 
@@ -488,57 +498,197 @@ describe('semantic influence in Custom', () => {
     article('e', 'Quantum sensor research', 'Trap ion clock stability', now - 500_000),
   ];
   const votes = [feedback('Rust compiler', 'borrow checker', 1), feedback('Stock market', 'bond yields', -1)];
-  const signals = {
-    'https://example.test/a': { gdelt: 0.9, github: 0, hackerNews: 0, lobsters: 0 },
-    'https://example.test/b': { gdelt: null, github: null, hackerNews: null, lobsters: null },
-    'https://example.test/c': { gdelt: 0.2, github: 0, hackerNews: 0, lobsters: 0 },
-    'https://example.test/d': { gdelt: 0.5, github: 0, hackerNews: 0, lobsters: 0 },
-    // e has no entry at all (lookup failed).
+  const evidence = measured({
+    'https://example.test/a': { consensus: 0.9 },
+    'https://example.test/b': { consensus: 0.0 },
+    'https://example.test/c': { consensus: 0.2 },
+    'https://example.test/d': { consensus: 0.5 },
+    // e has no entry at all (acquisition never asked for it).
+  });
+  const allMeasured: Record<string, Record<ExternalSignalSource, number>> = {
+    'https://example.test/a': { consensus: 0.9, github: 0, hackerNews: 0, lobsters: 0, gdelt: 0, wikipedia: 0, googleTrends: 0 },
+    'https://example.test/b': { consensus: 0, github: 0, hackerNews: 0, lobsters: 0, gdelt: 0, wikipedia: 0, googleTrends: 0 },
+    'https://example.test/c': { consensus: 0.2, github: 0, hackerNews: 0, lobsters: 0, gdelt: 0, wikipedia: 0, googleTrends: 0 },
+    'https://example.test/d': { consensus: 0.5, github: 0, hackerNews: 0, lobsters: 0, gdelt: 0, wikipedia: 0, googleTrends: 0 },
+    'https://example.test/e': { consensus: 0.3, github: 0, hackerNews: 0, lobsters: 0, gdelt: 0, wikipedia: 0, googleTrends: 0 },
   };
-  const weights = { externalInfluence: 25, semanticInfluence: 0, sources: { gdelt: 100, github: 0, hackerNews: 0, lobsters: 0 } };
+  const weights: CustomInterestingWeights = {
+    externalInfluence: 25, semanticInfluence: 0, v: 2,
+    sources: { consensus: 100, googleTrends: 0, wikipedia: 0, gdelt: 0, github: 0, hackerNews: 0, lobsters: 0 },
+  };
 
-  it('produces exactly the legacy Custom ordering at 0% semantic influence', () => {
-    const legacy = legacyCustomRank(items, votes, signals, weights);
-    const current = rankInterestingArticles(items, votes, now, 'custom', context, signals, weights);
+  it('produces exactly the legacy Custom ordering when every requested source is measured everywhere', () => {
+    const legacy = legacyCustomRank(items, votes, allMeasured, { externalInfluence: weights.externalInfluence, sources: { consensus: 100, googleTrends: 0, wikipedia: 0, gdelt: 0, github: 0, hackerNews: 0, lobsters: 0 } });
+    const current = rankInterestingArticles(items, votes, now, 'custom', context, measured(allMeasured), weights);
     expect(current.map((item) => item.id)).toEqual(legacy.map((item) => item.id));
   });
 
   it('is untouched by semantic score values while semantic influence is 0', () => {
     const junkScores = Object.fromEntries(items.map((item, index) => [item.url, index % 2 ? 1 : -1]));
-    const without = rankInterestingArticles(items, votes, now, 'custom', context, signals, weights);
-    const withJunk = rankInterestingArticles(items, votes, now, 'custom', context, signals, weights, junkScores);
+    const without = rankInterestingArticles(items, votes, now, 'custom', context, evidence, weights);
+    const withJunk = rankInterestingArticles(items, votes, now, 'custom', context, evidence, weights, junkScores);
     expect(withJunk.map((item) => item.id)).toEqual(without.map((item) => item.id));
   });
 
   it('changes the ordering once semantic influence is non-zero', () => {
     const semanticScores = { 'https://example.test/e': 0.99, 'https://example.test/a': 0.1 };
     const weightsWithSemantic = { ...weights, semanticInfluence: 60 };
-    const ranked = rankInterestingArticles(items, votes, now, 'custom', context, signals, weightsWithSemantic, semanticScores);
-    const withoutSemantic = rankInterestingArticles(items, votes, now, 'custom', context, signals, weights);
+    const ranked = rankInterestingArticles(items, votes, now, 'custom', context, evidence, weightsWithSemantic, semanticScores);
+    const withoutSemantic = rankInterestingArticles(items, votes, now, 'custom', context, evidence, weights);
     expect(ranked.map((item) => item.id)).not.toEqual(withoutSemantic.map((item) => item.id));
     // At a full semantic share the ordering IS the semantic rank order.
     const fullSemantic = { ...weights, externalInfluence: 0, semanticInfluence: 100 };
     const allScores = { 'https://example.test/e': 0.99, 'https://example.test/b': 0.5, 'https://example.test/c': 0.3, 'https://example.test/d': 0.2, 'https://example.test/a': 0.1 };
-    expect(rankInterestingArticles(items, votes, now, 'custom', context, signals, fullSemantic, allScores).map((item) => item.id))
+    expect(rankInterestingArticles(items, votes, now, 'custom', context, evidence, fullSemantic, allScores).map((item) => item.id))
       .toEqual(['e', 'b', 'c', 'd', 'a']);
   });
 
-  it('rescales external and semantic shares proportionally when they exceed 100%', () => {
+  it('rescales discovery and semantic shares proportionally when they exceed 100%', () => {
     const semanticScores = { 'https://example.test/a': 0.99 };
     const overshooting = { ...weights, externalInfluence: 100, semanticInfluence: 100 };
-    const ranked = rankInterestingArticles(items, votes, now, 'custom', context, signals, overshooting, semanticScores);
+    const ranked = rankInterestingArticles(items, votes, now, 'custom', context, evidence, overshooting, semanticScores);
     // 50/50 after rescaling: the article with the top semantic score and a top
-    // external signal should surface; nothing may NaN or vanish.
+    // consensus boost should surface; nothing may NaN or vanish.
     expect(ranked).toHaveLength(items.length);
     expect(new Set(ranked).size).toBe(items.length);
     expect(ranked[0].id).toBe('a');
   });
 
-  it('keeps custom external influence 0 equal to plain Intelligence Next', () => {
+  it('keeps custom discovery influence 0 equal to plain Intelligence Next', () => {
     const zeroExternal = { ...weights, externalInfluence: 0 };
     const base = rankInterestingArticles(items, votes, now, 'intelligence-next');
-    expect(rankInterestingArticles(items, votes, now, 'custom', context, signals, zeroExternal).map((item) => item.id))
+    expect(rankInterestingArticles(items, votes, now, 'custom', context, evidence, zeroExternal).map((item) => item.id))
       .toEqual(base.map((item) => item.id));
+  });
+});
+
+describe('discovery blend invariants (rework §4.4)', () => {
+  const now = Date.parse('2026-01-15T12:00:00Z');
+  const context: IntelligenceContext = {};
+  const items = Array.from({ length: 8 }, (_, index) =>
+    article(String(index), `Article ${index} distinct topic`, `Summary ${index}`, now - index * 600_000));
+  const votes: ArticleFeedback[] = [];
+  const weights: CustomInterestingWeights = {
+    externalInfluence: 30, semanticInfluence: 0, v: 2,
+    sources: { consensus: 40, googleTrends: 0, wikipedia: 0, gdelt: 0, github: 20, hackerNews: 20, lobsters: 20 },
+  };
+
+  it('I1: all providers down (nothing measured) reproduces Intelligence Next exactly', () => {
+    const base = rankInterestingArticles(items, votes, now, 'intelligence-next', context).map((item) => item.id);
+    const evidence = Object.fromEntries(items.map((item) => [item.url, {
+      consensus: { state: 'unavailable' }, github: { state: 'none' },
+      hackerNews: { state: 'unavailable' }, lobsters: { state: 'not-applicable' },
+    }])) as ExternalEvidenceByUrl;
+    expect(rankInterestingArticles(items, votes, now, 'custom', context, evidence, weights).map((item) => item.id)).toEqual(base);
+  });
+
+  it('I2: a source with all-zero boosts has no effect at any weight', () => {
+    const zero = measured(Object.fromEntries(items.map((item) => [item.url, { consensus: 0 }])));
+    const base = rankInterestingArticles(items, votes, now, 'custom', context, zero, weights);
+    const heavy = { ...weights, sources: { ...weights.sources, consensus: 100 } };
+    expect(rankInterestingArticles(items, votes, now, 'custom', context, zero, heavy).map((item) => item.id))
+      .toEqual(base.map((item) => item.id));
+  });
+
+  it('I3: changing a source weight reorders articles whose boosts disagree', () => {
+    // Two textually identical articles at full discovery influence: the
+    // weighted boost mix alone decides the order between them.
+    const twinA = article('twin-a', 'Identical headline', 'Identical summary', now);
+    const twinB = article('twin-b', 'Identical headline', 'Identical summary', now);
+    const evidence = measured({
+      [twinA.url]: { consensus: 0.1, github: 0.9 },
+      [twinB.url]: { consensus: 0.9, github: 0.1 },
+    });
+    const consensusHeavy: CustomInterestingWeights = { externalInfluence: 100, semanticInfluence: 0, v: 2, sources: { ...weights.sources, consensus: 90, github: 10 } };
+    const githubHeavy: CustomInterestingWeights = { externalInfluence: 100, semanticInfluence: 0, v: 2, sources: { ...weights.sources, consensus: 10, github: 90 } };
+    const first = rankInterestingArticles([twinA, twinB], votes, now, 'custom', context, evidence, consensusHeavy).map((item) => item.id);
+    const second = rankInterestingArticles([twinA, twinB], votes, now, 'custom', context, evidence, githubHeavy).map((item) => item.id);
+    expect(first[0]).toBe('twin-b');
+    expect(second[0]).toBe('twin-a');
+  });
+
+  it('I4: absent evidence is neutral — unavailable/none/not-applicable/missing all score identically', () => {
+    const nothing = rankInterestingArticles(items, votes, now, 'custom', context, {}, weights);
+    const absent: ExternalEvidenceByUrl = Object.fromEntries(items.map((item) => [item.url, {
+      consensus: { state: 'unavailable' }, github: { state: 'not-applicable' }, hackerNews: { state: 'none' },
+    }]));
+    const withAbsent = rankInterestingArticles(items, votes, now, 'custom', context, absent, weights);
+    expect(withAbsent.map((item) => item.id)).toEqual(nothing.map((item) => item.id));
+  });
+
+  it('I5: one measured article moves up even as the only match in the cohort', () => {
+    // Two tied twins; exactly one carries measured evidence. At full
+    // discovery influence the boost alone decides (at lower e the boost must
+    // also overcome the personal-score gap, which is the blend doing its job).
+    const twinA = article('twin-a', 'Twin headline', 'Twin summary', now);
+    const twinB = article('twin-b', 'Twin headline', 'Twin summary', now);
+    const base = rankInterestingArticles([twinA, twinB], votes, now, 'custom', context, {}, weights).map((item) => item.id);
+    expect(base[0]).toBe('twin-a'); // tie keeps base order
+    const fullDiscovery = { ...weights, externalInfluence: 100 };
+    const lone = measured({ [twinB.url]: { consensus: 0.1 } });
+    const ranked = rankInterestingArticles([twinA, twinB], votes, now, 'custom', context, lone, fullDiscovery).map((item) => item.id);
+    expect(ranked[0]).toBe('twin-b');
+  });
+
+  it('I6: s = 0 and e = 0 leave the ordering; e + s > 1 rescales proportionally', () => {
+    const evidence = measured({
+      [items[0].url]: { consensus: 1 },
+      [items[1].url]: { consensus: 0.5 },
+    });
+    const semanticScores = Object.fromEntries(items.map((item, index) => [item.url, index / items.length]));
+    const plain = rankInterestingArticles(items, votes, now, 'custom', context, evidence, weights).map((item) => item.id);
+    const overshoot = { ...weights, externalInfluence: 70, semanticInfluence: 70 };
+    const rescaled = rankInterestingArticles(items, votes, now, 'custom', context, evidence, overshoot, semanticScores);
+    // Rescaled 50/50: every article's score is 0.5·P + 0.5·Sem + 0·D — the
+    // semantic rank decides; nothing NaNs and all candidates survive.
+    expect(rescaled).toHaveLength(items.length);
+    expect(new Set(rescaled).size).toBe(items.length);
+    // s = 0, e = 0: exactly the personal order.
+    const zeros = { ...weights, externalInfluence: 0, semanticInfluence: 0 };
+    expect(rankInterestingArticles(items, votes, now, 'custom', context, evidence, zeros).map((item) => item.id))
+      .toEqual(rankInterestingArticles(items, votes, now, 'intelligence-next', context).map((item) => item.id));
+    void plain;
+  });
+
+  it('I7: identical inputs give an identical order, ties keep base order', () => {
+    const evidence = measured({ [items[2].url]: { consensus: 0.4 }, [items[3].url]: { consensus: 0.4 } });
+    const first = rankInterestingArticles(items, votes, now, 'custom', context, evidence, weights).map((item) => item.id);
+    const second = rankInterestingArticles(items, votes, now, 'custom', context, evidence, weights).map((item) => item.id);
+    expect(first).toEqual(second);
+    // A zero-weight source never changes ties or anything else.
+    const withExtra = { ...weights, sources: { ...weights.sources, wikipedia: 50 } };
+    expect(rankInterestingArticles(items, votes, now, 'custom', context, evidence, withExtra).map((item) => item.id))
+      .toEqual(first);
+  });
+
+  it('unregistered sources (googleTrends, not yet implemented) are absent from the denominator', () => {
+    // googleTrends weight does not change the scale of the other sources.
+    const evidence = measured({ [items[0].url]: { github: 1 } });
+    const without = rankInterestingArticles(items, votes, now, 'custom', context, evidence, weights).map((item) => item.id);
+    const trendsWeighted = { ...weights, sources: { ...weights.sources, googleTrends: 80 } };
+    expect(rankInterestingArticles(items, votes, now, 'custom', context, evidence, trendsWeighted).map((item) => item.id))
+      .toEqual(without);
+  });
+});
+
+describe('legacy v1 signal conversion', () => {
+  it('maps the four numeric-or-null slots to evidence states', () => {
+    const evidence = legacySignalsToEvidence({
+      'https://example.test/a': { gdelt: 0.4, github: 0.7, hackerNews: 0, lobsters: 0.2 },
+      'https://example.test/b': { gdelt: 0, github: null, hackerNews: null, lobsters: null },
+    });
+    expect(evidence['https://example.test/a']).toEqual({
+      gdelt: { state: 'measured', value: 0.4 },
+      github: { state: 'measured', value: 0.7 },
+      hackerNews: { state: 'none' },
+      lobsters: { state: 'measured', value: 0.2 },
+    });
+    expect(evidence['https://example.test/b']).toEqual({
+      gdelt: { state: 'measured', value: 0 },
+      github: { state: 'not-applicable' },
+      hackerNews: { state: 'unavailable' },
+      lobsters: { state: 'unavailable' },
+    });
   });
 });
 
@@ -554,7 +704,16 @@ describe('needsSemanticScores', () => {
 });
 
 describe('normalizeCustomInterestingWeights backward compatibility', () => {
-  it('defaults missing semanticInfluence to 0 for weights stored before the field existed', () => {
+  it('migrates untouched legacy defaults to the discovery defaults, stamped v2', () => {
+    const normalized = normalizeCustomInterestingWeights({
+      externalInfluence: 25,
+      sources: { gdelt: 40, github: 20, hackerNews: 25, lobsters: 15 },
+    });
+    expect(normalized).toEqual(DEFAULT_CUSTOM_INTERESTING_WEIGHTS);
+    expect(normalized.v).toBe(2);
+  });
+
+  it('keeps customised values and fills only the new source keys', () => {
     const normalized = normalizeCustomInterestingWeights({
       externalInfluence: 40,
       sources: { gdelt: 50, github: 10, hackerNews: 30, lobsters: 10 },
@@ -562,13 +721,40 @@ describe('normalizeCustomInterestingWeights backward compatibility', () => {
     expect(normalized).toEqual({
       externalInfluence: 40,
       semanticInfluence: 0,
+      v: 2,
+      sources: {
+        consensus: 40, googleTrends: 25, wikipedia: 15,
+        github: 10, hackerNews: 30, lobsters: 10, gdelt: 50,
+      },
+    });
+  });
+
+  it('already-migrated weights (v: 2) pass through normalization unchanged', () => {
+    const weights = DEFAULT_CUSTOM_INTERESTING_WEIGHTS;
+    expect(normalizeCustomInterestingWeights(weights)).toEqual(weights);
+  });
+
+  it('defaults missing semanticInfluence to 0 for weights stored before the field existed', () => {
+    const normalized = normalizeCustomInterestingWeights({
+      externalInfluence: 40,
       sources: { gdelt: 50, github: 10, hackerNews: 30, lobsters: 10 },
     });
+    expect(normalized.semanticInfluence).toBe(0);
   });
 
   it('clamps out-of-range semantic influence', () => {
     expect(normalizeCustomInterestingWeights({ semanticInfluence: 250 }).semanticInfluence).toBe(100);
     expect(normalizeCustomInterestingWeights({ semanticInfluence: -5 }).semanticInfluence).toBe(0);
     expect(normalizeCustomInterestingWeights({ semanticInfluence: 'x' }).semanticInfluence).toBe(0);
+  });
+
+  it('externalSourcesForAlgorithm returns registered sources with weight above zero only', () => {
+    const sources = externalSourcesForAlgorithm('custom', {
+      v: 2, externalInfluence: 25, semanticInfluence: 0,
+      sources: { consensus: 40, googleTrends: 80, wikipedia: 15, github: 8, hackerNews: 7, lobsters: 5, gdelt: 0 },
+    });
+    expect(sources).not.toContain('googleTrends');
+    expect(sources).toContain('consensus');
+    expect(sources).not.toContain('gdelt'); // default weight 0
   });
 });

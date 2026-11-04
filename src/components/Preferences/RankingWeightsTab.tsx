@@ -1,18 +1,27 @@
 import { useTranslation } from 'react-i18next';
+import { useShallow } from 'zustand/react/shallow';
 import { useUiStore } from '../../stores/uiStore';
-import { DEFAULT_CUSTOM_INTERESTING_WEIGHTS, type ExternalSignalSource } from '../../lib/intelligenceRanking';
+import { useDiscoveryCoverageStore } from '../../stores/discoveryCoverageStore';
+import {
+  DEFAULT_CUSTOM_INTERESTING_WEIGHTS, EXTERNAL_SOURCE_ORDER, REGISTERED_EXTERNAL_SOURCES,
+  type ExternalSignalSource,
+} from '../../lib/intelligenceRanking';
 
-const SOURCES: Array<{ key: ExternalSignalSource; label: string; description: string }> = [
-  { key: 'gdelt', label: 'GDELT', description: 'Breadth of recent news coverage' },
-  { key: 'github', label: 'GitHub', description: 'Repository traction and recent activity' },
-  { key: 'hackerNews', label: 'Hacker News', description: 'Interest in the Hacker News community' },
-  { key: 'lobsters', label: 'Lobsters', description: 'Interest in the Lobsters community' },
-];
+const SOURCE_LABELS: Record<ExternalSignalSource, string> = {
+  consensus: 'Publisher consensus',
+  googleTrends: 'Google Trends',
+  wikipedia: 'Wikipedia',
+  github: 'GitHub',
+  hackerNews: 'Hacker News',
+  lobsters: 'Lobsters',
+  gdelt: 'GDELT',
+};
 
 export default function RankingWeightsTab() {
   const { t } = useTranslation();
   const weights = useUiStore((s) => s.interestingRankingWeights);
   const setWeights = useUiStore((s) => s.setInterestingRankingWeights);
+  const coverage = useDiscoveryCoverageStore(useShallow((s) => ({ measured: s.measured, candidates: s.candidates })));
   const fieldClass = 'w-20 rounded-lg px-2 py-1.5 text-sm text-right outline-none';
   const fieldStyle = { background: 'var(--panel-header-bg)', color: 'var(--list-title)', border: '1px solid var(--panel-border)' };
 
@@ -35,26 +44,27 @@ export default function RankingWeightsTab() {
         <div className="flex items-center justify-between gap-3">
           <div>
             <label htmlFor="ranking-external-influence" className="text-sm font-medium" style={{ color: 'var(--list-title)' }}>
-              {t('preferences.rankingWeights.externalInfluence', 'External influence')}
+              {t('preferences.rankingWeights.discoveryInfluence', 'Discovery influence')}
             </label>
             <p className="text-xs mt-1" style={{ color: 'var(--list-summary)' }}>
-              {t('preferences.rankingWeights.externalInfluenceHelp', 'The share of the final ranking score driven by external signals.')}
+              {t('preferences.rankingWeights.discoveryInfluenceHelp', 'The share of the final ranking score driven by discovery evidence. Absent evidence is neutral: an article never drops because a provider was unreachable.')}
             </p>
           </div>
           <div className="flex items-center gap-1.5 shrink-0">
             <input id="ranking-external-influence-number" type="number" min={0} max={100} step={5} value={weights.externalInfluence}
               onChange={(e) => setWeights({ ...weights, externalInfluence: Number(e.target.value) })}
-              aria-label={t('preferences.rankingWeights.externalInfluence', 'External influence')}
+              aria-label={t('preferences.rankingWeights.discoveryInfluence', 'Discovery influence')}
               className={fieldClass} style={fieldStyle} />
             <span className="text-sm" style={{ color: 'var(--list-summary)' }}>%</span>
           </div>
         </div>
         <input id="ranking-external-influence" type="range" min={0} max={100} step={5} value={weights.externalInfluence}
           onChange={(e) => setWeights({ ...weights, externalInfluence: Number(e.target.value) })}
-          aria-label={t('preferences.rankingWeights.externalInfluence', 'External influence')}
+          aria-label={t('preferences.rankingWeights.discoveryInfluence', 'Discovery influence')}
           className="w-full accent-[var(--accent)]" />
         <div className="flex justify-between text-xs" style={{ color: 'var(--list-summary)' }}>
-          <span>0% · Personal relevance only</span><span>100% · External signals only</span>
+          <span>{t('preferences.rankingWeights.discoveryZero', '0% · Personal relevance only')}</span>
+          <span>{t('preferences.rankingWeights.discoveryFull', '100% · Discovery only')}</span>
         </div>
       </section>
 
@@ -81,38 +91,59 @@ export default function RankingWeightsTab() {
           aria-label={t('preferences.rankingWeights.semanticInfluence', 'Semantic influence')}
           className="w-full accent-[var(--accent)]" />
         <div className="flex justify-between text-xs" style={{ color: 'var(--list-summary)' }}>
-          <span>0% · No semantic influence</span><span>100% · Semantic scores only</span>
+          <span>{t('preferences.rankingWeights.semanticZero', '0% · No semantic influence')}</span>
+          <span>{t('preferences.rankingWeights.semanticFull', '100% · Semantic scores only')}</span>
         </div>
       </section>
 
       <section className="space-y-4">
         <div>
           <h4 className="text-sm font-semibold" style={{ color: 'var(--list-title)' }}>
-            {t('preferences.rankingWeights.sourcesTitle', 'External source weights')}
+            {t('preferences.rankingWeights.sourcesTitle', 'Discovery source weights')}
           </h4>
           <p className="text-xs mt-1 leading-relaxed" style={{ color: 'var(--list-summary)' }}>
             {t('preferences.rankingWeights.sourcesHelp', 'These weights set the relative mix between sources. They are normalized automatically, so they do not need to add up to 100%. Set a source to 0% to exclude it.')}
           </p>
         </div>
-        {SOURCES.map((source) => (
-          <div key={source.key} className="space-y-2">
-            <div className="flex items-center justify-between gap-3">
-              <div className="min-w-0">
-                <label htmlFor={`ranking-source-${source.key}`} className="text-sm font-medium" style={{ color: 'var(--list-title)' }}>{source.label}</label>
-                <p className="text-xs mt-0.5" style={{ color: 'var(--list-summary)' }}>{source.description}</p>
+        {EXTERNAL_SOURCE_ORDER.map((source) => {
+          const registered = REGISTERED_EXTERNAL_SOURCES.has(source);
+          const measuredCount = coverage.measured[source] ?? 0;
+          return (
+            <div key={source} className="space-y-2">
+              <div className="flex items-center justify-between gap-3">
+                <div className="min-w-0">
+                  <label htmlFor={`ranking-source-${source}`} className="text-sm font-medium" style={{ color: 'var(--list-title)' }}>
+                    {t(`preferences.rankingWeights.source.${source}`, SOURCE_LABELS[source])}
+                  </label>
+                  <p className="text-xs mt-0.5" style={{ color: 'var(--list-summary)' }}>
+                    {t(`preferences.rankingWeights.sourceHelp.${source}`, '')}
+                  </p>
+                  {!registered && (
+                    <p className="text-xs mt-0.5 italic" style={{ color: 'var(--list-summary)' }}>
+                      {t('preferences.rankingWeights.sourceNotConnected', 'Not connected yet — ignored until it ships.')}
+                    </p>
+                  )}
+                  {registered && coverage.candidates > 0 && (
+                    <p className="text-xs mt-0.5" style={{ color: 'var(--list-summary)', ...(measuredCount === 0 ? { opacity: 0.7 } : {}) }}>
+                      {measuredCount === 0
+                        ? t('preferences.rankingWeights.coverageNone', 'No measured evidence in the current cohort yet.')
+                        : t('preferences.rankingWeights.coverage', '{{measured}} of {{candidates}} candidates measured', { measured: measuredCount, candidates: coverage.candidates })}
+                    </p>
+                  )}
+                </div>
+                <div className="flex items-center gap-1.5 shrink-0">
+                  <input type="number" min={0} max={100} step={5} value={weights.sources[source]}
+                    onChange={(e) => updateSource(source, Number(e.target.value))}
+                    aria-label={`${SOURCE_LABELS[source]} weight`} className={fieldClass} style={fieldStyle} />
+                  <span className="text-sm" style={{ color: 'var(--list-summary)' }}>%</span>
+                </div>
               </div>
-              <div className="flex items-center gap-1.5 shrink-0">
-                <input type="number" min={0} max={100} step={5} value={weights.sources[source.key]}
-                  onChange={(e) => updateSource(source.key, Number(e.target.value))}
-                  aria-label={`${source.label} weight`} className={fieldClass} style={fieldStyle} />
-                <span className="text-sm" style={{ color: 'var(--list-summary)' }}>%</span>
-              </div>
+              <input id={`ranking-source-${source}`} type="range" min={0} max={100} step={5} value={weights.sources[source]}
+                onChange={(e) => updateSource(source, Number(e.target.value))}
+                aria-label={`${SOURCE_LABELS[source]} weight`} className="w-full accent-[var(--accent)]" />
             </div>
-            <input id={`ranking-source-${source.key}`} type="range" min={0} max={100} step={5} value={weights.sources[source.key]}
-              onChange={(e) => updateSource(source.key, Number(e.target.value))}
-              aria-label={`${source.label} weight`} className="w-full accent-[var(--accent)]" />
-          </div>
-        ))}
+          );
+        })}
       </section>
 
       <div className="flex items-center justify-between gap-3 pt-3" style={{ borderTop: '1px solid var(--panel-border)' }}>

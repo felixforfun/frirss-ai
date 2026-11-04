@@ -680,6 +680,32 @@ export default function ReadingPane({ showBack }: ReadingPaneProps) {
   const breakpoint = useBreakpoint();
   const isMobileOrTablet = breakpoint !== 'desktop';
 
+  // Document mode: the bottom action bar is a fixed viewport layer — a sticky
+  // child of the root scroller desyncs from Safari's collapsing toolbars
+  // (painted low, hit region stale) and its buttons stop working mid-article.
+  // Out of flow, the bar needs the article column to reserve its height:
+  // measured once mounted and re-measured on resizes (safe-area, font scale)
+  // so the last paragraph always scrolls clear of the bar.
+  const bottomBarRef = useRef<HTMLDivElement | null>(null);
+  const [bottomBarH, setBottomBarH] = useState(0);
+  useEffect(() => {
+    if (!(isMobileOrTablet && docScroll)) return;
+    const el = bottomBarRef.current;
+    if (!el) return;
+    if (typeof ResizeObserver === 'undefined') {
+      // Fallback: measure once (covers environments without RO; the bar is a
+      // fixed 52-class-height row, so a stale value only risks a few px).
+      setBottomBarH(Math.round(el.getBoundingClientRect().height));
+      return;
+    }
+    const ro = new ResizeObserver(() => {
+      setBottomBarH(Math.round(el.getBoundingClientRect().height));
+    });
+    ro.observe(el);
+    setBottomBarH(Math.round(el.getBoundingClientRect().height));
+    return () => ro.disconnect();
+  }, [isMobileOrTablet, docScroll, selectedArticle?.id]);
+
   // Dynamic theme-color for Safari status bar
   useEffect(() => {
     if (!isMobileOrTablet || !selectedArticle) return;
@@ -1760,9 +1786,13 @@ export default function ReadingPane({ showBack }: ReadingPaneProps) {
           style={isMobileOrTablet ? {
             touchAction: 'pan-y',
             overscrollBehaviorX: 'none',
-            // Document mode: the bottom bar is a sticky flow child, so no
-            // reserved gutter here; container mode keeps the exact old one.
-            ...(docScroll ? { paddingBottom: 'env(safe-area-inset-bottom, 0px)' } : { paddingBottom: '52px' }),
+            // Document mode: the bottom bar is a fixed viewport layer, so the
+            // article column reserves its measured height here (falls back to
+            // the bare safe-area inset until the first measurement lands);
+            // container mode keeps the exact old one.
+            ...(docScroll
+              ? { paddingBottom: bottomBarH ? `${bottomBarH}px` : 'env(safe-area-inset-bottom, 0px)' }
+              : { paddingBottom: '52px' }),
           } : undefined}
         >
           <article
@@ -1999,12 +2029,18 @@ export default function ReadingPane({ showBack }: ReadingPaneProps) {
       {/* ── Mobile: bottom action bar (thumb-reachable) + ⋯ menu ── */}
       {isMobileOrTablet && (
         <div
+          ref={docScroll ? bottomBarRef : undefined}
           className={
             docScroll
-              // Document mode: sticky flow child at the end of the column —
-              // pins to the viewport bottom while the document scrolls and
-              // rests at the content end on the last screen.
-              ? 'reading-bottombar sticky bottom-0 z-20 flex items-stretch'
+              // Document mode: a fixed viewport layer. As a sticky child of
+              // the root scroller the bar desynced from Safari's collapsing
+              // toolbars — painted at the new lower edge while the touch
+              // region stayed at the pre-collapse layout offset — so the
+              // buttons were dead unless you scrolled back to the article
+              // top. Fixed keeps one viewport-anchored, reliably hit-tested
+              // surface in both chrome states; the article column reserves
+              // the bar's measured height (see `bottomBarH`).
+              ? 'reading-bottombar fixed bottom-0 inset-x-0 z-20 flex items-stretch'
               // Container mode: unchanged pinned bar (the reader's shell
               // reserves 52px for it).
               : 'reading-bottombar absolute bottom-0 inset-x-0 z-10 flex items-stretch'

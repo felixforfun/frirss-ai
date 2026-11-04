@@ -22,6 +22,7 @@ import { adminBackupRouter, setupBackupRouter } from './routes/backup.js';
 import { migrateEncryptTokens } from './crypto.js';
 import { accessLog } from './accessLog.js';
 import { startBackgroundSync } from './worker.js';
+import { startWikiIngest } from './wikiPageviews.js';
 import { APP_VERSION } from './version.js';
 
 migrateEncryptTokens();
@@ -78,6 +79,7 @@ if (process.env.NODE_ENV === 'production') {
 if (process.env.NODE_ENV !== 'test') {
   app.listen(PORT, () => console.log(`FriRSS backend listening on port ${PORT}`));
   startBackgroundSync();
+  startWikiIngest();
 }
 
 export default app;

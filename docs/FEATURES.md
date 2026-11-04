@@ -3077,6 +3077,13 @@ fichiers statiques et `trust proxy`) · `PORT` (port interne d'Express, 3001) ·
 `OPENROUTER_BASE_URL` · `OLLAMA_URL` · `OLLAMA_EMBED_MODEL` (clé jamais envoyée
 au client ; voir « Semantic ranking »)
 
+**Signaux externes** — `GITHUB_TOKEN` (jeton Bearer optionnel pour l'API
+GitHub, signal « traction de dépôt ») · `GDELT_LANGUAGE_GUARD` (garde de langue
+activée par défaut ; `off` la désactive — indisponibilité neutre, jamais une
+erreur) · `WIKIMEDIA_CONTACT` (identité de contact déclarée à l'API Wikimedia
+pour les pageviews ; sans elle, le signal Wikipedia ne démarre jamais et reste
+indisponible)
+
 **Cache et relève** — `REDIS_URL` · `CACHE_ARTICLES_PER_FEED` · `CACHE_TTL` ·
 `CACHE_SYNC_INTERVAL` · `CACHE_SYNC_ACTIVE_DAYS` · `CACHE_SYNC_PARALLEL_USERS` ·
 `FRIRSS_REFRESH_MAX_FEEDS`
@@ -3156,6 +3163,7 @@ An **Interesting** view ranks articles using per-user feedback while leaving Fre
   - PUT `/api/intelligence/feedback`
   - DELETE `/api/intelligence/feedback/:articleId`
   - POST `/api/intelligence/external-signals`
+  - POST `/api/intelligence/coverage`
   - POST `/api/intelligence/semantic-scores`
 - **Limite connue** : lexical matching is a first implementation, not semantic understanding. Local embeddings and bounded background processing remain follow-up work; do not describe this version as embedding-based.
 

@@ -6,6 +6,59 @@ release live on its [release page](https://github.com/Fripix/Frirss/releases).
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 FriRSS follows [semantic versioning](https://semver.org/).
 
+## [Non publié]
+
+## Fonctionnalités
+
+- **Noyau de classement v2 pour « Interesting ».** Le mélange pondère
+  désormais des **signaux externes** : le poids « Influence externe » (25 %
+  par défaut) se répartit entre les sources (consensus éditorial 40 %,
+  Google Trends 25 %, Wikipédia 15 %, GitHub 8 %, Hacker News 7 %, Lobsters
+  5 %, GDELT 0 % — désactivé). Chaque source a son curseur dans Custom, et
+  l'influence sémantique reste séparée (0 % par défaut). Un signal absent ou
+  indisponible ne pèse plus comme un zéro pénalisant : il sort du calcul
+  (D(a) = 0), donc un article sans données externes garde exactement son
+  classement de base.
+
+- **Contrat v2 pour les signaux externes.** `POST
+  /api/intelligence/external-signals` répond immédiatement avec les données
+  en cache et met le reste en file ; le client interroge par paliers
+  (3 s → 10 s → 30 s, arrêt après 10 min) tant que des articles sont en
+  attente. Côté serveur : registre de fournisseurs avec planificateur par
+  source (concurrence bornée, espacement minimal, dédoublonnage des requêtes
+  en vol, disjoncteur avec backoff sur 429/403), persistance des échecs et
+  instantanés ( tables `signal_failures` et `signal_snapshots`), TTL par
+  fournisseur. Un échec n'est jamais une mesure négative.
+
+- **Jeton GitHub optionnel.** `GITHUB_TOKEN` (jeton classique sans portée)
+  porte la limite `api.github.com` de 60 à 5 000 requêtes/heure pour le
+  signal « traction de dépôt » ; l'en-tête n'est envoyé qu'à cet hôte.
+
+- **GDELT cantonné.** Poids par défaut 0, une seule file globale espacée de
+  6 s, et une garde de langue (`GDELT_LANGUAGE_GUARD`, activée par défaut)
+  : hors cohé anglophone, la source est « indisponible » — neutre, jamais
+  une erreur.
+
+- **Consensus éditorial.** Nouvelle source qui mesure combien d'origines
+  indépendantes de vos propres flux couvrent la même histoire :
+  regroupement agglomératif (lien moyen) sur les similarités bge-m3, coupé à
+  `tau_story` (0.79, calibré sur 51 paires étiquetées — voir
+  `evaluation/consensus-calibration-report.md`), puis fusion des copies
+  d'agence et des republications d'un même éditeur (`tau_dup` 0.98, marqueur
+  d'agence : dpa, Reuters, AFP, AP, SDA/Keystone, APA). Point de terminaison
+  `POST /api/intelligence/coverage` (≤ 300 articles, fenêtre de 48 h,
+  réponse mise en cache 5 min par cohorte), interrogé sans bloquer
+  l'interface. Deux flux d'un même hôte comptent une seule origine ; cinq
+  republications d'une dépêche n'en font pas cinq couvertures.
+
+- **Wikipédia (pages vues).** Le top quotidien des articles les plus lus de
+  `de.wikipedia` et `en.wikipedia` est ingéré une fois par jour (séquentiel,
+  étiquette de contact via `WIKIMEDIA_CONTACT`, repli d'un jour quand les
+  données publient en retard, remplissage initial de 14 jours). Un article
+  candidat correspond quand son titre ou son résumé recoupe un article de la
+  liste avec suffisamment de pages vues (20 000 DE / 30 000 EN) et un pic
+  d'au moins 3× la baseline hebdomadaire.
+
 ## [1.4.12] - 2026-09-25
 
 ## Fonctionnalités

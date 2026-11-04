@@ -213,6 +213,27 @@ docker run -d --name frirss -p 8080:80 -v /mnt/user/appdata/frirss:/app/data \
 
 Single sign-on is configured at runtime in *Preferences → Administration* (issuer, client ID, client secret).
 
+### External signals (opt-in experiments)
+
+The opt-in external-signal ranking experiments (publisher consensus, GDELT,
+GitHub, Wikipedia) read these variables on the **server environment only**:
+
+| Variable | Description | Default |
+|---|---|---|
+| `GITHUB_TOKEN` | Classic GitHub token with **no scopes** — raises the `api.github.com` rate limit from 60 to 5,000 requests/hour for the repository-traction signal; the header is sent only to `api.github.com`, never to other hosts | — |
+| `GDELT_LANGUAGE_GUARD` | GDELT language guard: with anything but `off`, lookups run only for English-reading cohorts (the measured German hit rate was 0 %). A guarded lookup reports unavailable — neutral, never an error | `on` |
+| `WIKIMEDIA_CONTACT` | Contact identity for Wikimedia API etiquette — the User-Agent reads `FriRSS/<version> (+https://github.com/felixforfun/frirss-ai; <contact>)`. Without it the Wikipedia pageviews signal never starts and stays unavailable | — |
+
+The Wikipedia evidence thresholds are code constants, not configuration: a
+top article counts when its daily pageviews reach 20,000 (de.wikipedia) or
+30,000 (en.wikipedia) and the day shows a spike of at least 3× over the
+7-day baseline.
+
+All lookups are rate-limited per provider (bounded concurrency, minimum
+spacing, circuit breaker with backoff on 429/403), cached per article/source
+in SQLite, and an unavailable provider is neutral — it never depresses a
+ranking below the base ordering.
+
 ## Backups
 
 Two things are worth backing up, and they are not the same thing.

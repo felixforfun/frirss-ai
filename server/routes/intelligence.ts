@@ -90,216 +90,158 @@ router.delete('/feedback/:articleId', (req, res) => {
 });
 
 
-type ExternalSource = 'gdelt' | 'github' | 'hackerNews' | 'lobsters';
-type ExternalSignals = Record<ExternalSource, number | null>;
-interface ExternalArticleInput { url: string; title: string; summary: string; content: string }
-const EXTERNAL_SOURCES = new Set<ExternalSource>(['gdelt', 'github', 'hackerNews', 'lobsters']);
-const EXTERNAL_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
+// ── External discovery signals (contract v2, rework Phase 2) ───────────
+import {
+  cacheKey, lookupFunctionFor, readSignalCache, runLookup, ttlForSignal,
+  schedulers, writeSignalCache,
+  type ExternalArticleInput, type ExternalSource, type SignalValue,
+} from '../externalSignals.js';
+import { buildCohortContext, wikipediaMatcher } from '../wikiPageviews.js';
+import { computeCoverage, MAX_CANDIDATES, type ConsensusArticle } from '../consensus.js';
 
-db.exec(`
-  CREATE TABLE IF NOT EXISTS interesting_external_signal_cache (
-    cache_key TEXT PRIMARY KEY,
-    value_json TEXT NOT NULL,
-    checked_at INTEGER NOT NULL
-  );
-  CREATE INDEX IF NOT EXISTS idx_interesting_external_signal_cache_checked
-    ON interesting_external_signal_cache(checked_at);
-`);
-db.prepare('DELETE FROM interesting_external_signal_cache WHERE checked_at < ?').run(Date.now() - 30 * 86400000);
+const EXTERNAL_SOURCES = new Set<ExternalSource>(['gdelt', 'github', 'hackerNews', 'lobsters', 'wikipedia']);
 
-function canonicalUrl(raw: string): string {
-  try {
-    const url = new URL(raw);
-    url.hash = '';
-    url.protocol = 'https:';
-    for (const key of [...url.searchParams.keys()]) {
-      if (/^(utm_|fbclid$|gclid$|ref$|source$)/i.test(key)) url.searchParams.delete(key);
+interface SignalRequestArticle extends ExternalArticleInput { published?: number }
+
+/**
+ * Validate the request body. Contract v2 accepts up to 300 candidates and an
+ * optional `published` timestamp (recency priority for rate-limited
+ * providers); legacy v1 requests (no `version` field) stay capped at 80.
+ */
+function parseSignalRequest(body: { articles?: unknown; sources?: unknown; version?: unknown }):
+  { error: 'invalid' } | { articles: SignalRequestArticle[]; sources: ExternalSource[]; version: 1 | 2 } {
+  const version = body.version === 2 ? 2 : 1;
+  const maxArticles = version === 2 ? MAX_CANDIDATES : 80;
+  if (!Array.isArray(body.articles) || body.articles.length < 1 || body.articles.length > maxArticles
+    || !Array.isArray(body.sources) || body.sources.length < 1
+    || body.sources.some((source) => typeof source !== 'string' || !EXTERNAL_SOURCES.has(source as ExternalSource))) {
+    return { error: 'invalid' };
+  }
+  const articles: SignalRequestArticle[] = [];
+  const seenUrls = new Set<string>();
+  for (const raw of body.articles) {
+    if (!raw || typeof raw !== 'object') return { error: 'invalid' };
+    const item = raw as Record<string, unknown>;
+    const published = typeof item.published === 'number' && Number.isFinite(item.published)
+      && item.published > 0 && item.published < 1e13 ? Math.round(item.published) : undefined;
+    if (typeof item.url !== 'string' || item.url.length > 4096 || !/^https?:\/\//i.test(item.url)
+      || typeof item.title !== 'string' || item.title.length > 2000
+      || typeof item.summary !== 'string' || item.summary.length > 10000
+      || typeof item.content !== 'string' || item.content.length > 12000) {
+      return { error: 'invalid' };
     }
-    url.hostname = url.hostname.toLowerCase().replace(/^www\./, '');
-    url.pathname = url.pathname.replace(/\/$/, '') || '/';
-    return url.toString();
-  } catch {
-    return raw.trim();
+    if (seenUrls.has(item.url)) continue; // duplicate/syndicated copies: first occurrence wins
+    seenUrls.add(item.url);
+    articles.push({ url: item.url, title: item.title, summary: item.summary, content: item.content, published });
   }
-}
-function cacheKey(source: ExternalSource, url: string): string {
-  return source + ':' + createHash('sha256').update(canonicalUrl(url)).digest('hex');
-}
-function readSignalCache(source: ExternalSource, url: string): { hit: boolean; value: number | null } {
-  const row = db.prepare('SELECT value_json AS valueJson, checked_at AS checkedAt FROM interesting_external_signal_cache WHERE cache_key = ?')
-    .get(cacheKey(source, url)) as { valueJson: string; checkedAt: number } | undefined;
-  if (!row || Date.now() - row.checkedAt > EXTERNAL_CACHE_TTL_MS) return { hit: false, value: null };
-  try {
-    const parsed = JSON.parse(row.valueJson) as { value: number | null };
-    return { hit: true, value: parsed.value };
-  } catch {
-    return { hit: false, value: null };
-  }
-}
-function writeSignalCache(source: ExternalSource, url: string, value: number | null): void {
-  db.prepare(`INSERT INTO interesting_external_signal_cache (cache_key, value_json, checked_at)
-    VALUES (?, ?, ?) ON CONFLICT(cache_key) DO UPDATE SET value_json=excluded.value_json, checked_at=excluded.checked_at`)
-    .run(cacheKey(source, url), JSON.stringify({ value }), Date.now());
-}
-function clamp01(value: number): number {
-  return Math.max(0, Math.min(1, Number.isFinite(value) ? value : 0));
-}
-async function fetchJson<T>(url: string): Promise<T> {
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 8000);
-  try {
-    const response = await fetch(url, { signal: controller.signal, headers: { 'User-Agent': 'FriRSS-Interesting/1.0' } });
-    if (!response.ok) throw new Error('External provider returned HTTP ' + response.status);
-    return await response.json() as T;
-  } finally {
-    clearTimeout(timeout);
-  }
-}
-async function getSignal(
-  source: ExternalSource,
-  article: ExternalArticleInput,
-  fetcher: () => Promise<number | null>,
-): Promise<number | null> {
-  const cached = readSignalCache(source, article.url);
-  if (cached.hit) return cached.value;
-  try {
-    const value = await fetcher();
-    writeSignalCache(source, article.url, value);
-    return value;
-  } catch {
-    // Do not cache transient failures; another request can retry.
-    return null;
-  }
-}
-function hostFromUrl(raw: string): string {
-  try { return new URL(raw).hostname.toLowerCase().replace(/^www\./, ''); } catch { return ''; }
-}
-function canonicalRepository(article: ExternalArticleInput): string | null {
-  const text = [article.url, article.title, article.summary, article.content.slice(0, 12000)].join(' ');
-  const matches = [...text.matchAll(/https?:\/\/(?:www\.)?github\.com\/([A-Za-z0-9_.-]+)\/([A-Za-z0-9_.-]+)/gi)];
-  for (const match of matches) {
-    const owner = match[1];
-    const repo = match[2].replace(/\.git$/i, '');
-    if (!owner || !repo || ['issues', 'pull', 'pulls', 'tree', 'blob', 'commit', 'commits', 'settings', 'orgs', 'features', 'sponsors', 'topics'].includes(owner.toLowerCase())) continue;
-    return owner + '/' + repo;
-  }
-  return null;
-}
-async function githubSignal(article: ExternalArticleInput): Promise<number | null> {
-  const repository = canonicalRepository(article);
-  if (!repository) return null; // Not applicable is neutral, not a penalty.
-  const data = await fetchJson<{ stargazers_count?: number; pushed_at?: string; archived?: boolean }>(
-    'https://api.github.com/repos/' + repository.split('/').map(encodeURIComponent).join('/'),
-  );
-  const stars = Math.max(0, data.stargazers_count ?? 0);
-  const popularity = Math.min(1, Math.log1p(stars) / Math.log1p(100000));
-  const pushedAt = data.pushed_at ? Date.parse(data.pushed_at) : 0;
-  const daysSincePush = pushedAt > 0 ? Math.max(0, (Date.now() - pushedAt) / 86400000) : 3650;
-  const activity = data.archived ? 0 : 1 / (1 + daysSincePush / 90);
-  return clamp01(popularity * 0.65 + activity * 0.35);
-}
-async function gdeltSignal(article: ExternalArticleInput): Promise<number> {
-  const stop = new Set([
-    'the','and','for','with','from','that','this','into','about','after','before','over','under','how','why','what','when','where','who','are','was','were','has','have','will','its','new','says','said',
-    'der','die','das','und','mit','fur','von','den','dem','des','ein','eine','einer','eines','einem','einen','ist','sind','nicht','auch','nach','vor','uber','unter','bei','aus','wie','was','wer','wird','werden','wurden','neue','neuen','laut','sagte',
-    'les','des','une','pour','avec','dans','est','sont','aux','sur','par','qui','que','cette','ces','leur','leurs','mais','pas',
-  ]);
-  const terms = article.title.toLowerCase().normalize('NFKD').replace(/[\u0300-\u036f]/g, '')
-    .match(/[a-z0-9]{3,}/g)?.filter((term) => !stop.has(term)) ?? [];
-  const queryTerms = [...new Set(terms)].slice(0, 6);
-  if (queryTerms.length < 2) return 0;
-  const end = new Date();
-  const start = new Date(end.getTime() - 7 * 86400000);
-  const stamp = (date: Date) => date.toISOString().replace(/[-:TZ.]/g, '').slice(0, 14);
-  const query = queryTerms.join(' ');
-  const endpoint = 'https://api.gdeltproject.org/api/v2/doc/doc?' + new URLSearchParams({
-    query, mode: 'artlist', maxrecords: '50', format: 'json', sort: 'HybridRel',
-    startdatetime: stamp(start), enddatetime: stamp(end),
-  }).toString();
-  const data = await fetchJson<{ articles?: Array<{ url?: string; domain?: string }> }>(endpoint);
-  const items = data.articles ?? [];
-  const domains = new Set(items.map((item) => item.domain || hostFromUrl(item.url ?? '')).filter(Boolean));
-  const breadth = Math.min(1, Math.log1p(domains.size) / Math.log1p(8));
-  const volume = Math.min(1, Math.log1p(items.length) / Math.log1p(30));
-  return clamp01(breadth * 0.7 + volume * 0.3);
-}
-async function hackerNewsSignal(article: ExternalArticleInput): Promise<number> {
-  const endpoint = 'https://hn.algolia.com/api/v1/search?' + new URLSearchParams({
-    query: canonicalUrl(article.url), tags: 'story', hitsPerPage: '10',
-  }).toString();
-  const data = await fetchJson<{ hits?: Array<{ url?: string; points?: number; num_comments?: number; created_at_i?: number }> }>(endpoint);
-  const target = canonicalUrl(article.url);
-  const hit = (data.hits ?? []).find((item) => item.url && canonicalUrl(item.url) === target);
-  if (!hit) return 0;
-  const engagement = Math.min(1, Math.log1p(Math.max(0, hit.points ?? 0) + Math.max(0, hit.num_comments ?? 0) * 0.5) / Math.log1p(500));
-  const ageDays = hit.created_at_i ? Math.max(0, (Date.now() / 1000 - hit.created_at_i) / 86400) : 30;
-  return clamp01(engagement * (0.6 + 0.4 / (1 + ageDays / 14)));
-}
-let lobstersStoriesCache: Array<{ url?: string; score?: number; comments_count?: number; created_at?: string }> | null = null;
-let lobstersStoriesExpires = 0;
-async function getLobstersStories(): Promise<Array<{ url?: string; score?: number; comments_count?: number; created_at?: string }>> {
-  if (lobstersStoriesCache && Date.now() < lobstersStoriesExpires) return lobstersStoriesCache;
-  lobstersStoriesCache = await fetchJson<Array<{ url?: string; score?: number; comments_count?: number; created_at?: string }>>('https://lobste.rs/hottest.json');
-  lobstersStoriesExpires = Date.now() + 10 * 60 * 1000;
-  return lobstersStoriesCache;
-}
-async function lobstersSignal(article: ExternalArticleInput): Promise<number> {
-  const stories = await getLobstersStories();
-  const target = canonicalUrl(article.url);
-  const story = stories.find((item) => item.url && canonicalUrl(item.url) === target);
-  if (!story) return 0;
-  const engagement = Math.min(1, Math.log1p(Math.max(0, story.score ?? 0) + Math.max(0, story.comments_count ?? 0) * 0.5) / Math.log1p(200));
-  const ageDays = story.created_at ? Math.max(0, (Date.now() - Date.parse(story.created_at)) / 86400000) : 30;
-  return clamp01(engagement * (0.6 + 0.4 / (1 + ageDays / 14)));
-}
-async function mapWithConcurrency<T, R>(items: T[], limit: number, fn: (item: T) => Promise<R>): Promise<R[]> {
-  const output = new Array<R>(items.length);
-  let next = 0;
-  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, async () => {
-    while (true) {
-      const index = next++;
-      if (index >= items.length) return;
-      output[index] = await fn(items[index]);
-    }
-  }));
-  return output;
+  return { articles, sources: [...new Set(body.sources as ExternalSource[])], version };
 }
 
-// External signals are opt-in through the five experimental ranking variants.
-// Requests are bounded, cached per article/source for 24 hours, and failures
-// remain null so a provider outage cannot demote articles.
 router.post('/external-signals', async (req, res) => {
-  const body = req.body as { articles?: unknown; sources?: unknown };
-  if (!Array.isArray(body.articles) || body.articles.length > 80 || !Array.isArray(body.sources)
-    || body.sources.length < 1 || body.sources.some((source) => typeof source !== 'string' || !EXTERNAL_SOURCES.has(source as ExternalSource))) {
-    return res.status(400).json({ error: 'Invalid external-signal request' });
+  const parsed = parseSignalRequest(req.body as { articles?: unknown; sources?: unknown; version?: unknown });
+  if ('error' in parsed) return res.status(400).json({ error: 'Invalid external-signal request' });
+  const { articles, sources, version } = parsed;
+  const context = buildCohortContext(articles);
+  const lookup = (source: ExternalSource) => lookupFunctionFor(source, wikipediaMatcher);
+  const priorityOf = (article: SignalRequestArticle) => article.published ?? 0;
+
+  // A closed request stops further lookups: v2 cancels its queued jobs, v1
+  // exits its synchronous loop early.
+  let requestClosed = false;
+  req.on('close', () => { requestClosed = true; });
+  const enqueued: Array<{ source: ExternalSource; key: string }> = [];
+
+  if (version === 2) {
+    // Answer immediately from cache; queue the rest and report them pending.
+    const signals: Record<string, Partial<Record<ExternalSource, SignalValue>>> = {};
+    const pending = new Set<string>();
+    for (const article of articles) {
+      const slots: Partial<Record<ExternalSource, SignalValue>> = {};
+      let needsPoll = false;
+      for (const source of sources) {
+        const key = cacheKey(source, article.url);
+        const cached = readSignalCache(source, key);
+        if (cached.signal) {
+          slots[source] = cached.signal;
+          continue;
+        }
+        needsPoll = true;
+        if (requestClosed) continue;
+        // Fire-and-forget: the answer comes from the next poll. runLookup
+        // routes through the scheduler (spacing, budget, breaker) and never
+        // caches a cancelled or budget-rejected attempt.
+        void runLookup(source, key, article, priorityOf(article), context, lookup(source))
+          .then((signal) => { writeSignalCache(key, signal); })
+          .catch(() => { /* cancelled or budget-exceeded: nothing cached */ });
+        enqueued.push({ source, key });
+      }
+      signals[article.url] = slots;
+      if (needsPoll) pending.add(article.url);
+    }
+    req.on('close', () => {
+      for (const { source, key } of enqueued) schedulers[source].cancel(key);
+    });
+    return res.json({ version: 2, signals, pending: [...pending], fetchedAt: Date.now() });
   }
-  const sources = [...new Set(body.sources as ExternalSource[])];
-  const articles: ExternalArticleInput[] = [];
+
+  // Legacy v1: resolve synchronously (bounded at 80 articles) and answer with
+  // numeric-or-null slots. Absent/failed lookups stay null so an outage can
+  // never demote an article.
+  const signals: Record<string, Record<ExternalSource, number | null>> = {};
+  for (const article of articles) {
+    if (requestClosed) break;
+    const slots: Record<ExternalSource, number | null> = { gdelt: null, github: null, hackerNews: null, lobsters: null, wikipedia: null };
+    await Promise.all(sources.map(async (source) => {
+      const key = cacheKey(source, article.url);
+      const cached = readSignalCache(source, key);
+      if (cached.signal) {
+        const signal = cached.signal;
+        slots[source] = signal.state === 'measured' ? (signal.value ?? 0)
+          : signal.state === 'none' ? 0
+          : null; // not-applicable/unavailable
+        return;
+      }
+      const state = await runLookup(source, key, article, priorityOf(article), context, lookup(source));
+      writeSignalCache(key, state);
+      slots[source] = state.state === 'measured' ? (state.value ?? 0)
+        : state.state === 'none' ? 0
+        : null;
+    }));
+    signals[article.url] = slots;
+  }
+  return res.json({ signals });
+});
+
+// ── Publisher-consensus coverage (contract v2, Phase 3) ────────────────
+
+router.post('/coverage', async (req, res) => {
+  const body = req.body as { articles?: unknown };
+  if (!Array.isArray(body.articles) || body.articles.length < 1 || body.articles.length > MAX_CANDIDATES) {
+    return res.status(400).json({ error: 'Invalid coverage request' });
+  }
+  const articles: ConsensusArticle[] = [];
+  const seenUrls = new Set<string>();
   for (const raw of body.articles) {
     if (!raw || typeof raw !== 'object') return res.status(400).json({ error: 'Invalid article' });
     const item = raw as Record<string, unknown>;
     if (typeof item.url !== 'string' || item.url.length > 4096 || !/^https?:\/\//i.test(item.url)
       || typeof item.title !== 'string' || item.title.length > 2000
       || typeof item.summary !== 'string' || item.summary.length > 10000
-      || typeof item.content !== 'string' || item.content.length > 12000) {
+      || typeof item.publisher !== 'string' || item.publisher.length > 512
+      || typeof item.published !== 'number' || !Number.isFinite(item.published)) {
       return res.status(400).json({ error: 'Invalid article fields' });
     }
-    articles.push({ url: item.url, title: item.title, summary: item.summary, content: item.content });
+    if (seenUrls.has(item.url)) continue;
+    seenUrls.add(item.url);
+    articles.push({ url: item.url, title: item.title, summary: item.summary, publisher: item.publisher, published: item.published });
   }
-  const signals = await mapWithConcurrency(articles, 4, async (article) => {
-    const entries = await Promise.all(sources.map(async (source) => {
-      const fetcher = source === 'gdelt' ? () => gdeltSignal(article)
-        : source === 'github' ? () => githubSignal(article)
-        : source === 'hackerNews' ? () => hackerNewsSignal(article)
-        : () => lobstersSignal(article);
-      return [source, await getSignal(source, article, fetcher)] as const;
-    }));
-    const result: ExternalSignals = { gdelt: null, github: null, hackerNews: null, lobsters: null };
-    for (const [source, value] of entries) result[source] = value;
-    return [article.url, result] as const;
-  });
-  res.json({ signals: Object.fromEntries(signals) });
+  try {
+    const result = await computeCoverage(articles);
+    return res.json(result);
+  } catch {
+    // Embedding failures leave nothing cached; the client retries.
+    return res.json({ status: 'provider-unavailable', coverage: {}, missing: articles.map((article) => article.url), provider: null });
+  }
 });
 
 // ── Semantic (soft balanced margin) scores ─────────────────────────────
@@ -310,32 +252,12 @@ router.post('/external-signals', async (req, res) => {
 // provider/model/preprocessing-version so incompatible configurations never
 // reuse each other's embeddings.
 import {
-  SEMANTIC_PREP_VERSION,
   embeddingCacheKey,
   embeddingText,
   softBalancedMarginScore,
-  unit,
 } from '../semanticScoring.js';
 import { resolveEmbeddingProvider, type EmbeddingProvider } from '../semanticEmbeddings.js';
-
-db.exec(`
-  CREATE TABLE IF NOT EXISTS semantic_embedding_cache (
-    cache_key    TEXT    NOT NULL,
-    provider     TEXT    NOT NULL,
-    model        TEXT    NOT NULL,
-    prep_version INTEGER NOT NULL,
-    vector_json  TEXT    NOT NULL,
-    created_at   TEXT    NOT NULL DEFAULT (datetime('now')),
-    updated_at   TEXT    NOT NULL DEFAULT (datetime('now')),
-    PRIMARY KEY (provider, model, prep_version, cache_key)
-  );
-  CREATE INDEX IF NOT EXISTS idx_semantic_embedding_cache_updated
-    ON semantic_embedding_cache(updated_at);
-`);
-db.prepare('DELETE FROM semantic_embedding_cache WHERE updated_at < datetime(\'now\', \'-90 days\')').run();
-
-/** One in-flight embedding per cache key across concurrent requests. */
-const semanticInFlight = new Map<string, Promise<number[] | null>>();
+import { semanticEmbeddingsFor } from '../semanticEmbeddingService.js';
 
 interface SemanticArticleInput { url: string; title: string; summary: string }
 const SEMANTIC_MAX_ARTICLES = 300;
@@ -343,10 +265,6 @@ const SEMANTIC_MAX_ARTICLES = 300;
 const SEMANTIC_MAX_EMBEDS_PER_REQUEST = 128;
 /** Reference (feedback) embeddings are a one-time cost and must stay complete: the audited formula uses each class's FULL set. */
 const SEMANTIC_MAX_REF_EMBEDS = 5000;
-
-function semanticIdentity(providerId: string, model: string, key: string): string {
-  return providerId + '|' + model + '|' + key;
-}
 
 router.post('/semantic-scores', async (req, res) => {
   const body = req.body as { articles?: unknown };
@@ -399,14 +317,16 @@ router.post('/semantic-scores', async (req, res) => {
     const vector = refVectorByKey.get(key);
     if (vector) (job.vote === 1 ? positiveRefs : negativeRefs).push(vector);
   }
+  if (refResult.failures > 0 || refResult.notAttempted.size > 0 || refVectorByKey.size < refJobs.size) {
+    // The provider is configured but the reference embeddings are not all
+    // there (outage or still embedding). The audited formula aggregates over
+    // every class member, so partial references must not be scored against:
+    // this status is retryable with backoff.
+    return res.json({ status: 'reference-unavailable', scores: {}, missing: [], provider: provider.id });
+  }
   if (!positiveRefs.length || !negativeRefs.length) {
-    // Genuine single-class history vs a provider that failed (or is still
-    // working through) the reference embeddings: only the former is a stable
-    // answer, the latter must invite a retry.
-    const hasPositiveRow = rows.some((row) => row.vote === 1);
-    const hasNegativeRow = rows.some((row) => row.vote === -1);
-    const status = hasPositiveRow && hasNegativeRow ? 'no-scores' : 'insufficient-feedback';
-    return res.json({ status, scores: {}, missing: [], provider: provider.id });
+    // Genuine single-class voting history: a stable answer, not a retry.
+    return res.json({ status: 'insufficient-feedback', scores: {}, missing: [], provider: provider.id });
   }
 
   const scores: Record<string, number> = {};
@@ -437,83 +357,5 @@ router.post('/semantic-scores', async (req, res) => {
   const status = missing.length ? (Object.keys(scores).length ? 'partial' : 'no-scores') : 'ok';
   res.json({ status, scores, missing, provider: provider.id });
 });
-
-/**
- * Cache-backed embedding lookup for one provider, writing successful vectors
- * through. Bounded and resumable: at most `maxEmbeds` provider lookups per
- * call; jobs beyond that are returned as `notAttempted` so the caller re-asks.
- * Concurrent requests share one in-flight embedding per cache key.
- */
-async function semanticEmbeddingsFor(
-  provider: EmbeddingProvider,
-  jobs: Array<{ key: string; text: string }>,
-  maxEmbeds: number,
-): Promise<{ vectors: Array<{ key: string; vector: number[] }>; notAttempted: Set<string>; failures: number }> {
-  const vectors: Array<{ key: string; vector: number[] }> = [];
-  const uncached: Array<{ key: string; text: string }> = [];
-  const read = db.prepare(`SELECT vector_json FROM semantic_embedding_cache
-    WHERE provider = ? AND model = ? AND prep_version = ? AND cache_key = ?`);
-  for (const job of jobs) {
-    const row = read.get(provider.id, provider.model, SEMANTIC_PREP_VERSION, job.key) as { vector_json: string } | undefined;
-    if (row) {
-      try {
-        const vector = JSON.parse(row.vector_json) as unknown;
-        // Vectors are stored already unit-normalised; reusing them as-is keeps
-        // scores bit-identical between a fresh embed and a cache hit.
-        if (Array.isArray(vector) && vector.length && vector.every((value) => typeof value === 'number' && Number.isFinite(value))) {
-          vectors.push({ key: job.key, vector: vector as number[] });
-          continue;
-        }
-      } catch { /* corrupt row: treat as a miss and overwrite below */ }
-    }
-    uncached.push(job);
-  }
-  const attempted = uncached.slice(0, maxEmbeds);
-  const notAttempted = new Set(uncached.slice(maxEmbeds).map((job) => job.key));
-  if (!attempted.length) return { vectors, notAttempted, failures: 0 };
-
-  const write = db.prepare(`INSERT INTO semantic_embedding_cache
-      (cache_key, provider, model, prep_version, vector_json, updated_at)
-    VALUES (?, ?, ?, ?, ?, datetime('now'))
-    ON CONFLICT(provider, model, prep_version, cache_key) DO UPDATE SET
-      vector_json = excluded.vector_json, updated_at = excluded.updated_at`);
-
-  // Jobs with no in-flight embedding yet are embedded in ONE batched provider
-  // call whose result is distributed per key; concurrent requests join it.
-  const fresh = attempted.filter((job) => !semanticInFlight.has(semanticIdentity(provider.id, provider.model, job.key)));
-  if (fresh.length) {
-    const batchPromise = provider.embed(fresh.map((job) => job.text)).then((results) => {
-      const byKey = new Map<string, number[] | null>();
-      fresh.forEach((job, index) => byKey.set(job.key, results[index] ?? null));
-      return byKey;
-    }).catch(() => {
-      // A failed wave leaves nothing cached: the next request retries.
-      const byKey = new Map<string, number[] | null>();
-      for (const job of fresh) byKey.set(job.key, null);
-      return byKey;
-    }).finally(() => {
-      for (const job of fresh) semanticInFlight.delete(semanticIdentity(provider.id, provider.model, job.key));
-    });
-    for (const job of fresh) {
-      semanticInFlight.set(
-        semanticIdentity(provider.id, provider.model, job.key),
-        batchPromise.then((byKey) => byKey.get(job.key) ?? null),
-      );
-    }
-  }
-
-  const settled = await Promise.all(attempted.map(async (job) => ({
-    key: job.key,
-    vector: await (semanticInFlight.get(semanticIdentity(provider.id, provider.model, job.key)) ?? Promise.resolve<number[] | null>(null)),
-  })));
-  let failures = 0;
-  for (const entry of settled) {
-    if (!entry.vector) { failures++; continue; }
-    const normalized = unit(entry.vector);
-    write.run(entry.key, provider.id, provider.model, SEMANTIC_PREP_VERSION, JSON.stringify(normalized));
-    vectors.push({ key: entry.key, vector: normalized });
-  }
-  return { vectors, notAttempted, failures };
-}
 
 export default router;

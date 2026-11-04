@@ -538,12 +538,37 @@
     "rankingWeights": {
       "title": "Rangierungsgewichte",
       "intro": "Stellen Sie ein, wie stark externe Aufmerksamkeit die Ansicht „Interessant“ beeinflusst. Diese Einstellungen gelten nur für den Algorithmus „Benutzerdefiniert“. Bestehende Voreinstellungen bleiben unverändert.",
-      "externalInfluence": "Externer Einfluss",
-      "externalInfluenceHelp": "Anteil des endgültigen Rankingscores, der durch externe Signale bestimmt wird.",
+      "discoveryInfluence": "Discovery-Einfluss",
+      "discoveryInfluenceHelp": "Anteil des endgültigen Rankingscores, der durch Discovery-Evidenz bestimmt wird. Fehlende Evidenz ist neutral: Ein Artikel fällt nie zurück, weil ein Anbieter nicht erreichbar war.",
+      "discoveryZero": "0 % · Nur persönliche Relevanz",
+      "discoveryFull": "100 % · Nur Discovery",
       "semanticInfluence": "Semantischer Einfluss",
       "semanticInfluenceHelp": "Der Anteil des finalen Rankingwerts, der aus der semantischen Ähnlichkeit zu Ihren Stimmen stammt. 0 % lässt das Ranking unverändert.",
-      "sourcesTitle": "Gewichtung externer Quellen",
+      "semanticZero": "0 % · Kein semantischer Einfluss",
+      "semanticFull": "100 % · Nur semantische Scores",
+      "sourcesTitle": "Discovery-Quellengewichte",
       "sourcesHelp": "Diese Gewichte bestimmen das relative Verhältnis der Quellen. Sie werden automatisch normalisiert und müssen zusammen nicht 100 % ergeben. Setzen Sie eine Quelle auf 0 %, um sie auszuschließen.",
+      "source": {
+        "consensus": "Verlagskonsens",
+        "googleTrends": "Google Trends",
+        "wikipedia": "Wikipedia",
+        "github": "GitHub",
+        "hackerNews": "Hacker News",
+        "lobsters": "Lobsters",
+        "gdelt": "GDELT"
+      },
+      "sourceHelp": {
+        "consensus": "Wie viele unabhängige Verlage dieselbe Geschichte berichten.",
+        "googleTrends": "Aktuelle Suchtrends, die zu einem Artikel passen.",
+        "wikipedia": "Auffällige Abrufspitzen bei Wikipedia-Artikeln.",
+        "github": "Repository-Relevanz und aktuelle Aktivität.",
+        "hackerNews": "Interesse der Hacker-News-Community.",
+        "lobsters": "Interesse der Lobsters-Community.",
+        "gdelt": "Breite der aktuellen Nachrichtenberichterstattung."
+      },
+      "sourceNotConnected": "Noch nicht verbunden — wird ignoriert, bis es verfügbar ist.",
+      "coverage": "{{measured}} von {{candidates}} Kandidaten gemessen",
+      "coverageNone": "Noch keine gemessene Evidenz im aktuellen Bestand.",
       "savedAutomatically": "Änderungen werden automatisch in Ihrem Konto gespeichert. Wählen Sie in der Ansicht „Interessant“ den Algorithmus „Benutzerdefiniert“, um sie zu verwenden.",
       "reset": "Zurücksetzen"
     }
