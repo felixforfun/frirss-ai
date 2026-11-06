@@ -18,6 +18,7 @@ describe('shipped themes', () => {
     const values = FONT_FAMILY_OPTIONS.map((option) => option.value);
     expect(values).toContain('literata');
     expect(values).toContain('lora');
+    expect(values).toContain('cormorant');
     expect(values).toContain('roboto');
     expect(values).toContain('merriweather');
     expect(values).toContain('helvetica');
