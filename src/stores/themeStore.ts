@@ -624,6 +624,16 @@ function applyThemeToDOM(theme: Theme): void {
   Object.entries({ ...DEFAULT_FONT_FAMILIES, ...(theme.fontFamilies ?? {}) }).forEach(([key, value]) => {
     root.style.setProperty(`--ff-${key}`, FONT_FAMILY_STACKS[value] ?? FONT_FAMILY_STACKS.system);
   });
+
+  // Cormorant Garamond reads much lighter than sans faces at the same px and
+  // same weight — its 700 looks like a typical serif 500 and swamps the
+  // elegant contrast the face is chosen FOR. Headlines step down to Medium
+  // 500 when it is the reading-title family; every other face keeps the
+  // bold 700 the interface was built around.
+  root.style.setProperty(
+    '--reading-title-weight',
+    (theme.fontFamilies ?? {})['reading-title'] === 'cormorant' ? '500' : '700'
+  );
 }
 
 function hexToRgba(hex: string, alpha: number): string {

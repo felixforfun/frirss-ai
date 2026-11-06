@@ -850,7 +850,7 @@ export default function ReadingPane({ showBack }: ReadingPaneProps) {
                     '</span>') +
                 '</div>' +
                 // ── Title — same classes as React render ──
-                '<h1 class="font-bold leading-tight mb-4" style="color:var(--reading-title);font-size:var(--fs-reading-title)">' +
+                '<h1 class="font-bold leading-tight mb-4" style="color:var(--reading-title);font-size:var(--fs-reading-title);font-weight:var(--reading-title-weight,700)">' +
                   esc(adj.title) +
                 '</h1>' +
                 // ── Tags ──

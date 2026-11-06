@@ -48,6 +48,10 @@ html[data-scroll="doc"] body {
 }
 .reading-pane [data-theme="reading-title"] {
   font-family: var(--ff-reading-title, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif);
+  /* Overrides the `.font-bold` Tailwind utility on the h1 (compound selector
+     wins even before cascade order matters). Cormorant 700 is far too heavy
+     for its design — see themeStore's `--reading-title-weight`. */
+  font-weight: var(--reading-title-weight, 700);
 }
 .reading-pane [data-theme="reading-text"],
 .reading-pane .article-content,
