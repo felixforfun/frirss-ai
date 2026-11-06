@@ -10,6 +10,11 @@ FriRSS follows [semantic versioning](https://semver.org/).
 
 ## Fonctionnalités
 
+- **Police « Cormorant Garamond ».** Nouveau choix de famille dans les
+  réglages de polices (source Web Google Fonts, graisses 400/600/700,
+  `display=swap`), proposé partout où une famille se règle : barre
+  latérale, liste d'articles, titre et corps de lecture.
+
 - **Noyau de classement v2 pour « Interesting ».** Le mélange pondère
   désormais des **signaux externes** : le poids « Influence externe » (25 %
   par défaut) se répartit entre les sources (consensus éditorial 40 %,
